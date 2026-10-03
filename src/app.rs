@@ -1,16 +1,29 @@
 use std::{
+    cell::Cell,
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    rc::Rc,
     time::Duration,
 };
 
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use fontdue::{Font, FontSettings, Metrics};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{
     BackendSelector, ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer,
     TimerMode,
+};
+
+#[cfg(windows)]
+use windows_sys::Win32::{
+    Foundation::HWND,
+    System::Threading::{AttachThreadInput, GetCurrentThreadId},
+    UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetActiveWindow,
+        SetFocus, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    },
 };
 
 use crate::{
@@ -638,6 +651,43 @@ impl TerminalModel {
     }
 }
 
+#[cfg(windows)]
+fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
+    let handle = ui.window().window_handle();
+    let window_handle = handle.window_handle().ok()?;
+    let RawWindowHandle::Win32(win32) = window_handle.as_raw() else {
+        return None;
+    };
+    Some(win32.hwnd.get() as HWND)
+}
+
+#[cfg(windows)]
+unsafe fn focus_native_window(hwnd: HWND) {
+    unsafe {
+        let foreground = GetForegroundWindow();
+        let current_thread = GetCurrentThreadId();
+        let foreground_thread = if foreground.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
+        };
+
+        let attached = foreground_thread != 0
+            && foreground_thread != current_thread
+            && AttachThreadInput(current_thread, foreground_thread, 1) != 0;
+
+        ShowWindow(hwnd, SW_RESTORE);
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+        SetActiveWindow(hwnd);
+        SetFocus(hwnd);
+
+        if attached {
+            AttachThreadInput(current_thread, foreground_thread, 0);
+        }
+    }
+}
+
 pub fn run(initial: Option<PathBuf>) -> Result<()> {
     BackendSelector::new()
         .backend_name("winit".into())
@@ -657,10 +707,26 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
 
     ui.show()?;
 
+    #[cfg(windows)]
+    {
+        let weak = ui.as_weak();
+        Timer::single_shot(Duration::ZERO, move || {
+            if let Some(ui) = weak.upgrade()
+                && let Some(hwnd) = slint_hwnd(&ui)
+            {
+                unsafe { focus_native_window(hwnd); }
+            }
+        });
+    }
+
     let weak = ui.as_weak();
+    #[cfg(windows)]
+    let startup_focus_attempts = Rc::new(Cell::new(30u8));
     let timer = Timer::default();
     {
         let model = model.clone();
+        #[cfg(windows)]
+        let startup_focus_attempts = startup_focus_attempts.clone();
         timer.start(TimerMode::Repeated, Duration::from_millis(16), move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -668,6 +734,17 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
 
             let size = ui.window().size();
             let scale = ui.window().scale_factor();
+
+            #[cfg(windows)]
+            if let Some(hwnd) = slint_hwnd(&ui) {
+                let focused = unsafe { GetForegroundWindow() == hwnd };
+                if !focused && startup_focus_attempts.get() > 0 {
+                    unsafe { focus_native_window(hwnd); }
+                    startup_focus_attempts.set(startup_focus_attempts.get().saturating_sub(1));
+                } else if focused {
+                    startup_focus_attempts.set(0);
+                }
+            }
 
             let mut model = model.borrow_mut();
             model.resize(size.width, size.height, scale);
@@ -743,6 +820,13 @@ fn key_is(text: &str, key: slint::platform::Key) -> bool {
 
 fn raw_key_code(text: &str, shift: bool) -> Option<KeyCode> {
     use slint::platform::Key;
+
+    match text {
+        "\r" | "\n" => return Some(KeyCode::Enter),
+        "\x1b" => return Some(KeyCode::Esc),
+        "\x08" | "\x7f" => return Some(KeyCode::Backspace),
+        _ => {}
+    }
 
     let special = [
         (Key::Escape, KeyCode::Esc),
