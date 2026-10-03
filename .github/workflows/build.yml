@@ -32,6 +32,23 @@ jobs:
           targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
 
+      - name: Apply rustfmt
+        shell: pwsh
+        run: cargo fmt --all
+
+      - name: Commit rustfmt once
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          git diff --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- '*.rs'
+            git commit -m "Aplicar rustfmt"
+            git push
+          }
+
       - name: Check formatting
         shell: pwsh
         run: cargo fmt --all -- --check
