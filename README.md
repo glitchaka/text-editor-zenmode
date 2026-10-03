@@ -1,8 +1,6 @@
 # Helix-SST Zenmode
 
-Aplicación independiente basada en la versión de **Helix-SST integrada en Shell Shock Tool**, sin retirar ni modificar esa integración.
-
-La aplicación abre una **terminal dedicada al editor**. No inicia una shell ni muestra comandos de SST.
+Editor de texto sin distracciones basado en Helix, con lanzador de archivos integrado, terminal propia y herramientas de escritura en español.
 
 ## Flujo de inicio
 
@@ -28,13 +26,12 @@ Controles del selector:
 - `R`: refrescar el listado.
 - `Esc`: cerrar el lanzador.
 
-Al abrir o crear un archivo, **la misma ventana pasa a Helix**. Al cerrar Helix, vuelve al selector y conserva el directorio.
+Al abrir o crear un archivo, la misma ventana pasa al editor. Al cerrar Helix, vuelve al selector y conserva el directorio.
 
-## Helix-SST incluido
-
-La primera versión independiente conserva la configuración de Helix-SST 0.2.3:
+## Características
 
 - Helix 25.07.1.
+- Interfaz minimalista orientada a escritura sin distracciones.
 - Tema Gruvbox.
 - Corrector ortográfico es-CL.
 - Diagnóstico ortográfico virtual debajo de la línea activa:
@@ -43,10 +40,23 @@ La primera versión independiente conserva la configuración de Helix-SST 0.2.3:
        └─ Posible error ortográfico: «palabraa»
   ```
 - `F2` para acciones ortográficas.
+- Diccionario personal para aceptar palabras.
 - `Alt+D` y `Ctrl+G` para insertar `—`.
-- Portapapeles del sistema mediante proveedor propio.
-- Puente PTY/VT con normalización de LF desnudo para evitar el repaint en escalera observado dentro de SST.
+- Portapapeles del sistema.
+- Pegado multilínea.
 - UTF-8 y true color.
+- Ventana y terminal propias.
+- PTY dedicado para ejecutar Helix.
+- Redimensionado dinámico de filas y columnas.
+- Normalización de salida VT para evitar desplazamientos incorrectos del cursor durante repaints complejos.
+
+## Abrir un archivo directamente
+
+También se puede iniciar el editor con una ruta:
+
+```powershell
+helix-sst-zen capitulo-03.txt
+```
 
 ## Compilación
 
@@ -56,15 +66,15 @@ El proyecto está pensado inicialmente para Windows.
 cargo build --release
 ```
 
-Durante la compilación se obtiene la versión fijada de Helix, JetBrainsMono Nerd Font y el diccionario es-CL. Se pueden proporcionar archivos locales mediante:
+Durante la compilación se obtiene la versión fijada de Helix, JetBrainsMono Nerd Font y el diccionario es-CL.
+
+Se pueden proporcionar archivos locales mediante:
 
 ```text
 HELIX_SST_ARCHIVE
 HELIX_SST_FONT_FILE
 ```
 
-El workflow de GitHub es **manual** (`workflow_dispatch`); no compila automáticamente cada push.
+## Licencias
 
-## Estado
-
-Implementación inicial subida sin compilar ni ejecutar pruebas por parte del asistente, siguiendo la política de trabajo del proyecto.
+La información de componentes de terceros está disponible en `THIRD_PARTY.md` y en el directorio `licenses/`.
