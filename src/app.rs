@@ -1129,7 +1129,10 @@ impl TerminalModel {
 
 #[cfg(windows)]
 fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
-    let window_handle = ui.window().window_handle().ok()?;
+    // Slint returns its own WindowHandle wrapper. That wrapper implements
+    // raw-window-handle's HasWindowHandle trait.
+    let handle = ui.window().window_handle();
+    let window_handle = handle.window_handle().ok()?;
     let RawWindowHandle::Win32(win32) = window_handle.as_raw() else {
         return None;
     };
