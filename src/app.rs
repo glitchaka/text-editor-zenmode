@@ -443,38 +443,116 @@ impl TerminalModel {
     fn render_launcher(&mut self) {
         let (cols, rows) = self.terminal_size();
         let width = cols as usize;
+        let frame_width = width.saturating_sub(4).clamp(44, 96);
+        let inner_width = frame_width.saturating_sub(2);
 
         let mut out = String::from("\x1b[2J\x1b[H\x1b[?25l");
+
         push_line(
             &mut out,
             &format!(
-                "\x1b[1;38;5;222mHelix SST\x1b[0m \x1b[38;5;244mversión {APP_VERSION}\x1b[0m"
+                "\x1b[38;5;244m╭{}╮\x1b[0m",
+                "─".repeat(inner_width)
+            ),
+        );
+        push_line(
+            &mut out,
+            &framed_center(
+                &format!(
+                    "\x1b[1;38;5;222mHELIX SST\x1b[0m  \x1b[38;5;250mversión {APP_VERSION}\x1b[0m"
+                ),
+                inner_width,
+                "38;5;244",
+            ),
+        );
+        push_line(
+            &mut out,
+            &framed_center(
+                "\x1b[38;5;109meditor de texto · terminal zen\x1b[0m",
+                inner_width,
+                "38;5;244",
             ),
         );
         push_line(
             &mut out,
             &format!(
-                "\x1b[38;5;244m{}\x1b[0m",
-                truncate(&self.launcher.cwd.display().to_string(), width.saturating_sub(2))
+                "\x1b[38;5;244m├{}┤\x1b[0m",
+                "─".repeat(inner_width)
             ),
         );
-        push_line(&mut out, "");
+
+        let path_text = truncate(
+            &self.launcher.cwd.display().to_string(),
+            inner_width.saturating_sub(13),
+        );
         push_line(
             &mut out,
-            &"─".repeat(width.saturating_sub(2).min(80)),
+            &framed_left(
+                &format!(
+                    "\x1b[38;5;244mDIRECTORIO\x1b[0m  \x1b[38;5;250m{path_text}\x1b[0m"
+                ),
+                inner_width,
+                "38;5;244",
+            ),
+        );
+
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[38;5;244m├{}┤\x1b[0m",
+                "─".repeat(inner_width)
+            ),
+        );
+        push_line(
+            &mut out,
+            &framed_left(
+                "\x1b[1;38;5;222mARCHIVOS\x1b[0m",
+                inner_width,
+                "38;5;244",
+            ),
         );
 
         if self.launcher.creating {
-            push_line(&mut out, "");
-            push_line(&mut out, "\x1b[1mNuevo archivo\x1b[0m");
             push_line(
                 &mut out,
-                &format!("Nombre: {}\x1b[?25h", self.launcher.new_name),
+                &framed_left("", inner_width, "38;5;244"),
             );
-            push_line(&mut out, "");
-            push_line(&mut out, "\x1b[38;5;244mEnter crear · Esc cancelar\x1b[0m");
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[1;38;5;222m  NUEVO ARCHIVO\x1b[0m",
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+            push_line(
+                &mut out,
+                &framed_left(
+                    &format!(
+                        "\x1b[38;5;250mNombre:\x1b[0m {}\x1b[?25h",
+                        self.launcher.new_name
+                    ),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+            push_line(
+                &mut out,
+                &framed_left("", inner_width, "38;5;244"),
+            );
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[38;5;244mEnter crear  ·  Esc cancelar\x1b[0m",
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
         } else {
-            let available = rows.saturating_sub(9) as usize;
+            let chrome_rows = 10usize;
+            let available = (rows as usize)
+                .saturating_sub(chrome_rows)
+                .max(3);
             let selected = self.launcher.selected;
             let total = self.launcher.entries.len() + 1;
             let start = selected.saturating_sub(available.saturating_sub(1) / 2);
@@ -482,54 +560,87 @@ impl TerminalModel {
 
             for index in start..end {
                 if index == 0 {
-                    let marker = if selected == 0 { ">" } else { " " };
-                    let style = if selected == 0 { "\x1b[1;38;5;222m" } else { "" };
+                    let selected_now = selected == 0;
+                    let marker = if selected_now { "▶" } else { " " };
+                    let line = format!(
+                        "{}{} \x1b[38;5;222m\x1b[0m  Nuevo archivo",
+                        if selected_now { "\x1b[1;38;5;222m" } else { "" },
+                        marker,
+                    );
+                    let line = if selected_now {
+                        format!("{line}\x1b[0m")
+                    } else {
+                        line
+                    };
                     push_line(
                         &mut out,
-                        &format!(
-                            "{style}{marker} {} [ Nuevo archivo ]\x1b[0m",
-                            "\u{f15b}"
-                        ),
+                        &framed_left(&line, inner_width, "38;5;244"),
                     );
                     continue;
                 }
 
                 if let Some(entry) = self.launcher.entries.get(index - 1) {
-                    let marker = if selected == index { ">" } else { " " };
+                    let selected_now = selected == index;
+                    let marker = if selected_now { "▶" } else { " " };
                     let suffix = if entry.directory { "/" } else { "" };
-                    let icon = file_icon(entry);
-                    let label = truncate(
-                        &format!("{icon} {}{suffix}", entry.name),
-                        width.saturating_sub(4),
-                    );
-                    let style = if selected == index {
-                        "\x1b[1;38;5;117m"
-                    } else if entry.directory {
-                        "\x1b[38;5;109m"
+                    let (icon, icon_color) = file_icon(entry);
+                    let max_name = inner_width.saturating_sub(8);
+                    let name = truncate(&format!("{}{suffix}", entry.name), max_name);
+
+                    let row = if selected_now {
+                        format!(
+                            "\x1b[1;38;5;117m{marker}\x1b[0m  \x1b[{icon_color}m{icon}\x1b[0m  \x1b[1;38;5;255m{name}\x1b[0m"
+                        )
                     } else {
-                        ""
+                        format!(
+                            "{marker}  \x1b[{icon_color}m{icon}\x1b[0m  \x1b[38;5;250m{name}\x1b[0m"
+                        )
                     };
-                    push_line(&mut out, &format!("{style}{marker} {label}\x1b[0m"));
+
+                    push_line(
+                        &mut out,
+                        &framed_left(&row, inner_width, "38;5;244"),
+                    );
                 }
             }
-
-            push_line(&mut out, "");
-            push_line(
-                &mut out,
-                "\x1b[38;5;244mhelix-sst> ↑/↓ seleccionar · Enter abrir · N nuevo · Backspace subir · R refrescar\x1b[0m",
-            );
         }
 
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[38;5;244m├{}┤\x1b[0m",
+                "─".repeat(inner_width)
+            ),
+        );
+
         if let Some(message) = self.launcher.message.as_deref() {
-            push_line(&mut out, "");
+            let message = truncate(message, inner_width.saturating_sub(2));
             push_line(
                 &mut out,
-                &format!(
-                    "\x1b[38;5;203m{}\x1b[0m",
-                    truncate(message, width.saturating_sub(2))
+                &framed_left(
+                    &format!("\x1b[38;5;203m{message}\x1b[0m"),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+        } else if !self.launcher.creating {
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  Backspace subir  R refrescar\x1b[0m",
+                    inner_width,
+                    "38;5;244",
                 ),
             );
         }
+
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[38;5;244m╰{}╯\x1b[0m",
+                "─".repeat(inner_width)
+            ),
+        );
 
         self.parser.process(out.as_bytes());
         self.dirty = true;
@@ -801,9 +912,9 @@ fn raw_key_code(text: &str, shift: bool) -> Option<KeyCode> {
     (chars.next().is_none() && !ch.is_control()).then_some(KeyCode::Char(ch))
 }
 
-fn file_icon(entry: &Entry) -> &'static str {
+fn file_icon(entry: &Entry) -> (&'static str, &'static str) {
     if entry.directory {
-        return "\u{f07b}"; // folder
+        return ("", "38;5;109");
     }
 
     let name = entry.name.to_ascii_lowercase();
@@ -815,41 +926,82 @@ fn file_icon(entry: &Entry) -> &'static str {
         .to_ascii_lowercase();
 
     if name == "cargo.toml" || name == "cargo.lock" {
-        return "\u{e7a8}"; // Rust/Cargo
+        return ("", "38;5;208");
     }
     if name.ends_with(".lock") || name.contains("artifact-lock") || name.contains("build-lock") {
-        return "\u{f023}"; // lock
+        return ("", "38;5;244");
     }
 
     match extension.as_str() {
-        // Writing / documents
-        "" | "txt" | "text" | "md" | "markdown" | "rst" | "log" => "\u{f15c}",
-        "pdf" => "\u{f1c1}",
-        "doc" | "docx" | "odt" | "rtf" => "\u{f1c2}",
-        "xls" | "xlsx" | "ods" | "csv" => "\u{f1c3}",
-        "ppt" | "pptx" | "odp" => "\u{f1c4}",
-
-        // Source / configuration
-        "rs" => "\u{e7a8}",
+        "" | "txt" | "text" | "md" | "markdown" | "rst" | "log" => ("", "38;5;255"),
+        "pdf" => ("", "38;5;203"),
+        "doc" | "docx" | "odt" | "rtf" => ("", "38;5;75"),
+        "xls" | "xlsx" | "ods" | "csv" => ("", "38;5;108"),
+        "ppt" | "pptx" | "odp" => ("", "38;5;208"),
+        "rs" => ("", "38;5;208"),
         "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts"
         | "tsx" | "jsx" | "html" | "css" | "scss" | "toml" | "yaml" | "yml"
-        | "json" | "xml" | "sh" | "bash" | "ps1" | "bat" | "cmd" => "\u{f1c9}",
-
-        // Windows/build artifacts
-        "exe" | "com" | "msi" => "\u{f2d0}",
-        "dll" => "\u{f085}",
-        "pdb" | "obj" | "lib" | "a" => "\u{f1b3}",
-
-        // Media
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => "\u{f1c5}",
-        "mp3" | "wav" | "flac" | "ogg" | "m4a" => "\u{f1c7}",
-        "mp4" | "mkv" | "avi" | "mov" | "webm" => "\u{f1c8}",
-
-        // Archives
-        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" | "bz2" => "\u{f1c6}",
-
-        _ => "\u{f15b}",
+        | "json" | "xml" | "sh" | "bash" | "ps1" | "bat" | "cmd" => ("", "38;5;114"),
+        "exe" | "com" | "msi" => ("", "38;5;75"),
+        "dll" => ("", "38;5;110"),
+        "pdb" | "obj" | "lib" | "a" => ("", "38;5;244"),
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => ("", "38;5;176"),
+        "mp3" | "wav" | "flac" | "ogg" | "m4a" => ("", "38;5;175"),
+        "mp4" | "mkv" | "avi" | "mov" | "webm" => ("", "38;5;175"),
+        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" | "bz2" => ("", "38;5;179"),
+        _ => ("", "38;5;250"),
     }
+}
+
+fn framed_left(content: &str, width: usize, border_color: &str) -> String {
+    let visible = visible_width(content);
+    let padding = width.saturating_sub(visible + 2);
+    format!(
+        "\x1b[{border_color}m│\x1b[0m {content}{} \x1b[{border_color}m│\x1b[0m",
+        " ".repeat(padding)
+    )
+}
+
+fn framed_center(content: &str, width: usize, border_color: &str) -> String {
+    let visible = visible_width(content);
+    let free = width.saturating_sub(visible);
+    let left = free / 2;
+    let right = free.saturating_sub(left);
+    format!(
+        "\x1b[{border_color}m│\x1b[0m{}{}{}\x1b[{border_color}m│\x1b[0m",
+        " ".repeat(left),
+        content,
+        " ".repeat(right)
+    )
+}
+
+fn visible_width(text: &str) -> usize {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    let mut visible = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == 0x1b && index + 1 < bytes.len() && bytes[index + 1] == b'[' {
+            index += 2;
+            while index < bytes.len() {
+                let byte = bytes[index];
+                index += 1;
+                if (0x40..=0x7e).contains(&byte) {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if let Some(ch) = text[index..].chars().next() {
+            visible += 1;
+            index += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    visible
 }
 
 fn push_line(out: &mut String, line: &str) {
