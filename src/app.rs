@@ -14,7 +14,7 @@ use slint::{
 };
 
 
-use crate::editor::EditorSession;
+use crate::editor::{EditorSession, HELIX_SST_VERSION};
 
 const INITIAL_COLS: u16 = 112;
 const INITIAL_ROWS: u16 = 34;
@@ -444,7 +444,12 @@ impl TerminalModel {
         let width = cols as usize;
 
         let mut out = String::from("\x1b[2J\x1b[H\x1b[?25l");
-        push_line(&mut out, "\x1b[1;38;5;222mHELIX-SST\x1b[0m");
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[1;38;5;222mHELIX-SST\x1b[0m \x1b[38;5;244mv{HELIX_SST_VERSION}\x1b[0m"
+            ),
+        );
         push_line(
             &mut out,
             &format!(
@@ -480,7 +485,10 @@ impl TerminalModel {
                     let style = if selected == 0 { "\x1b[1;38;5;222m" } else { "" };
                     push_line(
                         &mut out,
-                        &format!("{style}{marker} [ Nuevo archivo ]\x1b[0m"),
+                        &format!(
+                            "{style}{marker} {} [ Nuevo archivo ]\x1b[0m",
+                            "\u{f15b}"
+                        ),
                     );
                     continue;
                 }
@@ -488,7 +496,7 @@ impl TerminalModel {
                 if let Some(entry) = self.launcher.entries.get(index - 1) {
                     let marker = if selected == index { ">" } else { " " };
                     let suffix = if entry.directory { "/" } else { "" };
-                    let icon = if entry.directory { "▸" } else { " " };
+                    let icon = file_icon(entry);
                     let label = truncate(
                         &format!("{icon} {}{suffix}", entry.name),
                         width.saturating_sub(4),
@@ -790,6 +798,32 @@ fn raw_key_code(text: &str, shift: bool) -> Option<KeyCode> {
     let mut chars = text.chars();
     let ch = chars.next()?;
     (chars.next().is_none() && !ch.is_control()).then_some(KeyCode::Char(ch))
+}
+
+fn file_icon(entry: &Entry) -> &'static str {
+    if entry.directory {
+        return "\u{f07b}";
+    }
+
+    let extension = entry
+        .path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    match extension.as_str() {
+        "txt" | "text" | "md" | "markdown" | "rst" | "log" => "\u{f15c}",
+        "rs" | "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts"
+        | "tsx" | "jsx" | "html" | "css" | "scss" | "toml" | "yaml" | "yml"
+        | "json" | "xml" | "sh" | "ps1" => "\u{f1c9}",
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => "\u{f1c5}",
+        "pdf" => "\u{f1c1}",
+        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" => "\u{f1c6}",
+        "mp3" | "wav" | "flac" | "ogg" | "m4a" => "\u{f1c7}",
+        "mp4" | "mkv" | "avi" | "mov" | "webm" => "\u{f1c8}",
+        _ => "\u{f15b}",
+    }
 }
 
 fn push_line(out: &mut String, line: &str) {
