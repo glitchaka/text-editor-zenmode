@@ -706,6 +706,17 @@ fn handle_key(
         modifiers |= KeyModifiers::SHIFT;
     }
 
+    // Resolve named/special keys first. Slint encodes Return as LF (0x0A),
+    // which also falls inside the ASCII control range used below for Ctrl+A..Z.
+    // If control translation runs first, Enter becomes Ctrl+J.
+    if let Some(code) = raw_key_code(text, shift) {
+        model.key_event(KeyEvent::new(code, modifiers));
+        return;
+    }
+
+    // Some Windows/Slint paths deliver Ctrl+letter as the ASCII control
+    // character without setting control=true. Translate only values that were
+    // not already recognized as special keys above.
     if let Some(ch) = text.chars().next()
         && text.chars().count() == 1
         && ('\x01'..='\x1a').contains(&ch)
@@ -713,11 +724,6 @@ fn handle_key(
         modifiers |= KeyModifiers::CONTROL;
         let letter = (ch as u8 + b'a' - 1) as char;
         model.key_event(KeyEvent::new(KeyCode::Char(letter), modifiers));
-        return;
-    }
-
-    if let Some(code) = raw_key_code(text, shift) {
-        model.key_event(KeyEvent::new(code, modifiers));
     }
 }
 
