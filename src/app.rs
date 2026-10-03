@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -24,6 +24,10 @@ const CELL_WIDTH: f32 = 8.0;
 const CELL_HEIGHT: f32 = 18.0;
 const FONT_SIZE: f32 = 14.0;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const ISLAND_TOP: f32 = 6.0;
+const ISLAND_HEIGHT: f32 = 34.0;
+const CONTENT_TOP_GAP: f32 = 8.0;
+const SPLASH_DURATION: Duration = Duration::from_millis(1300);
 
 // Retrofuturistic semigraphic icons for the TUI launcher.
 // These private-use cells are intercepted by our terminal renderer and painted
@@ -54,15 +58,19 @@ const FONT_BYTES: &[u8] = include_bytes!(concat!(
 
 slint::slint! {
     export component ZenWindow inherits Window {
-        title: "Helix-SST Zenmode";
+        title: "Helix SST";
         preferred-width: 980px;
         preferred-height: 680px;
         min-width: 520px;
         min-height: 340px;
+        no-frame: true;
+        resize-border-width: 7px;
         background: #111619;
 
         in property <image> terminal-image;
+        in property <string> version-text: "v0.0.0";
         callback key-input(string, bool, bool, bool);
+        callback close-window();
 
         Image {
             x: 0;
@@ -73,7 +81,7 @@ slint::slint! {
             image-fit: fill;
         }
 
-        focus := FocusScope {
+        terminal-focus := FocusScope {
             x: 0;
             y: 0;
             width: 100%;
@@ -93,6 +101,147 @@ slint::slint! {
                     event.modifiers.shift
                 );
                 accept
+            }
+        }
+
+        island := Rectangle {
+            width: min(650px, root.width - 20px);
+            height: 34px;
+            x: (root.width - self.width) / 2;
+            y: 6px;
+            border-radius: 13px;
+            background: rgba(10, 13, 20, 0.96);
+            border-width: 1px;
+            border-color: #2b3547;
+
+            WindowMoveArea {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+
+                Text {
+                    x: 17px;
+                    y: 0;
+                    width: 120px;
+                    height: parent.height;
+                    text: "HELIX SST";
+                    color: #dfe8ef;
+                    font-family: "Segoe UI Variable";
+                    font-size: 14px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: 137px;
+                    y: 0;
+                    width: 125px;
+                    height: parent.height;
+                    text: root.version-text;
+                    color: #7f8b9b;
+                    font-family: "Segoe UI Variable";
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    visible: island.width >= 470px;
+                    x: (island.width - 80px) / 2;
+                    y: 0;
+                    width: 80px;
+                    height: parent.height;
+                    text: "ZENMODE";
+                    color: #8db9bb;
+                    font-family: "Segoe UI Variable";
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle {
+                    x: island.width - 114px;
+                    y: 1px;
+                    width: 38px;
+                    height: island.height - 2px;
+                    border-radius: 10px;
+                    background: minimize-touch.pressed
+                        ? rgb(36, 49, 67)
+                        : minimize-touch.has-hover ? rgb(23, 35, 52) : transparent;
+
+                    Path {
+                        x: 11px;
+                        y: 10px;
+                        width: 16px;
+                        height: 12px;
+                        commands: "M 1 1 L 8 9 L 15 1";
+                        stroke: #74c8f5;
+                        stroke-width: 2.4px;
+                        stroke-line-cap: round;
+                        stroke-line-join: round;
+                    }
+
+                    minimize-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.minimized = true; }
+                    }
+                }
+
+                Rectangle {
+                    x: island.width - 76px;
+                    y: 1px;
+                    width: 38px;
+                    height: island.height - 2px;
+                    border-radius: 10px;
+                    background: maximize-touch.pressed
+                        ? rgb(36, 49, 67)
+                        : maximize-touch.has-hover ? rgb(23, 35, 52) : transparent;
+
+                    Path {
+                        x: 11px;
+                        y: 11px;
+                        width: 16px;
+                        height: 12px;
+                        commands: "M 1 10 L 8 2 L 15 10";
+                        stroke: #74c8f5;
+                        stroke-width: 2.4px;
+                        stroke-line-cap: round;
+                        stroke-line-join: round;
+                    }
+
+                    maximize-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.maximized = !root.maximized; }
+                    }
+                }
+
+                Rectangle {
+                    x: island.width - 38px;
+                    y: 1px;
+                    width: 38px;
+                    height: island.height - 2px;
+                    border-radius: 10px;
+                    background: close-touch.pressed
+                        ? rgb(62, 23, 36)
+                        : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
+
+                    Path {
+                        x: 10px;
+                        y: 8px;
+                        width: 18px;
+                        height: 18px;
+                        commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
+                        stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
+                        stroke-width: 2px;
+                        stroke-line-cap: round;
+                    }
+
+                    close-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.close-window(); }
+                    }
+                }
             }
         }
     }
@@ -183,6 +332,9 @@ struct TerminalModel {
     height: u32,
     scale: f32,
     dirty: bool,
+    splash_active: bool,
+    splash_started: Instant,
+    pending_initial: Option<PathBuf>,
 }
 
 impl TerminalModel {
@@ -219,30 +371,30 @@ impl TerminalModel {
             height: 680,
             scale: 1.0,
             dirty: true,
+            splash_active: true,
+            splash_started: Instant::now(),
+            pending_initial: file_to_open,
         };
 
-        if let Some(file) = file_to_open {
-            if let Err(error) = this.open_editor(file) {
-                this.launcher.message = Some(error.to_string());
-                this.render_launcher();
-            }
-        } else {
-            this.render_launcher();
-        }
-
+        this.render_splash();
         Ok(this)
     }
 
-    fn terminal_size(&self) -> (u16, u16) {
+    fn geometry(&self) -> (f32, f32, f32, f32) {
         let scale = self.scale.max(0.5);
-        let cell_width = (CELL_WIDTH * scale).max(1.0);
-        let cell_height = (CELL_HEIGHT * scale).max(1.0);
-        let pad_x = PAD_X * scale;
-        let pad_y = PAD_Y * scale;
+        let left_pad = (PAD_X * scale).round();
+        let top_pad = ((ISLAND_TOP + ISLAND_HEIGHT + CONTENT_TOP_GAP + PAD_Y) * scale).round();
+        let cell_width = (CELL_WIDTH * scale).round().max(1.0);
+        let cell_height = (CELL_HEIGHT * scale).round().max(1.0);
+        (left_pad, top_pad, cell_width, cell_height)
+    }
 
-        let cols = (((self.width as f32 - pad_x * 2.0) / cell_width).floor() as i32)
+    fn terminal_size(&self) -> (u16, u16) {
+        let (left_pad, top_pad, cell_width, cell_height) = self.geometry();
+        let cols = (((self.width as f32 - left_pad * 2.0) / cell_width).floor() as i32)
             .clamp(20, 300) as u16;
-        let rows = (((self.height as f32 - pad_y * 2.0) / cell_height).floor() as i32)
+        let bottom_pad = (PAD_Y * self.scale.max(0.5)).round();
+        let rows = (((self.height as f32 - top_pad - bottom_pad) / cell_height).floor() as i32)
             .clamp(8, 160) as u16;
         (cols, rows)
     }
@@ -270,6 +422,8 @@ impl TerminalModel {
                 if let Err(error) = editor.resize(cols, rows) {
                     self.launcher.message = Some(format!("No se pudo redimensionar Helix: {error}"));
                 }
+            } else if self.splash_active {
+                self.render_splash();
             } else {
                 self.render_launcher();
             }
@@ -277,6 +431,97 @@ impl TerminalModel {
 
         self.glyphs.clear();
         self.dirty = true;
+    }
+
+    fn render_splash(&mut self) {
+        let (cols, rows) = self.terminal_size();
+        let width = cols as usize;
+        let frame_width = width.saturating_sub(12).clamp(42, 72);
+        let inner_width = frame_width.saturating_sub(2);
+        let top_blank = (rows as usize).saturating_sub(11) / 3;
+
+        let mut out = String::from("\x1b[2J\x1b[H\x1b[?25l");
+        for _ in 0..top_blank {
+            push_line(&mut out, "");
+        }
+
+        push_line(
+            &mut out,
+            &format!("{}╭{}╮", " ".repeat((width.saturating_sub(frame_width)) / 2), "─".repeat(inner_width)),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                "\x1b[1;38;5;222m██  HELIX SST  ██\x1b[0m",
+                width,
+                frame_width,
+            ),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                &format!("\x1b[38;5;109mTERMINAL EDITOR SYSTEM · v{APP_VERSION}\x1b[0m"),
+                width,
+                frame_width,
+            ),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line("", width, frame_width),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                "\x1b[38;5;250mWRITE  ·  EDIT  ·  FOCUS\x1b[0m",
+                width,
+                frame_width,
+            ),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                "\x1b[38;5;244msemigraphic console subsystem\x1b[0m",
+                width,
+                frame_width,
+            ),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line("", width, frame_width),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                "\x1b[38;5;244mpresiona cualquier tecla para continuar\x1b[0m",
+                width,
+                frame_width,
+            ),
+        );
+        push_last_line(
+            &mut out,
+            &format!("{}╰{}╯", " ".repeat((width.saturating_sub(frame_width)) / 2), "─".repeat(inner_width)),
+        );
+
+        self.parser.process(out.as_bytes());
+        self.dirty = true;
+    }
+
+    fn finish_splash(&mut self) {
+        if !self.splash_active {
+            return;
+        }
+
+        self.splash_active = false;
+        self.reset_parser();
+
+        if let Some(file) = self.pending_initial.take() {
+            if let Err(error) = self.open_editor(file) {
+                self.launcher.message = Some(error.to_string());
+                self.render_launcher();
+            }
+        } else {
+            self.render_launcher();
+        }
     }
 
     fn reset_parser(&mut self) {
@@ -295,6 +540,13 @@ impl TerminalModel {
     }
 
     fn tick(&mut self) {
+        if self.splash_active {
+            if self.splash_started.elapsed() >= SPLASH_DURATION {
+                self.finish_splash();
+            }
+            return;
+        }
+
         let mut finished = false;
 
         if let Some(editor) = self.editor.as_mut() {
@@ -327,6 +579,11 @@ impl TerminalModel {
     }
 
     fn key_event(&mut self, key: KeyEvent) {
+        if self.splash_active {
+            self.finish_splash();
+            return;
+        }
+
         if self.editor.is_some() {
             self.editor_key(key);
         } else {
@@ -567,7 +824,7 @@ impl TerminalModel {
                 ),
             );
         } else {
-            let chrome_rows = 10usize;
+            let chrome_rows = 11usize;
             let available = (rows as usize)
                 .saturating_sub(chrome_rows)
                 .max(3);
@@ -652,7 +909,7 @@ impl TerminalModel {
             );
         }
 
-        push_line(
+        push_last_line(
             &mut out,
             &format!(
                 "\x1b[38;5;244m╰{}╯\x1b[0m",
@@ -682,10 +939,7 @@ impl TerminalModel {
         let cursor_on = !screen.hide_cursor();
 
         let scale = self.scale.max(0.5);
-        let left_pad = (PAD_X * scale).round();
-        let top_pad = (PAD_Y * scale).round();
-        let cell_width = (CELL_WIDTH * scale).round().max(1.0);
-        let cell_height = (CELL_HEIGHT * scale).round().max(1.0);
+        let (left_pad, top_pad, cell_width, cell_height) = self.geometry();
         let font_px = (FONT_SIZE * scale).round().max(8.0);
         let font_key = font_px.round() as u16;
 
@@ -781,16 +1035,28 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
     BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("femtovg".into())
+        .with_winit_window_attributes_hook(|attributes| attributes.with_decorations(false))
         .select()
         .map_err(|error| anyhow::anyhow!("No se pudo inicializar Winit/FemtoVG: {error}"))?;
 
     let model = std::rc::Rc::new(std::cell::RefCell::new(TerminalModel::new(initial)?));
     let ui = ZenWindow::new()?;
+    ui.set_version_text(format!("v{APP_VERSION}").into());
 
     {
         let model = model.clone();
         ui.on_key_input(move |text, ctrl, alt, shift| {
             handle_key(&mut model.borrow_mut(), text.as_str(), ctrl, alt, shift);
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        ui.on_close_window(move || {
+            if let Some(ui) = weak.upgrade() {
+                let _ = ui.hide();
+            }
+            let _ = slint::quit_event_loop();
         });
     }
 
@@ -1036,7 +1302,7 @@ fn visible_width(text: &str) -> usize {
         }
 
         if let Some(ch) = text[index..].chars().next() {
-            visible += if terminal_icon(ch).is_some() { 2 } else { 1 };
+            visible += 1;
             index += ch.len_utf8();
         } else {
             break;
@@ -1044,6 +1310,16 @@ fn visible_width(text: &str) -> usize {
     }
 
     visible
+}
+
+fn centered_frame_line(content: &str, terminal_width: usize, frame_width: usize) -> String {
+    let inner_width = frame_width.saturating_sub(2);
+    let margin = " ".repeat(terminal_width.saturating_sub(frame_width) / 2);
+    format!("{margin}{}", framed_center(content, inner_width, "38;5;244"))
+}
+
+fn push_last_line(out: &mut String, line: &str) {
+    out.push_str(line);
 }
 
 fn push_line(out: &mut String, line: &str) {
