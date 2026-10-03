@@ -15,6 +15,7 @@ env:
   CARGO_TERM_COLOR: always
   TARGET: x86_64-pc-windows-msvc
   EXE_NAME: helix-sst-zen-windows-x86_64.exe
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   windows:
@@ -23,12 +24,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        shell: pwsh
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        shell: pwsh
+        run: cargo clippy --release --target $env:TARGET -- -D warnings
 
       - name: Build release
         shell: pwsh
@@ -47,7 +57,7 @@ jobs:
           "$hash  $env:EXE_NAME" | Set-Content "$target.sha256" -Encoding ascii
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: helix-sst-zen-windows-x86_64
           path: |
