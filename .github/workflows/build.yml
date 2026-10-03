@@ -3,6 +3,8 @@ name: Build Helix-SST Zenmode
 on:
   workflow_dispatch:
   push:
+    branches:
+      - "main"
     tags:
       - "v*"
 
