@@ -708,6 +708,14 @@ impl TerminalModel {
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 self.launcher.refresh();
             }
+            KeyCode::Char('z') | KeyCode::Char('Z') => {
+                self.zen_requested = !self.zen_requested;
+                self.launcher.message = Some(if self.zen_requested {
+                    "Zenmode real seleccionado.".into()
+                } else {
+                    "Modo normal seleccionado.".into()
+                });
+            }
             KeyCode::Backspace => {
                 if let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf) {
                     self.launcher.cwd = parent;
@@ -990,7 +998,7 @@ impl TerminalModel {
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[38;5;244m↑↓ seleccionar  Enter elegir/abrir  N nuevo  Backspace subir  R refrescar\x1b[0m",
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter elegir/abrir  N nuevo  Z alternar modo  Backspace subir  R refrescar\x1b[0m",
                     inner_width,
                     "38;5;244",
                 ),
