@@ -64,8 +64,7 @@ pub fn run_lsp(user_dictionary: PathBuf) -> Result<i32> {
             }
             "textDocument/didChange" => {
                 if let Some(params) = message.get("params")
-                    && let Some(uri) =
-                        params.pointer("/textDocument/uri").and_then(Value::as_str)
+                    && let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str)
                     && let Some(text) = params
                         .get("contentChanges")
                         .and_then(Value::as_array)

@@ -1697,7 +1697,7 @@ fn draw_terminal_icon(
             for gy in [3, 7, 11] {
                 canvas.rect((2, gy, 12, 3), color);
                 canvas.rect((3, gy + 1, 8, 1), dark);
-                canvas.rect((12, gy + 1, 1, 1), bright,);
+                canvas.rect((12, gy + 1, 1, 1), bright);
             }
         }
 
