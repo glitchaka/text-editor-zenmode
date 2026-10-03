@@ -63,29 +63,27 @@ pub fn run_lsp(user_dictionary: PathBuf) -> Result<i32> {
                 }
             }
             "textDocument/didChange" => {
-                if let Some(params) = message.get("params") {
-                    if let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) {
-                        if let Some(text) = params
-                            .get("contentChanges")
-                            .and_then(Value::as_array)
-                            .and_then(|changes| changes.last())
-                            .and_then(|change| change.get("text"))
-                            .and_then(Value::as_str)
-                        {
-                            server.documents.insert(uri.to_owned(), text.to_owned());
-                            server.publish(uri, text, &mut output)?;
-                        }
-                    }
+                if let Some(params) = message.get("params")
+                    && let Some(uri) =
+                        params.pointer("/textDocument/uri").and_then(Value::as_str)
+                    && let Some(text) = params
+                        .get("contentChanges")
+                        .and_then(Value::as_array)
+                        .and_then(|changes| changes.last())
+                        .and_then(|change| change.get("text"))
+                        .and_then(Value::as_str)
+                {
+                    server.documents.insert(uri.to_owned(), text.to_owned());
+                    server.publish(uri, text, &mut output)?;
                 }
             }
             "textDocument/didSave" => {
                 if let Some(uri) = message
                     .pointer("/params/textDocument/uri")
                     .and_then(Value::as_str)
+                    && let Some(text) = server.documents.get(uri).cloned()
                 {
-                    if let Some(text) = server.documents.get(uri).cloned() {
-                        server.publish(uri, &text, &mut output)?;
-                    }
+                    server.publish(uri, &text, &mut output)?;
                 }
             }
             "textDocument/didClose" => {
@@ -112,13 +110,11 @@ pub fn run_lsp(user_dictionary: PathBuf) -> Result<i32> {
                 let mut added = false;
                 if message.pointer("/params/command").and_then(Value::as_str)
                     == Some(ADD_WORD_COMMAND)
-                {
-                    if let Some(word) = message
+                    && let Some(word) = message
                         .pointer("/params/arguments/0")
                         .and_then(Value::as_str)
-                    {
-                        added = server.add_user_word(word)?;
-                    }
+                {
+                    added = server.add_user_word(word)?;
                 }
                 if let Some(id) = id {
                     send_response(&mut output, id, json!(added))?;

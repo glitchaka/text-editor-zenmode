@@ -457,10 +457,10 @@ fn find_named(root: &Path, name: &str, directory: bool) -> Option<PathBuf> {
         {
             return Some(path);
         }
-        if path.is_dir() {
-            if let Some(found) = find_named(&path, name, directory) {
-                return Some(found);
-            }
+        if path.is_dir()
+            && let Some(found) = find_named(&path, name, directory)
+        {
+            return Some(found);
         }
     }
     None

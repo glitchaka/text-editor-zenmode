@@ -1019,7 +1019,7 @@ impl TerminalModel {
                 let h = cell_height.ceil() as i32;
 
                 if paint_background {
-                    fill_rect(pixels, width, height, x, y, w, h, bg);
+                    fill_rect(pixels, (width, height), (x, y, w, h), bg);
                 }
 
                 let content = cell.contents();
@@ -1033,12 +1033,9 @@ impl TerminalModel {
                     if let Some(icon) = terminal_icon(ch) {
                         draw_terminal_icon(
                             pixels,
-                            width,
-                            height,
-                            pen_x,
-                            y,
-                            cell_width,
-                            cell_height,
+                            (width, height),
+                            (pen_x, y),
+                            (cell_width, cell_height),
                             icon,
                             fg,
                         );
@@ -1557,49 +1554,48 @@ fn icon_bright(color: Rgb) -> Rgb {
     Rgb(lift(color.0), lift(color.1), lift(color.2))
 }
 
-fn icon_rect(
-    pixels: &mut [Rgba8Pixel],
-    width: u32,
-    height: u32,
-    origin_x: i32,
-    origin_y: i32,
-    icon_width: i32,
-    icon_height: i32,
-    gx: i32,
-    gy: i32,
-    gw: i32,
-    gh: i32,
-    color: Rgb,
-) {
-    let x0 = origin_x + gx * icon_width / 16;
-    let y0 = origin_y + gy * icon_height / 16;
-    let x1 = origin_x + (gx + gw) * icon_width / 16;
-    let y1 = origin_y + (gy + gh) * icon_height / 16;
-    fill_rect(
-        pixels,
-        width,
-        height,
-        x0,
-        y0,
-        (x1 - x0).max(1),
-        (y1 - y0).max(1),
-        color,
-    );
+struct IconCanvas<'a> {
+    pixels: &'a mut [Rgba8Pixel],
+    surface: (u32, u32),
+    origin: (i32, i32),
+    size: (i32, i32),
+}
+
+impl IconCanvas<'_> {
+    fn rect(&mut self, grid: (i32, i32, i32, i32), color: Rgb) {
+        let (gx, gy, gw, gh) = grid;
+        let (origin_x, origin_y) = self.origin;
+        let (icon_width, icon_height) = self.size;
+        let x0 = origin_x + gx * icon_width / 16;
+        let y0 = origin_y + gy * icon_height / 16;
+        let x1 = origin_x + (gx + gw) * icon_width / 16;
+        let y1 = origin_y + (gy + gh) * icon_height / 16;
+        fill_rect(
+            self.pixels,
+            self.surface,
+            (x0, y0, (x1 - x0).max(1), (y1 - y0).max(1)),
+            color,
+        );
+    }
 }
 
 fn draw_terminal_icon(
     pixels: &mut [Rgba8Pixel],
-    width: u32,
-    height: u32,
-    x: i32,
-    y: i32,
-    cell_width: f32,
-    cell_height: f32,
+    surface: (u32, u32),
+    origin: (i32, i32),
+    cell_size: (f32, f32),
     icon: TerminalIcon,
     color: Rgb,
 ) {
+    let (cell_width, cell_height) = cell_size;
     let iw = (cell_width * 2.0).round().max(12.0) as i32;
     let ih = cell_height.round().max(14.0) as i32;
+    let mut canvas = IconCanvas {
+        pixels,
+        surface,
+        origin,
+        size: (iw, ih),
+    };
     let dark = icon_shade(color, 2, 5);
     let mid = icon_shade(color, 3, 4);
     let bright = icon_bright(color);
@@ -1607,151 +1603,136 @@ fn draw_terminal_icon(
     match icon {
         // Data cassette / directory module with raised tab.
         TerminalIcon::Folder => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 2, 3, 6, 2, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 1, 5, 14, 9, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 2, 6, 12, 7, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 3, 8, 9, 1, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 11, 11, 2, 2, mid);
+            canvas.rect((2, 3, 6, 2), bright);
+            canvas.rect((1, 5, 14, 9), color);
+            canvas.rect((2, 6, 12, 7), dark);
+            canvas.rect((3, 8, 9, 1), bright);
+            canvas.rect((11, 11, 2, 2), mid);
         }
 
         // Technical document plate with clipped corner and scan lines.
         TerminalIcon::Document | TerminalIcon::Pdf | TerminalIcon::Office => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 3, 1, 10, 14, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 2, 8, 12, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 10, 1, 3, 3, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 5, 6, 6, 1, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 5, 9, 5, 1, mid);
-            icon_rect(pixels, width, height, x, y, iw, ih, 5, 12, 4, 1, mid);
+            canvas.rect((3, 1, 10, 14), color);
+            canvas.rect((4, 2, 8, 12), dark);
+            canvas.rect((10, 1, 3, 3), bright);
+            canvas.rect((5, 6, 6, 1), bright);
+            canvas.rect((5, 9, 5, 1), mid);
+            canvas.rect((5, 12, 4, 1), mid);
             if matches!(icon, TerminalIcon::Pdf) {
-                icon_rect(pixels, width, height, x, y, iw, ih, 4, 13, 8, 1, bright);
+                canvas.rect((4, 13, 8, 1), bright);
             } else if matches!(icon, TerminalIcon::Office) {
-                icon_rect(pixels, width, height, x, y, iw, ih, 8, 5, 1, 8, bright);
+                canvas.rect((8, 5, 1, 8), bright);
             }
         }
 
         // Microterminal module: frame + angular prompt chevrons.
         TerminalIcon::Code => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 1, 2, 14, 12, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 2, 3, 12, 10, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 6, 2, 1, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 5, 7, 2, 1, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 8, 2, 1, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 9, 9, 3, 1, mid);
+            canvas.rect((1, 2, 14, 12), color);
+            canvas.rect((2, 3, 12, 10), dark);
+            canvas.rect((4, 6, 2, 1), bright);
+            canvas.rect((5, 7, 2, 1), bright);
+            canvas.rect((4, 8, 2, 1), bright);
+            canvas.rect((9, 9, 3, 1), mid);
         }
 
         // Executable as a glowing computational core.
         TerminalIcon::Executable => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 2, 8, 12, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 2, 5, 12, 6, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 5, 4, 6, 8, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 6, 6, 4, 4, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 7, 7, 2, 2, mid);
+            canvas.rect((4, 2, 8, 12), color);
+            canvas.rect((2, 5, 12, 6), color);
+            canvas.rect((5, 4, 6, 8), dark);
+            canvas.rect((6, 6, 4, 4), bright);
+            canvas.rect((7, 7, 2, 2), mid);
         }
 
         // Plug-in board with connector pins.
         TerminalIcon::Component => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 3, 4, 10, 8, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 5, 8, 6, dark);
+            canvas.rect((3, 4, 10, 8), color);
+            canvas.rect((4, 5, 8, 6), dark);
             for pin_y in [5, 8, 11] {
-                icon_rect(pixels, width, height, x, y, iw, ih, 1, pin_y, 2, 1, bright);
-                icon_rect(pixels, width, height, x, y, iw, ih, 13, pin_y, 2, 1, bright);
+                canvas.rect((1, pin_y, 2, 1), bright);
+                canvas.rect((13, pin_y, 2, 1), bright);
             }
-            icon_rect(pixels, width, height, x, y, iw, ih, 6, 7, 4, 2, mid);
+            canvas.rect((6, 7, 4, 2), mid);
         }
 
         // Wireframe build block / package.
         TerminalIcon::Build => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 3, 8, 2, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 2, 5, 12, 8, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 3, 6, 10, 6, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 7, 5, 2, 8, mid);
-            icon_rect(pixels, width, height, x, y, iw, ih, 3, 8, 10, 1, bright);
+            canvas.rect((4, 3, 8, 2), bright);
+            canvas.rect((2, 5, 12, 8), color);
+            canvas.rect((3, 6, 10, 6), dark);
+            canvas.rect((7, 5, 2, 8), mid);
+            canvas.rect((3, 8, 10, 1), bright);
         }
 
         // CRT image frame: horizon and synthetic sun.
         TerminalIcon::Image => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 1, 2, 14, 12, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 2, 3, 12, 10, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 10, 5, 2, 2, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 3, 10, 10, 1, mid);
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 9, 3, 1, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 7, 8, 3, 2, color);
+            canvas.rect((1, 2, 14, 12), color);
+            canvas.rect((2, 3, 12, 10), dark);
+            canvas.rect((10, 5, 2, 2), bright);
+            canvas.rect((3, 10, 10, 1), mid);
+            canvas.rect((4, 9, 3, 1), bright);
+            canvas.rect((7, 8, 3, 2), color);
         }
 
         // Oscilloscope / waveform.
         TerminalIcon::Audio => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 1, 3, 14, 10, dark);
+            canvas.rect((1, 3, 14, 10), dark);
             for (gx, gy, gh) in [(3, 7, 3), (5, 5, 6), (7, 3, 10), (9, 5, 6), (11, 7, 3)] {
-                icon_rect(pixels, width, height, x, y, iw, ih, gx, gy, 1, gh, bright);
+                canvas.rect((gx, gy, 1, gh), bright);
             }
         }
 
         // Small monitor with angular play marker.
         TerminalIcon::Video => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 1, 2, 14, 11, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 2, 3, 12, 9, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 6, 5, 2, 6, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 8, 6, 2, 4, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 10, 7, 1, 2, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 5, 14, 6, 1, mid);
+            canvas.rect((1, 2, 14, 11), color);
+            canvas.rect((2, 3, 12, 9), dark);
+            canvas.rect((6, 5, 2, 6), bright);
+            canvas.rect((8, 6, 2, 4), bright);
+            canvas.rect((10, 7, 1, 2), bright);
+            canvas.rect((5, 14, 6, 1), mid);
         }
 
         // Cartridge stack.
         TerminalIcon::Archive => {
             for gy in [3, 7, 11] {
-                icon_rect(pixels, width, height, x, y, iw, ih, 2, gy, 12, 3, color);
-                icon_rect(pixels, width, height, x, y, iw, ih, 3, gy + 1, 8, 1, dark);
-                icon_rect(
-                    pixels,
-                    width,
-                    height,
-                    x,
-                    y,
-                    iw,
-                    ih,
-                    12,
-                    gy + 1,
-                    1,
-                    1,
-                    bright,
-                );
+                canvas.rect((2, gy, 12, 3), color);
+                canvas.rect((3, gy + 1, 8, 1), dark);
+                canvas.rect((12, gy + 1, 1, 1), bright,);
             }
         }
 
         // Security module with hard-edged shackle.
         TerminalIcon::Lock => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 5, 2, 6, 2, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 4, 2, 4, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 10, 4, 2, 4, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 3, 7, 10, 7, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 8, 8, 5, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 7, 9, 2, 3, bright);
+            canvas.rect((5, 2, 6, 2), color);
+            canvas.rect((4, 4, 2, 4), color);
+            canvas.rect((10, 4, 2, 4), color);
+            canvas.rect((3, 7, 10, 7), color);
+            canvas.rect((4, 8, 8, 5), dark);
+            canvas.rect((7, 9, 2, 3), bright);
         }
 
         // Rust/Cargo shown as a gear-like reactor ring.
         TerminalIcon::Rust => {
-            icon_rect(pixels, width, height, x, y, iw, ih, 6, 1, 4, 2, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 6, 13, 4, 2, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 1, 6, 2, 4, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 13, 6, 2, 4, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 3, 3, 10, 10, color);
-            icon_rect(pixels, width, height, x, y, iw, ih, 4, 4, 8, 8, dark);
-            icon_rect(pixels, width, height, x, y, iw, ih, 6, 6, 4, 4, bright);
-            icon_rect(pixels, width, height, x, y, iw, ih, 7, 7, 2, 2, mid);
+            canvas.rect((6, 1, 4, 2), color);
+            canvas.rect((6, 13, 4, 2), color);
+            canvas.rect((1, 6, 2, 4), color);
+            canvas.rect((13, 6, 2, 4), color);
+            canvas.rect((3, 3, 10, 10), color);
+            canvas.rect((4, 4, 8, 8), dark);
+            canvas.rect((6, 6, 4, 4), bright);
+            canvas.rect((7, 7, 2, 2), mid);
         }
     }
 }
 
 fn fill_rect(
     pixels: &mut [Rgba8Pixel],
-    width: u32,
-    height: u32,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
+    surface: (u32, u32),
+    rect: (i32, i32, i32, i32),
     color: Rgb,
 ) {
+    let (width, height) = surface;
+    let (x, y, w, h) = rect;
     let left = x.max(0) as u32;
     let top = y.max(0) as u32;
     let right = (x + w).max(0).min(width as i32) as u32;
