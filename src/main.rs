@@ -36,10 +36,11 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    let zen_requested = args.iter().any(|arg| arg == "--zen");
     let initial = args
-        .first()
-        .filter(|arg| !arg.starts_with('-'))
+        .iter()
+        .find(|arg| !arg.starts_with('-'))
         .map(PathBuf::from);
 
-    app::run(initial)
+    app::run(initial, zen_requested)
 }

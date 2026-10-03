@@ -8,9 +8,23 @@ use std::{
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use fontdue::{Font, FontSettings, Metrics};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{
     BackendSelector, ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer,
     TimerMode,
+};
+
+#[cfg(windows)]
+use windows_sys::Win32::{
+    Foundation::HWND,
+    System::Threading::{AttachThreadInput, GetCurrentThreadId},
+    UI::{
+        Input::KeyboardAndMouse::{SetActiveWindow, SetFocus},
+        WindowsAndMessaging::{
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+            SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        },
+    },
 };
 
 
@@ -69,6 +83,7 @@ slint::slint! {
 
         in property <image> terminal-image;
         in property <string> version-text: "v0.0.0";
+        in property <bool> zen-active: false;
         callback key-input(string, bool, bool, bool);
         callback close-window();
 
@@ -105,6 +120,7 @@ slint::slint! {
         }
 
         island := Rectangle {
+            visible: !root.zen-active;
             width: min(650px, root.width - 20px);
             height: 34px;
             x: (root.width - self.width) / 2;
@@ -335,10 +351,11 @@ struct TerminalModel {
     splash_active: bool,
     splash_started: Instant,
     pending_initial: Option<PathBuf>,
+    zen_requested: bool,
 }
 
 impl TerminalModel {
-    fn new(initial: Option<PathBuf>) -> Result<Self> {
+    fn new(initial: Option<PathBuf>, zen_requested: bool) -> Result<Self> {
         let current = std::env::current_dir()?;
         let (cwd, file_to_open) = match initial {
             Some(path) if path.is_dir() => (path, None),
@@ -374,16 +391,25 @@ impl TerminalModel {
             splash_active: true,
             splash_started: Instant::now(),
             pending_initial: file_to_open,
+            zen_requested,
         };
 
         this.render_splash();
         Ok(this)
     }
 
+    fn zen_engaged(&self) -> bool {
+        self.zen_requested && self.editor.is_some()
+    }
+
     fn geometry(&self) -> (f32, f32, f32, f32) {
         let scale = self.scale.max(0.5);
         let left_pad = (PAD_X * scale).round();
-        let top_pad = ((ISLAND_TOP + ISLAND_HEIGHT + CONTENT_TOP_GAP + PAD_Y) * scale).round();
+        let top_pad = if self.zen_engaged() {
+            (PAD_Y * scale).round()
+        } else {
+            ((ISLAND_TOP + ISLAND_HEIGHT + CONTENT_TOP_GAP + PAD_Y) * scale).round()
+        };
         let cell_width = (CELL_WIDTH * scale).round().max(1.0);
         let cell_height = (CELL_HEIGHT * scale).round().max(1.0);
         (left_pad, top_pad, cell_width, cell_height)
@@ -572,6 +598,7 @@ impl TerminalModel {
 
         if finished {
             self.editor = None;
+            self.zen_requested = false;
             self.launcher.refresh();
             self.reset_parser();
             self.render_launcher();
@@ -679,6 +706,14 @@ impl TerminalModel {
             }
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 self.launcher.refresh();
+            }
+            KeyCode::Char('z') | KeyCode::Char('Z') => {
+                self.zen_requested = !self.zen_requested;
+                self.launcher.message = Some(if self.zen_requested {
+                    "ZENMODE REAL armado: el próximo archivo abrirá en pantalla completa.".into()
+                } else {
+                    "ZENMODE REAL desactivado.".into()
+                });
             }
             KeyCode::Backspace => {
                 if let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf) {
@@ -899,10 +934,17 @@ impl TerminalModel {
                 ),
             );
         } else if !self.launcher.creating {
+            let zen_state = if self.zen_requested {
+                "\x1b[1;38;5;222mON\x1b[0m"
+            } else {
+                "\x1b[38;5;244mOFF\x1b[0m"
+            };
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  Backspace subir  R refrescar\x1b[0m",
+                    &format!(
+                        "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  Z zenmode:{zen_state}  Backspace subir  R refrescar\x1b[0m"
+                    ),
                     inner_width,
                     "38;5;244",
                 ),
@@ -1031,7 +1073,61 @@ impl TerminalModel {
     }
 }
 
-pub fn run(initial: Option<PathBuf>) -> Result<()> {
+#[cfg(windows)]
+fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
+    let window_handle = ui.window().window_handle().ok()?;
+    let RawWindowHandle::Win32(win32) = window_handle.as_raw() else {
+        return None;
+    };
+    Some(win32.hwnd.get() as HWND)
+}
+
+#[cfg(windows)]
+unsafe fn focus_native_window(hwnd: HWND) {
+    unsafe {
+        let foreground = GetForegroundWindow();
+        let current_thread = GetCurrentThreadId();
+        let foreground_thread = if foreground.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
+        };
+
+        let attached = foreground_thread != 0
+            && foreground_thread != current_thread
+            && AttachThreadInput(current_thread, foreground_thread, 1) != 0;
+
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+        SetActiveWindow(hwnd);
+        SetFocus(hwnd);
+
+        if attached {
+            AttachThreadInput(current_thread, foreground_thread, 0);
+        }
+    }
+}
+
+#[cfg(windows)]
+unsafe fn set_zen_topmost(hwnd: HWND, enabled: bool) {
+    unsafe {
+        let insert_after = if enabled { HWND_TOPMOST } else { HWND_NOTOPMOST };
+        SetWindowPos(
+            hwnd,
+            insert_after,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+        if enabled {
+            focus_native_window(hwnd);
+        }
+    }
+}
+
+pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("femtovg".into())
@@ -1039,7 +1135,7 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
         .select()
         .map_err(|error| anyhow::anyhow!("No se pudo inicializar Winit/FemtoVG: {error}"))?;
 
-    let model = std::rc::Rc::new(std::cell::RefCell::new(TerminalModel::new(initial)?));
+    let model = std::rc::Rc::new(std::cell::RefCell::new(TerminalModel::new(initial, zen_requested)?));
     let ui = ZenWindow::new()?;
     ui.set_version_text(format!("v{APP_VERSION}").into());
 
@@ -1052,7 +1148,13 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
 
     {
         let weak = ui.as_weak();
+        let model = model.clone();
         ui.on_close_window(move || {
+            // Real Zen Mode can only be left by closing Helix itself.
+            // Native close requests such as Alt+F4 are ignored while engaged.
+            if model.borrow().zen_engaged() {
+                return;
+            }
             if let Some(ui) = weak.upgrade() {
                 let _ = ui.hide();
             }
@@ -1064,8 +1166,10 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
 
     let weak = ui.as_weak();
     let timer = Timer::default();
+    let last_zen = std::rc::Rc::new(std::cell::Cell::new(false));
     {
         let model = model.clone();
+        let last_zen = last_zen.clone();
         timer.start(TimerMode::Repeated, Duration::from_millis(16), move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -1077,6 +1181,28 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
             let mut model = model.borrow_mut();
             model.resize(size.width, size.height, scale);
             model.tick();
+
+            let zen = model.zen_engaged();
+            if zen != last_zen.get() {
+                ui.set_zen_active(zen);
+                ui.window().set_fullscreen(zen);
+
+                #[cfg(windows)]
+                if let Some(hwnd) = slint_hwnd(&ui) {
+                    unsafe { set_zen_topmost(hwnd, zen); }
+                }
+
+                last_zen.set(zen);
+                model.dirty = true;
+            }
+
+            #[cfg(windows)]
+            if zen
+                && let Some(hwnd) = slint_hwnd(&ui)
+                && unsafe { GetForegroundWindow() != hwnd }
+            {
+                unsafe { focus_native_window(hwnd); }
+            }
 
             if model.dirty {
                 ui.set_terminal_image(model.render());
