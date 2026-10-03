@@ -13,7 +13,6 @@ use zip::ZipArchive;
 
 use crate::pty_protocol::Replies;
 
-pub const HELIX_SST_VERSION: &str = "0.2.3";
 pub const HELIX_UPSTREAM_VERSION: &str = "25.07.1";
 
 #[cfg(windows)]

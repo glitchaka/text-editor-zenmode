@@ -14,7 +14,7 @@ use slint::{
 };
 
 
-use crate::editor::{EditorSession, HELIX_SST_VERSION};
+use crate::editor::EditorSession;
 
 const INITIAL_COLS: u16 = 112;
 const INITIAL_ROWS: u16 = 34;
@@ -23,6 +23,7 @@ const PAD_Y: f32 = 12.0;
 const CELL_WIDTH: f32 = 8.0;
 const CELL_HEIGHT: f32 = 18.0;
 const FONT_SIZE: f32 = 14.0;
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const BG: Rgb = Rgb(0x11, 0x16, 0x19);
 const FG: Rgb = Rgb(0xDF, 0xE8, 0xEF);
@@ -447,7 +448,7 @@ impl TerminalModel {
         push_line(
             &mut out,
             &format!(
-                "\x1b[1;38;5;222mHELIX-SST\x1b[0m \x1b[38;5;244mv{HELIX_SST_VERSION}\x1b[0m"
+                "\x1b[1;38;5;222mHelix SST\x1b[0m \x1b[38;5;244mversión {APP_VERSION}\x1b[0m"
             ),
         );
         push_line(
@@ -515,7 +516,7 @@ impl TerminalModel {
             push_line(&mut out, "");
             push_line(
                 &mut out,
-                "\x1b[38;5;244m↑/↓ mover · Enter abrir · N nuevo · Backspace subir · R refrescar\x1b[0m",
+                "\x1b[38;5;244mhelix-sst> ↑/↓ seleccionar · Enter abrir · N nuevo · Backspace subir · R refrescar\x1b[0m",
             );
         }
 
@@ -802,9 +803,10 @@ fn raw_key_code(text: &str, shift: bool) -> Option<KeyCode> {
 
 fn file_icon(entry: &Entry) -> &'static str {
     if entry.directory {
-        return "\u{f07b}";
+        return "\u{f07b}"; // folder
     }
 
+    let name = entry.name.to_ascii_lowercase();
     let extension = entry
         .path
         .extension()
@@ -812,16 +814,40 @@ fn file_icon(entry: &Entry) -> &'static str {
         .unwrap_or("")
         .to_ascii_lowercase();
 
+    if name == "cargo.toml" || name == "cargo.lock" {
+        return "\u{e7a8}"; // Rust/Cargo
+    }
+    if name.ends_with(".lock") || name.contains("artifact-lock") || name.contains("build-lock") {
+        return "\u{f023}"; // lock
+    }
+
     match extension.as_str() {
-        "txt" | "text" | "md" | "markdown" | "rst" | "log" => "\u{f15c}",
-        "rs" | "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts"
-        | "tsx" | "jsx" | "html" | "css" | "scss" | "toml" | "yaml" | "yml"
-        | "json" | "xml" | "sh" | "ps1" => "\u{f1c9}",
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => "\u{f1c5}",
+        // Writing / documents
+        "" | "txt" | "text" | "md" | "markdown" | "rst" | "log" => "\u{f15c}",
         "pdf" => "\u{f1c1}",
-        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" => "\u{f1c6}",
+        "doc" | "docx" | "odt" | "rtf" => "\u{f1c2}",
+        "xls" | "xlsx" | "ods" | "csv" => "\u{f1c3}",
+        "ppt" | "pptx" | "odp" => "\u{f1c4}",
+
+        // Source / configuration
+        "rs" => "\u{e7a8}",
+        "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts"
+        | "tsx" | "jsx" | "html" | "css" | "scss" | "toml" | "yaml" | "yml"
+        | "json" | "xml" | "sh" | "bash" | "ps1" | "bat" | "cmd" => "\u{f1c9}",
+
+        // Windows/build artifacts
+        "exe" | "com" | "msi" => "\u{f2d0}",
+        "dll" => "\u{f085}",
+        "pdb" | "obj" | "lib" | "a" => "\u{f1b3}",
+
+        // Media
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => "\u{f1c5}",
         "mp3" | "wav" | "flac" | "ogg" | "m4a" => "\u{f1c7}",
         "mp4" | "mkv" | "avi" | "mov" | "webm" => "\u{f1c8}",
+
+        // Archives
+        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" | "bz2" => "\u{f1c6}",
+
         _ => "\u{f15b}",
     }
 }
