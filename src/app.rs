@@ -523,7 +523,6 @@ impl TerminalModel {
         }
 
         self.parser.process(out.as_bytes());
-        self.parser.callbacks_mut().bytes.clear();
         self.dirty = true;
     }
 
