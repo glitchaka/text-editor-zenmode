@@ -1,22 +1,70 @@
 # Helix-SST Zenmode
 
-Editor de texto sin distracciones basado en Helix, extraído como proyecto independiente desde la integración Helix-SST de Shell Shock Tool.
+Aplicación independiente basada en la versión de **Helix-SST integrada en Shell Shock Tool**, sin retirar ni modificar esa integración.
 
-## Flujo
+La aplicación abre una **terminal dedicada al editor**. No inicia una shell ni muestra comandos de SST.
 
-Al abrir `helix-sst-zen.exe` aparece un selector de archivos en modo terminal:
+## Flujo de inicio
 
-- ↑ / ↓: mover selección
-- Enter: abrir archivo o entrar a directorio
-- N: crear archivo nuevo
-- Backspace: subir al directorio padre
-- R: refrescar
-- Esc: cerrar
+Al abrir `helix-sst-zen.exe`, la ventana muestra los archivos y directorios del directorio actual:
 
-Al abrir o crear un archivo, la misma ventana pasa a Helix. Al salir de Helix vuelve al selector en el mismo directorio.
+```text
+HELIX-SST
+C:\Users\...\Documents\Novela
 
-La copia integrada en `sst-blueversion` no se modifica.
+> [ Nuevo archivo ]
+  ▸ notas/
+    capitulo-01.txt
+    capitulo-02.txt
+    worldbuilding.md
+```
+
+Controles del selector:
+
+- `↑` / `↓`: mover la selección.
+- `Enter`: abrir el archivo seleccionado o entrar a un directorio.
+- `N`: crear un archivo nuevo.
+- `Backspace`: subir al directorio padre.
+- `R`: refrescar el listado.
+- `Esc`: cerrar el lanzador.
+
+Al abrir o crear un archivo, **la misma ventana pasa a Helix**. Al cerrar Helix, vuelve al selector y conserva el directorio.
+
+## Helix-SST incluido
+
+La primera versión independiente conserva la configuración de Helix-SST 0.2.3:
+
+- Helix 25.07.1.
+- Tema Gruvbox.
+- Corrector ortográfico es-CL.
+- Diagnóstico ortográfico virtual debajo de la línea activa:
+  ```text
+  palabraa
+       └─ Posible error ortográfico: «palabraa»
+  ```
+- `F2` para acciones ortográficas.
+- `Alt+D` y `Ctrl+G` para insertar `—`.
+- Portapapeles del sistema mediante proveedor propio.
+- Puente PTY/VT con normalización de LF desnudo para evitar el repaint en escalera observado dentro de SST.
+- UTF-8 y true color.
+
+## Compilación
+
+El proyecto está pensado inicialmente para Windows.
+
+```powershell
+cargo build --release
+```
+
+Durante la compilación se obtiene la versión fijada de Helix, JetBrainsMono Nerd Font y el diccionario es-CL. Se pueden proporcionar archivos locales mediante:
+
+```text
+HELIX_SST_ARCHIVE
+HELIX_SST_FONT_FILE
+```
+
+El workflow de GitHub es **manual** (`workflow_dispatch`); no compila automáticamente cada push.
 
 ## Estado
 
-Versión inicial del proyecto independiente. No compilada ni probada por el asistente.
+Implementación inicial subida sin compilar ni ejecutar pruebas por parte del asistente, siguiendo la política de trabajo del proyecto.
