@@ -1,35 +1,20 @@
 use std::{
-    cell::Cell,
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    rc::Rc,
     time::Duration,
 };
 
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use fontdue::{Font, FontSettings, Metrics};
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{
     BackendSelector, ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer,
     TimerMode,
 };
 
-#[cfg(windows)]
-use windows_sys::Win32::{
-    Foundation::HWND,
-    System::Threading::{AttachThreadInput, GetCurrentThreadId},
-    UI::WindowsAndMessaging::{
-        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetActiveWindow,
-        SetFocus, SetForegroundWindow, ShowWindow, SW_RESTORE,
-    },
-};
 
-use crate::{
-    editor::EditorSession,
-    pty_protocol::Replies,
-};
+use crate::editor::EditorSession;
 
 const INITIAL_COLS: u16 = 112;
 const INITIAL_ROWS: u16 = 34;
@@ -170,7 +155,7 @@ impl Launcher {
 }
 
 struct TerminalModel {
-    parser: vt100::Parser<Replies>,
+    parser: vt100::Parser,
     font: Font,
     glyphs: HashMap<(char, u16), Glyph>,
     launcher: Launcher,
@@ -206,12 +191,7 @@ impl TerminalModel {
             .map_err(|error| anyhow::anyhow!("No se pudo cargar la fuente: {error}"))?;
 
         let mut this = Self {
-            parser: vt100::Parser::new_with_callbacks(
-                INITIAL_ROWS,
-                INITIAL_COLS,
-                2_000,
-                Replies::default(),
-            ),
+            parser: vt100::Parser::new(INITIAL_ROWS, INITIAL_COLS, 2_000),
             font,
             glyphs: HashMap::new(),
             launcher: Launcher::new(cwd),
@@ -282,7 +262,7 @@ impl TerminalModel {
 
     fn reset_parser(&mut self) {
         let (cols, rows) = self.terminal_size();
-        self.parser = vt100::Parser::new_with_callbacks(rows, cols, 2_000, Replies::default());
+        self.parser = vt100::Parser::new(rows, cols, 2_000);
     }
 
     fn open_editor(&mut self, file: PathBuf) -> Result<()> {
@@ -304,12 +284,6 @@ impl TerminalModel {
                     Ok(bytes) => {
                         let bytes = editor.normalize_output(&bytes);
                         self.parser.process(&bytes);
-
-                        let replies = std::mem::take(&mut self.parser.callbacks_mut().bytes);
-                        if !replies.is_empty() {
-                            let _ = editor.write_reply(&replies);
-                        }
-
                         self.dirty = true;
                     }
                     Err(error) => {
@@ -355,9 +329,8 @@ impl TerminalModel {
             return;
         }
 
-        let win32 = self.parser.callbacks().win32_input;
         if let Some(editor) = self.editor.as_ref() {
-            let _ = editor.send_key(key, win32);
+            let _ = editor.send_key(key, editor.win32_input());
         }
     }
 
@@ -651,43 +624,6 @@ impl TerminalModel {
     }
 }
 
-#[cfg(windows)]
-fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
-    let handle = ui.window().window_handle();
-    let window_handle = handle.window_handle().ok()?;
-    let RawWindowHandle::Win32(win32) = window_handle.as_raw() else {
-        return None;
-    };
-    Some(win32.hwnd.get() as HWND)
-}
-
-#[cfg(windows)]
-unsafe fn focus_native_window(hwnd: HWND) {
-    unsafe {
-        let foreground = GetForegroundWindow();
-        let current_thread = GetCurrentThreadId();
-        let foreground_thread = if foreground.is_null() {
-            0
-        } else {
-            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
-        };
-
-        let attached = foreground_thread != 0
-            && foreground_thread != current_thread
-            && AttachThreadInput(current_thread, foreground_thread, 1) != 0;
-
-        ShowWindow(hwnd, SW_RESTORE);
-        BringWindowToTop(hwnd);
-        SetForegroundWindow(hwnd);
-        SetActiveWindow(hwnd);
-        SetFocus(hwnd);
-
-        if attached {
-            AttachThreadInput(current_thread, foreground_thread, 0);
-        }
-    }
-}
-
 pub fn run(initial: Option<PathBuf>) -> Result<()> {
     BackendSelector::new()
         .backend_name("winit".into())
@@ -707,26 +643,10 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
 
     ui.show()?;
 
-    #[cfg(windows)]
-    {
-        let weak = ui.as_weak();
-        Timer::single_shot(Duration::ZERO, move || {
-            if let Some(ui) = weak.upgrade()
-                && let Some(hwnd) = slint_hwnd(&ui)
-            {
-                unsafe { focus_native_window(hwnd); }
-            }
-        });
-    }
-
     let weak = ui.as_weak();
-    #[cfg(windows)]
-    let startup_focus_attempts = Rc::new(Cell::new(30u8));
     let timer = Timer::default();
     {
         let model = model.clone();
-        #[cfg(windows)]
-        let startup_focus_attempts = startup_focus_attempts.clone();
         timer.start(TimerMode::Repeated, Duration::from_millis(16), move || {
             let Some(ui) = weak.upgrade() else {
                 return;
@@ -734,17 +654,6 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
 
             let size = ui.window().size();
             let scale = ui.window().scale_factor();
-
-            #[cfg(windows)]
-            if let Some(hwnd) = slint_hwnd(&ui) {
-                let focused = unsafe { GetForegroundWindow() == hwnd };
-                if !focused && startup_focus_attempts.get() > 0 {
-                    unsafe { focus_native_window(hwnd); }
-                    startup_focus_attempts.set(startup_focus_attempts.get().saturating_sub(1));
-                } else if focused {
-                    startup_focus_attempts.set(0);
-                }
-            }
 
             let mut model = model.borrow_mut();
             model.resize(size.width, size.height, scale);

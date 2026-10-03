@@ -11,6 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use zip::ZipArchive;
 
+use crate::pty_protocol::Replies;
+
 pub const HELIX_SST_VERSION: &str = "0.2.3";
 pub const HELIX_UPSTREAM_VERSION: &str = "25.07.1";
 
@@ -30,6 +32,7 @@ struct Install {
 pub struct EditorSession {
     master: Box<dyn MasterPty + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    protocol: Arc<Mutex<vt100::Parser<Replies>>>,
     output: mpsc::Receiver<io::Result<Vec<u8>>>,
     finished: mpsc::Receiver<u32>,
     previous_was_cr: bool,
@@ -62,14 +65,43 @@ impl EditorSession {
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = Arc::new(Mutex::new(pair.master.take_writer()?));
+        let protocol = Arc::new(Mutex::new(vt100::Parser::new_with_callbacks(
+            rows,
+            cols,
+            0,
+            Replies::default(),
+        )));
+        let reply_writer = writer.clone();
+        let reply_protocol = protocol.clone();
         let (output_tx, output) = mpsc::channel::<io::Result<Vec<u8>>>();
 
+        // Helix can request a cursor report while it is still starting.
+        // Parse and answer terminal queries in the reader thread before
+        // spawn_command() returns, matching the working SST integration.
         thread::spawn(move || {
             let mut buffer = [0u8; 16 * 1024];
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(count) => {
+                        let replies = {
+                            let mut parser =
+                                reply_protocol.lock().unwrap_or_else(|e| e.into_inner());
+                            parser.process(&buffer[..count]);
+                            std::mem::take(&mut parser.callbacks_mut().bytes)
+                        };
+
+                        if !replies.is_empty() {
+                            let mut writer =
+                                reply_writer.lock().unwrap_or_else(|e| e.into_inner());
+                            if let Err(error) =
+                                writer.write_all(&replies).and_then(|_| writer.flush())
+                            {
+                                let _ = output_tx.send(Err(error));
+                                break;
+                            }
+                        }
+
                         if output_tx.send(Ok(buffer[..count].to_vec())).is_err() {
                             break;
                         }
@@ -97,6 +129,7 @@ impl EditorSession {
         Ok(Self {
             master: pair.master,
             writer,
+            protocol,
             output,
             finished,
             previous_was_cr: false,
@@ -104,6 +137,11 @@ impl EditorSession {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
+        self.protocol
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .screen_mut()
+            .set_size(rows, cols);
         self.master.resize(PtySize {
             rows,
             cols,
@@ -129,6 +167,14 @@ impl EditorSession {
         writer.write_all(bytes)?;
         writer.flush()?;
         Ok(())
+    }
+
+    pub fn win32_input(&self) -> bool {
+        self.protocol
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .callbacks()
+            .win32_input
     }
 
     pub fn send_key(&self, key: KeyEvent, win32: bool) -> Result<()> {
