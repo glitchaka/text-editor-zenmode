@@ -40,7 +40,7 @@ pub struct EditorSession {
 
 impl EditorSession {
     pub fn start(file: &Path, cols: u16, rows: u16) -> Result<Self> {
-        let install = ensure_installed()?;
+        let install = ensure_installed(file)?;
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows,
@@ -209,7 +209,7 @@ impl EditorSession {
 }
 
 #[cfg(windows)]
-fn ensure_installed() -> Result<Install> {
+fn ensure_installed(current_file: &Path) -> Result<Install> {
     let launcher = std::env::current_exe()?;
     let exe_dir = launcher
         .parent()
@@ -279,6 +279,7 @@ fn ensure_installed() -> Result<Install> {
         &helix_config.join("languages.toml"),
         &launcher,
         &config_dir.join(".spell-user"),
+        current_file,
     )?;
 
     fs::write(
@@ -295,7 +296,7 @@ fn ensure_installed() -> Result<Install> {
 }
 
 #[cfg(not(windows))]
-fn ensure_installed() -> Result<Install> {
+fn ensure_installed(_current_file: &Path) -> Result<Install> {
     anyhow::bail!("Helix-SST Zenmode está empaquetado actualmente para Windows")
 }
 
@@ -388,9 +389,33 @@ F2 = "code_action"
     Ok(())
 }
 
-fn write_language_config(path: &Path, launcher: &Path, user_dictionary: &Path) -> Result<()> {
+fn write_language_config(
+    path: &Path,
+    launcher: &Path,
+    user_dictionary: &Path,
+    current_file: &Path,
+) -> Result<()> {
     let launcher = toml_path(launcher);
     let user_dictionary = toml_path(user_dictionary);
+
+    // Helix treats a string in file-types as an extension, or as the complete
+    // filename when the path has no extension. Register the current extensionless
+    // document explicitly so prose files such as "Pensamentao" still get the
+    // Helix-SST spelling LSP without forcing a .txt suffix.
+    let extensionless_name = if current_file.extension().is_none() {
+        current_file
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(toml_string)
+    } else {
+        None
+    };
+
+    let text_file_types = match extensionless_name {
+        Some(name) => format!("[\"txt\", \"text\", \"{name}\"]"),
+        None => "[\"txt\", \"text\"]".to_owned(),
+    };
+
     let content = format!(
         r#"[language-server.helix-sst-spell]
 command = "{launcher}"
@@ -399,7 +424,7 @@ args = ["--helix-sst-spell", "{user_dictionary}"]
 [[language]]
 name = "text"
 scope = "text.plain"
-file-types = ["txt", "text"]
+file-types = {text_file_types}
 language-servers = ["helix-sst-spell"]
 
 [[language]]
@@ -409,6 +434,12 @@ language-servers = ["helix-sst-spell"]
     );
     fs::write(path, content)?;
     Ok(())
+}
+
+fn toml_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
 }
 
 fn toml_path(path: &Path) -> String {
