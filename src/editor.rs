@@ -91,8 +91,7 @@ impl EditorSession {
                         };
 
                         if !replies.is_empty() {
-                            let mut writer =
-                                reply_writer.lock().unwrap_or_else(|e| e.into_inner());
+                            let mut writer = reply_writer.lock().unwrap_or_else(|e| e.into_inner());
                             if let Err(error) =
                                 writer.write_all(&replies).and_then(|_| writer.flush())
                             {
@@ -118,10 +117,7 @@ impl EditorSession {
 
         let (finished_tx, finished) = mpsc::channel();
         thread::spawn(move || {
-            let code = child
-                .wait()
-                .map(|status| status.exit_code())
-                .unwrap_or(1);
+            let code = child.wait().map(|status| status.exit_code()).unwrap_or(1);
             let _ = finished_tx.send(code);
         });
 
@@ -256,8 +252,8 @@ fn ensure_installed(current_file: &Path) -> Result<Install> {
             }
         }
 
-        let hx = find_named(&root, "hx.exe", false)
-            .context("El paquete de Helix no contiene hx.exe")?;
+        let hx =
+            find_named(&root, "hx.exe", false).context("El paquete de Helix no contiene hx.exe")?;
         let runtime = find_named(&root, "runtime", true)
             .context("El paquete de Helix no contiene runtime")?;
 
@@ -333,9 +329,7 @@ fn write_install_marker(root: &Path, marker: &Path, hx: &Path, runtime: &Path) -
 
     fs::write(
         marker,
-        format!(
-            "helix-upstream={HELIX_UPSTREAM_VERSION}\nhx={hx}\nruntime={runtime}\n"
-        ),
+        format!("helix-upstream={HELIX_UPSTREAM_VERSION}\nhx={hx}\nruntime={runtime}\n"),
     )?;
     Ok(())
 }
@@ -436,9 +430,7 @@ language-servers = ["helix-sst-spell"]
 }
 
 fn toml_string(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn toml_path(path: &Path) -> String {
@@ -452,7 +444,11 @@ fn find_named(root: &Path, name: &str, directory: bool) -> Option<PathBuf> {
     let entries = fs::read_dir(root).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
-        let matches_kind = if directory { path.is_dir() } else { path.is_file() };
+        let matches_kind = if directory {
+            path.is_dir()
+        } else {
+            path.is_file()
+        };
         if matches_kind
             && path
                 .file_name()
@@ -540,9 +536,8 @@ fn encode_input(key: KeyEvent, win32: bool) -> Option<Vec<u8>> {
     }
 
     #[cfg(windows)]
-    let scan = unsafe {
-        windows_sys::Win32::UI::Input::KeyboardAndMouse::MapVirtualKeyW(vk.into(), 0)
-    };
+    let scan =
+        unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::MapVirtualKeyW(vk.into(), 0) };
     #[cfg(not(windows))]
     let scan = 0;
 
@@ -555,10 +550,13 @@ fn encode_input(key: KeyEvent, win32: bool) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     for down in [1, 0] {
         for &unit in &units {
-            let unit = if down == 0 && units.len() > 1 { 0 } else { unit };
-            bytes.extend_from_slice(
-                format!("\x1b[{vk};{scan};{unit};{down};{state};1_").as_bytes(),
-            );
+            let unit = if down == 0 && units.len() > 1 {
+                0
+            } else {
+                unit
+            };
+            bytes
+                .extend_from_slice(format!("\x1b[{vk};{scan};{unit};{down};{state};1_").as_bytes());
         }
     }
     Some(bytes)
@@ -639,13 +637,7 @@ fn csi_tilde(sequence: &str, shift: bool, alt: bool, ctrl: bool) -> Vec<u8> {
     }
 }
 
-fn csi_tilde_or_simple(
-    simple: &str,
-    tilde: &str,
-    shift: bool,
-    alt: bool,
-    ctrl: bool,
-) -> Vec<u8> {
+fn csi_tilde_or_simple(simple: &str, tilde: &str, shift: bool, alt: bool, ctrl: bool) -> Vec<u8> {
     if modifier_code(shift, alt, ctrl) == 1 {
         format!("\x1b[{simple}").into_bytes()
     } else {

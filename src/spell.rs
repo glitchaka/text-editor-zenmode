@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use spellbook::Dictionary;
 
 const ES_CL_AFF: &str = include_str!(concat!(env!("OUT_DIR"), "/helix-sst-es-CL.aff"));
@@ -103,17 +103,14 @@ pub fn run_lsp(user_dictionary: PathBuf) -> Result<i32> {
             }
             "textDocument/codeAction" => {
                 if let Some(id) = id {
-                    let actions = server.code_actions(
-                        message.get("params").unwrap_or(&Value::Null),
-                    );
+                    let actions =
+                        server.code_actions(message.get("params").unwrap_or(&Value::Null));
                     send_response(&mut output, id, Value::Array(actions))?;
                 }
             }
             "workspace/executeCommand" => {
                 let mut added = false;
-                if message
-                    .pointer("/params/command")
-                    .and_then(Value::as_str)
+                if message.pointer("/params/command").and_then(Value::as_str)
                     == Some(ADD_WORD_COMMAND)
                 {
                     if let Some(word) = message
@@ -215,7 +212,10 @@ impl SpellServer {
 
             let ignored = ignored_spans(line);
             for (start, end, word) in word_ranges(line) {
-                if ignored.iter().any(|(left, right)| start >= *left && start < *right) {
+                if ignored
+                    .iter()
+                    .any(|(left, right)| start >= *left && start < *right)
+                {
                     continue;
                 }
                 if !self.should_check(&word) || self.is_correct(&word) {
@@ -252,7 +252,11 @@ impl SpellServer {
         if word.chars().any(|ch| ch.is_ascii_digit() || ch == '_') {
             return false;
         }
-        if word.chars().all(|ch| !ch.is_alphabetic() || ch.is_uppercase()) && letters <= 6 {
+        if word
+            .chars()
+            .all(|ch| !ch.is_alphabetic() || ch.is_uppercase())
+            && letters <= 6
+        {
             return false;
         }
         true
@@ -379,7 +383,9 @@ fn word_ranges(line: &str) -> Vec<(usize, usize, String)> {
 
 fn push_word(line: &str, mut start: usize, mut end: usize, out: &mut Vec<(usize, usize, String)>) {
     while start < end {
-        let Some(ch) = line[start..end].chars().next() else { break };
+        let Some(ch) = line[start..end].chars().next() else {
+            break;
+        };
         if matches!(ch, '\'' | '’') {
             start += ch.len_utf8();
         } else {
@@ -387,7 +393,9 @@ fn push_word(line: &str, mut start: usize, mut end: usize, out: &mut Vec<(usize,
         }
     }
     while start < end {
-        let Some(ch) = line[start..end].chars().next_back() else { break };
+        let Some(ch) = line[start..end].chars().next_back() else {
+            break;
+        };
         if matches!(ch, '\'' | '’') {
             end -= ch.len_utf8();
         } else {
@@ -467,23 +475,31 @@ fn read_message(reader: &mut impl BufRead) -> Result<Option<Value>> {
     let length = content_length.context("mensaje LSP sin Content-Length")?;
     let mut payload = vec![0u8; length];
     reader.read_exact(&mut payload)?;
-    Ok(Some(serde_json::from_slice(&payload).context("JSON LSP inválido")?))
+    Ok(Some(
+        serde_json::from_slice(&payload).context("JSON LSP inválido")?,
+    ))
 }
 
 fn send_response(output: &mut impl Write, id: Value, result: Value) -> Result<()> {
-    send_json(output, &json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "result": result
-    }))
+    send_json(
+        output,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": result
+        }),
+    )
 }
 
 fn send_notification(output: &mut impl Write, method: &str, params: Value) -> Result<()> {
-    send_json(output, &json!({
-        "jsonrpc": "2.0",
-        "method": method,
-        "params": params
-    }))
+    send_json(
+        output,
+        &json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params
+        }),
+    )
 }
 
 fn send_json(output: &mut impl Write, value: &Value) -> Result<()> {

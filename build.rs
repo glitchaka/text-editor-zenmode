@@ -1,26 +1,20 @@
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
-const FONT_URL: &str =
-    "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.3.0/patched-fonts/JetBrainsMono/Ligatures/Regular/JetBrainsMonoNerdFontMono-Regular.ttf";
+const FONT_URL: &str = "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.3.0/patched-fonts/JetBrainsMono/Ligatures/Regular/JetBrainsMonoNerdFontMono-Regular.ttf";
 const FONT_NAME: &str = "JetBrainsMonoNerdFontMono-Regular.ttf";
 
 const HELIX_VERSION: &str = "25.07.1";
 const HELIX_ARCHIVE_NAME: &str = "helix-25.07.1-x86_64-windows.zip";
-const HELIX_URL: &str =
-    "https://github.com/helix-editor/helix/releases/download/25.07.1/helix-25.07.1-x86_64-windows.zip";
+const HELIX_URL: &str = "https://github.com/helix-editor/helix/releases/download/25.07.1/helix-25.07.1-x86_64-windows.zip";
 
 const SPELL_DICT_REV: &str = "8cfea406b505e4d7df52d5a19bce525df98c54ab";
-const SPELL_AFF_URL: &str =
-    "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/es-CL/index.aff";
-const SPELL_DIC_URL: &str =
-    "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/es-CL/index.dic";
-const SPELL_LICENSE_URL: &str =
-    "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/es-CL/license";
+const SPELL_AFF_URL: &str = "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/es-CL/index.aff";
+const SPELL_DIC_URL: &str = "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/es-CL/index.dic";
+const SPELL_LICENSE_URL: &str = "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/es-CL/license";
 
 fn main() {
     println!("cargo:rerun-if-env-changed=HELIX_SST_FONT_FILE");
@@ -68,8 +62,7 @@ fn download(url: &str, destination: &Path, description: &str) {
 fn ensure_font(out_dir: &Path) {
     let destination = out_dir.join(FONT_NAME);
     if let Some(source) = env::var_os("HELIX_SST_FONT_FILE") {
-        fs::copy(Path::new(&source), &destination)
-            .expect("No se pudo copiar HELIX_SST_FONT_FILE");
+        fs::copy(Path::new(&source), &destination).expect("No se pudo copiar HELIX_SST_FONT_FILE");
     } else if !destination.is_file() {
         download(FONT_URL, &destination, "JetBrainsMono Nerd Font");
     }
@@ -102,14 +95,9 @@ fn ensure_spell_dictionary(out_dir: &Path) {
 fn ensure_helix_archive(out_dir: &Path) {
     let destination = out_dir.join(HELIX_ARCHIVE_NAME);
     if let Some(source) = env::var_os("HELIX_SST_ARCHIVE") {
-        fs::copy(Path::new(&source), &destination)
-            .expect("No se pudo copiar HELIX_SST_ARCHIVE");
+        fs::copy(Path::new(&source), &destination).expect("No se pudo copiar HELIX_SST_ARCHIVE");
     } else if !destination.is_file() {
-        download(
-            HELIX_URL,
-            &destination,
-            &format!("Helix {HELIX_VERSION}"),
-        );
+        download(HELIX_URL, &destination, &format!("Helix {HELIX_VERSION}"));
     }
     if fs::metadata(&destination).map(|m| m.len()).unwrap_or(0) < 1_000_000 {
         panic!("El paquete de Helix embebido parece incompleto");

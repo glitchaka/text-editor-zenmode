@@ -21,12 +21,12 @@ use windows_sys::Win32::{
     UI::{
         Input::KeyboardAndMouse::{SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
-            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
-            SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
+            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
+            SetWindowPos,
         },
     },
 };
-
 
 use crate::editor::EditorSession;
 
@@ -430,9 +430,7 @@ impl TerminalModel {
         let height = height.max(1);
         let scale = scale.max(0.5);
 
-        if self.width == width
-            && self.height == height
-            && (self.scale - scale).abs() < f32::EPSILON
+        if self.width == width && self.height == height && (self.scale - scale).abs() < f32::EPSILON
         {
             return;
         }
@@ -446,7 +444,8 @@ impl TerminalModel {
             self.parser.screen_mut().set_size(rows, cols);
             if let Some(editor) = self.editor.as_mut() {
                 if let Err(error) = editor.resize(cols, rows) {
-                    self.launcher.message = Some(format!("No se pudo redimensionar Helix: {error}"));
+                    self.launcher.message =
+                        Some(format!("No se pudo redimensionar Helix: {error}"));
                 }
             } else if self.splash_active {
                 self.render_splash();
@@ -473,7 +472,11 @@ impl TerminalModel {
 
         push_line(
             &mut out,
-            &format!("{}╭{}╮", " ".repeat((width.saturating_sub(frame_width)) / 2), "─".repeat(inner_width)),
+            &format!(
+                "{}╭{}╮",
+                " ".repeat((width.saturating_sub(frame_width)) / 2),
+                "─".repeat(inner_width)
+            ),
         );
         push_line(
             &mut out,
@@ -491,10 +494,7 @@ impl TerminalModel {
                 frame_width,
             ),
         );
-        push_line(
-            &mut out,
-            &centered_frame_line("", width, frame_width),
-        );
+        push_line(&mut out, &centered_frame_line("", width, frame_width));
         push_line(
             &mut out,
             &centered_frame_line(
@@ -511,10 +511,7 @@ impl TerminalModel {
                 frame_width,
             ),
         );
-        push_line(
-            &mut out,
-            &centered_frame_line("", width, frame_width),
-        );
+        push_line(&mut out, &centered_frame_line("", width, frame_width));
         push_line(
             &mut out,
             &centered_frame_line(
@@ -525,7 +522,11 @@ impl TerminalModel {
         );
         push_last_line(
             &mut out,
-            &format!("{}╰{}╯", " ".repeat((width.saturating_sub(frame_width)) / 2), "─".repeat(inner_width)),
+            &format!(
+                "{}╰{}╯",
+                " ".repeat((width.saturating_sub(frame_width)) / 2),
+                "─".repeat(inner_width)
+            ),
         );
 
         self.parser.process(out.as_bytes());
@@ -655,11 +656,7 @@ impl TerminalModel {
                             self.launcher.message =
                                 Some("Ese nombre corresponde a un directorio.".into());
                         } else {
-                            match fs::OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(&path)
-                            {
+                            match fs::OpenOptions::new().create(true).append(true).open(&path) {
                                 Ok(_) => {
                                     self.launcher.creating = false;
                                     self.launcher.new_name.clear();
@@ -727,36 +724,33 @@ impl TerminalModel {
             KeyCode::Esc => {
                 let _ = slint::quit_event_loop();
             }
-            KeyCode::Enter => {
-                match self.launcher.selected {
-                    0 => {
-                        self.zen_requested = false;
-                        self.launcher.message = Some("Modo normal seleccionado.".into());
-                    }
-                    1 => {
-                        self.zen_requested = true;
-                        self.launcher.message =
-                            Some("Zenmode real seleccionado.".into());
-                    }
-                    2 => {
-                        self.launcher.creating = true;
-                        self.launcher.new_name.clear();
-                        self.launcher.message = None;
-                    }
-                    _ => {
-                        if let Some(entry) = self.launcher.selected_entry().cloned() {
-                            if entry.directory {
-                                self.launcher.cwd = entry.path;
-                                self.launcher.selected = 0;
-                                self.launcher.message = None;
-                                self.launcher.refresh();
-                            } else if let Err(error) = self.open_editor(entry.path) {
-                                self.launcher.message = Some(error.to_string());
-                            }
+            KeyCode::Enter => match self.launcher.selected {
+                0 => {
+                    self.zen_requested = false;
+                    self.launcher.message = Some("Modo normal seleccionado.".into());
+                }
+                1 => {
+                    self.zen_requested = true;
+                    self.launcher.message = Some("Zenmode real seleccionado.".into());
+                }
+                2 => {
+                    self.launcher.creating = true;
+                    self.launcher.new_name.clear();
+                    self.launcher.message = None;
+                }
+                _ => {
+                    if let Some(entry) = self.launcher.selected_entry().cloned() {
+                        if entry.directory {
+                            self.launcher.cwd = entry.path;
+                            self.launcher.selected = 0;
+                            self.launcher.message = None;
+                            self.launcher.refresh();
+                        } else if let Err(error) = self.open_editor(entry.path) {
+                            self.launcher.message = Some(error.to_string());
                         }
                     }
                 }
-            }
+            },
             _ => {}
         }
 
@@ -775,10 +769,7 @@ impl TerminalModel {
 
         push_line(
             &mut out,
-            &format!(
-                "\x1b[38;5;244m╭{}╮\x1b[0m",
-                "─".repeat(inner_width)
-            ),
+            &format!("\x1b[38;5;244m╭{}╮\x1b[0m", "─".repeat(inner_width)),
         );
         push_line(
             &mut out,
@@ -800,10 +791,7 @@ impl TerminalModel {
         );
         push_line(
             &mut out,
-            &format!(
-                "\x1b[38;5;244m├{}┤\x1b[0m",
-                "─".repeat(inner_width)
-            ),
+            &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
         );
 
         let path_text = truncate(
@@ -813,9 +801,7 @@ impl TerminalModel {
         push_line(
             &mut out,
             &framed_left(
-                &format!(
-                    "\x1b[38;5;244mDIRECTORIO\x1b[0m  \x1b[38;5;250m{path_text}\x1b[0m"
-                ),
+                &format!("\x1b[38;5;244mDIRECTORIO\x1b[0m  \x1b[38;5;250m{path_text}\x1b[0m"),
                 inner_width,
                 "38;5;244",
             ),
@@ -823,10 +809,7 @@ impl TerminalModel {
 
         push_line(
             &mut out,
-            &format!(
-                "\x1b[38;5;244m├{}┤\x1b[0m",
-                "─".repeat(inner_width)
-            ),
+            &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
         );
         push_line(
             &mut out,
@@ -852,41 +835,24 @@ impl TerminalModel {
                 "\x1b[38;5;244m○\x1b[0m"
             };
             let row = if selected_now {
-                format!(
-                    "\x1b[1;38;5;117m{marker}\x1b[0m  {state}  \x1b[1;38;5;255m{label}\x1b[0m"
-                )
+                format!("\x1b[1;38;5;117m{marker}\x1b[0m  {state}  \x1b[1;38;5;255m{label}\x1b[0m")
             } else {
-                format!(
-                    "{marker}  {state}  \x1b[38;5;250m{label}\x1b[0m"
-                )
+                format!("{marker}  {state}  \x1b[38;5;250m{label}\x1b[0m")
             };
-            push_line(
-                &mut out,
-                &framed_left(&row, inner_width, "38;5;244"),
-            );
+            push_line(&mut out, &framed_left(&row, inner_width, "38;5;244"));
         }
 
         push_line(
             &mut out,
-            &format!(
-                "\x1b[38;5;244m├{}┤\x1b[0m",
-                "─".repeat(inner_width)
-            ),
+            &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
         );
         push_line(
             &mut out,
-            &framed_left(
-                "\x1b[1;38;5;222mARCHIVOS\x1b[0m",
-                inner_width,
-                "38;5;244",
-            ),
+            &framed_left("\x1b[1;38;5;222mARCHIVOS\x1b[0m", inner_width, "38;5;244"),
         );
 
         if self.launcher.creating {
-            push_line(
-                &mut out,
-                &framed_left("", inner_width, "38;5;244"),
-            );
+            push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
             push_line(
                 &mut out,
                 &framed_left(
@@ -906,10 +872,7 @@ impl TerminalModel {
                     "38;5;244",
                 ),
             );
-            push_line(
-                &mut out,
-                &framed_left("", inner_width, "38;5;244"),
-            );
+            push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
             push_line(
                 &mut out,
                 &framed_left(
@@ -920,9 +883,7 @@ impl TerminalModel {
             );
         } else {
             let chrome_rows = 15usize;
-            let available = (rows as usize)
-                .saturating_sub(chrome_rows)
-                .max(3);
+            let available = (rows as usize).saturating_sub(chrome_rows).max(3);
             let selected = self.launcher.selected;
             let total = self.launcher.entries.len() + 1;
             let file_selected = selected.saturating_sub(2);
@@ -943,10 +904,7 @@ impl TerminalModel {
                     } else {
                         line
                     };
-                    push_line(
-                        &mut out,
-                        &framed_left(&line, inner_width, "38;5;244"),
-                    );
+                    push_line(&mut out, &framed_left(&line, inner_width, "38;5;244"));
                     continue;
                 }
 
@@ -968,20 +926,14 @@ impl TerminalModel {
                         )
                     };
 
-                    push_line(
-                        &mut out,
-                        &framed_left(&row, inner_width, "38;5;244"),
-                    );
+                    push_line(&mut out, &framed_left(&row, inner_width, "38;5;244"));
                 }
             }
         }
 
         push_line(
             &mut out,
-            &format!(
-                "\x1b[38;5;244m├{}┤\x1b[0m",
-                "─".repeat(inner_width)
-            ),
+            &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
         );
 
         if let Some(message) = self.launcher.message.as_deref() {
@@ -1007,10 +959,7 @@ impl TerminalModel {
 
         push_last_line(
             &mut out,
-            &format!(
-                "\x1b[38;5;244m╰{}╯\x1b[0m",
-                "─".repeat(inner_width)
-            ),
+            &format!("\x1b[38;5;244m╰{}╯\x1b[0m", "─".repeat(inner_width)),
         );
 
         self.parser.process(out.as_bytes());
@@ -1168,7 +1117,11 @@ unsafe fn focus_native_window(hwnd: HWND) {
 #[cfg(windows)]
 unsafe fn set_zen_topmost(hwnd: HWND, enabled: bool) {
     unsafe {
-        let insert_after = if enabled { HWND_TOPMOST } else { HWND_NOTOPMOST };
+        let insert_after = if enabled {
+            HWND_TOPMOST
+        } else {
+            HWND_NOTOPMOST
+        };
         SetWindowPos(
             hwnd,
             insert_after,
@@ -1192,7 +1145,10 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         .select()
         .map_err(|error| anyhow::anyhow!("No se pudo inicializar Winit/FemtoVG: {error}"))?;
 
-    let model = std::rc::Rc::new(std::cell::RefCell::new(TerminalModel::new(initial, zen_requested)?));
+    let model = std::rc::Rc::new(std::cell::RefCell::new(TerminalModel::new(
+        initial,
+        zen_requested,
+    )?));
     let ui = ZenWindow::new()?;
     ui.set_version_text(format!("v{APP_VERSION}").into());
 
@@ -1246,7 +1202,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
 
                 #[cfg(windows)]
                 if let Some(hwnd) = slint_hwnd(&ui) {
-                    unsafe { set_zen_topmost(hwnd, zen); }
+                    unsafe {
+                        set_zen_topmost(hwnd, zen);
+                    }
                 }
 
                 last_zen.set(zen);
@@ -1258,7 +1216,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
                 && let Some(hwnd) = slint_hwnd(&ui)
                 && unsafe { GetForegroundWindow() != hwnd }
             {
-                unsafe { focus_native_window(hwnd); }
+                unsafe {
+                    focus_native_window(hwnd);
+                }
             }
 
             if model.dirty {
@@ -1272,13 +1232,7 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     Ok(())
 }
 
-fn handle_key(
-    model: &mut TerminalModel,
-    text: &str,
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-) {
+fn handle_key(model: &mut TerminalModel, text: &str, ctrl: bool, alt: bool, shift: bool) {
     use slint::platform::Key;
 
     if [
@@ -1416,30 +1370,21 @@ fn file_icon(entry: &Entry) -> (char, &'static str) {
     }
 
     match extension.as_str() {
-        "" | "txt" | "text" | "md" | "markdown" | "rst" | "log" => {
-            (ICON_DOCUMENT, "38;5;255")
-        }
+        "" | "txt" | "text" | "md" | "markdown" | "rst" | "log" => (ICON_DOCUMENT, "38;5;255"),
         "pdf" => (ICON_PDF, "38;5;203"),
-        "doc" | "docx" | "odt" | "rtf"
-        | "xls" | "xlsx" | "ods" | "csv"
-        | "ppt" | "pptx" | "odp" => (ICON_OFFICE, "38;5;75"),
+        "doc" | "docx" | "odt" | "rtf" | "xls" | "xlsx" | "ods" | "csv" | "ppt" | "pptx"
+        | "odp" => (ICON_OFFICE, "38;5;75"),
         "rs" => (ICON_RUST, "38;5;208"),
-        "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts"
-        | "tsx" | "jsx" | "html" | "css" | "scss" | "toml" | "yaml" | "yml"
-        | "json" | "xml" | "sh" | "bash" | "ps1" | "bat" | "cmd" => {
-            (ICON_CODE, "38;5;114")
-        }
+        "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts" | "tsx" | "jsx" | "html"
+        | "css" | "scss" | "toml" | "yaml" | "yml" | "json" | "xml" | "sh" | "bash" | "ps1"
+        | "bat" | "cmd" => (ICON_CODE, "38;5;114"),
         "exe" | "com" | "msi" => (ICON_EXECUTABLE, "38;5;75"),
         "dll" => (ICON_COMPONENT, "38;5;110"),
         "pdb" | "obj" | "lib" | "a" => (ICON_BUILD, "38;5;244"),
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => {
-            (ICON_IMAGE, "38;5;176")
-        }
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => (ICON_IMAGE, "38;5;176"),
         "mp3" | "wav" | "flac" | "ogg" | "m4a" => (ICON_AUDIO, "38;5;175"),
         "mp4" | "mkv" | "avi" | "mov" | "webm" => (ICON_VIDEO, "38;5;175"),
-        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" | "bz2" => {
-            (ICON_ARCHIVE, "38;5;179")
-        }
+        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" | "bz2" => (ICON_ARCHIVE, "38;5;179"),
         _ => (ICON_DOCUMENT, "38;5;250"),
     }
 }
@@ -1498,7 +1443,10 @@ fn visible_width(text: &str) -> usize {
 fn centered_frame_line(content: &str, terminal_width: usize, frame_width: usize) -> String {
     let inner_width = frame_width.saturating_sub(2);
     let margin = " ".repeat(terminal_width.saturating_sub(frame_width) / 2);
-    format!("{margin}{}", framed_center(content, inner_width, "38;5;244"))
+    format!(
+        "{margin}{}",
+        framed_center(content, inner_width, "38;5;244")
+    )
 }
 
 fn push_last_line(out: &mut String, line: &str) {
@@ -1600,9 +1548,7 @@ fn terminal_icon(ch: char) -> Option<TerminalIcon> {
 }
 
 fn icon_shade(color: Rgb, numerator: u16, denominator: u16) -> Rgb {
-    let scale = |component: u8| {
-        ((u16::from(component) * numerator / denominator).min(255)) as u8
-    };
+    let scale = |component: u8| ((u16::from(component) * numerator / denominator).min(255)) as u8;
     Rgb(scale(color.0), scale(color.1), scale(color.2))
 }
 
@@ -1755,7 +1701,20 @@ fn draw_terminal_icon(
             for gy in [3, 7, 11] {
                 icon_rect(pixels, width, height, x, y, iw, ih, 2, gy, 12, 3, color);
                 icon_rect(pixels, width, height, x, y, iw, ih, 3, gy + 1, 8, 1, dark);
-                icon_rect(pixels, width, height, x, y, iw, ih, 12, gy + 1, 1, 1, bright);
+                icon_rect(
+                    pixels,
+                    width,
+                    height,
+                    x,
+                    y,
+                    iw,
+                    ih,
+                    12,
+                    gy + 1,
+                    1,
+                    1,
+                    bright,
+                );
             }
         }
 

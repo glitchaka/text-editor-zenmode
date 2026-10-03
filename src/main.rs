@@ -5,7 +5,10 @@ mod editor;
 mod pty_protocol;
 mod spell;
 
-use std::{io::{Read, Write}, path::PathBuf};
+use std::{
+    io::{Read, Write},
+    path::PathBuf,
+};
 
 use anyhow::Result;
 
