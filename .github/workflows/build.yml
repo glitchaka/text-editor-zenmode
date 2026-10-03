@@ -1,21 +1,64 @@
-name: build
+name: Build Helix-SST Zenmode
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-pc-windows-msvc
+  EXE_NAME: helix-sst-zen-windows-x86_64.exe
 
 jobs:
   windows:
+    name: Windows x86_64
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: Test
-        run: cargo test
-      - name: Build
-        run: cargo build --release
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build release
+        shell: pwsh
+        run: cargo build --release --target $env:TARGET
+
+      - name: Prepare distribution
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          $source = "target/$env:TARGET/release/helix-sst-zen.exe"
+          $target = "dist/$env:EXE_NAME"
+          Copy-Item $source $target
+
+          $hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:EXE_NAME" | Set-Content "$target.sha256" -Encoding ascii
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helix-sst-zen-windows-x86_64
+          path: |
+            dist/helix-sst-zen-windows-x86_64.exe
+            dist/helix-sst-zen-windows-x86_64.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/helix-sst-zen-windows-x86_64.exe
+            dist/helix-sst-zen-windows-x86_64.exe.sha256
