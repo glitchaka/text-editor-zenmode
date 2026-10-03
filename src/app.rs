@@ -328,12 +328,12 @@ impl Launcher {
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
         self.entries = entries;
-        self.selected = self.selected.min(self.entries.len());
+        self.selected = self.selected.min(self.entries.len() + 2);
     }
 
     fn selected_entry(&self) -> Option<&Entry> {
         self.selected
-            .checked_sub(1)
+            .checked_sub(3)
             .and_then(|index| self.entries.get(index))
     }
 }
@@ -697,23 +697,16 @@ impl TerminalModel {
             }
             KeyCode::Down => {
                 self.launcher.selected =
-                    (self.launcher.selected + 1).min(self.launcher.entries.len());
+                    (self.launcher.selected + 1).min(self.launcher.entries.len() + 2);
             }
             KeyCode::Char('n') | KeyCode::Char('N') => {
+                self.launcher.selected = 2;
                 self.launcher.creating = true;
                 self.launcher.new_name.clear();
                 self.launcher.message = None;
             }
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 self.launcher.refresh();
-            }
-            KeyCode::F(11) => {
-                self.zen_requested = !self.zen_requested;
-                self.launcher.message = Some(if self.zen_requested {
-                    "ZENMODE REAL seleccionado: el próximo archivo abrirá en pantalla completa.".into()
-                } else {
-                    "ZENMODE REAL desactivado.".into()
-                });
             }
             KeyCode::Backspace => {
                 if let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf) {
@@ -727,18 +720,32 @@ impl TerminalModel {
                 let _ = slint::quit_event_loop();
             }
             KeyCode::Enter => {
-                if self.launcher.selected == 0 {
-                    self.launcher.creating = true;
-                    self.launcher.new_name.clear();
-                    self.launcher.message = None;
-                } else if let Some(entry) = self.launcher.selected_entry().cloned() {
-                    if entry.directory {
-                        self.launcher.cwd = entry.path;
-                        self.launcher.selected = 0;
+                match self.launcher.selected {
+                    0 => {
+                        self.zen_requested = false;
+                        self.launcher.message = Some("Modo normal seleccionado.".into());
+                    }
+                    1 => {
+                        self.zen_requested = true;
+                        self.launcher.message =
+                            Some("Zenmode real seleccionado.".into());
+                    }
+                    2 => {
+                        self.launcher.creating = true;
+                        self.launcher.new_name.clear();
                         self.launcher.message = None;
-                        self.launcher.refresh();
-                    } else if let Err(error) = self.open_editor(entry.path) {
-                        self.launcher.message = Some(error.to_string());
+                    }
+                    _ => {
+                        if let Some(entry) = self.launcher.selected_entry().cloned() {
+                            if entry.directory {
+                                self.launcher.cwd = entry.path;
+                                self.launcher.selected = 0;
+                                self.launcher.message = None;
+                                self.launcher.refresh();
+                            } else if let Err(error) = self.open_editor(entry.path) {
+                                self.launcher.message = Some(error.to_string());
+                            }
+                        }
                     }
                 }
             }
@@ -816,6 +823,51 @@ impl TerminalModel {
         push_line(
             &mut out,
             &framed_left(
+                "\x1b[1;38;5;222mMODO DE APERTURA\x1b[0m",
+                inner_width,
+                "38;5;244",
+            ),
+        );
+
+        for (index, (label, active)) in [
+            ("Normal", !self.zen_requested),
+            ("Zenmode real", self.zen_requested),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let selected_now = self.launcher.selected == index;
+            let marker = if selected_now { "▶" } else { " " };
+            let state = if active {
+                "\x1b[1;38;5;222m●\x1b[0m"
+            } else {
+                "\x1b[38;5;244m○\x1b[0m"
+            };
+            let row = if selected_now {
+                format!(
+                    "\x1b[1;38;5;117m{marker}\x1b[0m  {state}  \x1b[1;38;5;255m{label}\x1b[0m"
+                )
+            } else {
+                format!(
+                    "{marker}  {state}  \x1b[38;5;250m{label}\x1b[0m"
+                )
+            };
+            push_line(
+                &mut out,
+                &framed_left(&row, inner_width, "38;5;244"),
+            );
+        }
+
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[38;5;244m├{}┤\x1b[0m",
+                "─".repeat(inner_width)
+            ),
+        );
+        push_line(
+            &mut out,
+            &framed_left(
                 "\x1b[1;38;5;222mARCHIVOS\x1b[0m",
                 inner_width,
                 "38;5;244",
@@ -859,18 +911,19 @@ impl TerminalModel {
                 ),
             );
         } else {
-            let chrome_rows = 11usize;
+            let chrome_rows = 15usize;
             let available = (rows as usize)
                 .saturating_sub(chrome_rows)
                 .max(3);
             let selected = self.launcher.selected;
             let total = self.launcher.entries.len() + 1;
-            let start = selected.saturating_sub(available.saturating_sub(1) / 2);
+            let file_selected = selected.saturating_sub(2);
+            let start = file_selected.saturating_sub(available.saturating_sub(1) / 2);
             let end = (start + available).min(total);
 
             for index in start..end {
                 if index == 0 {
-                    let selected_now = selected == 0;
+                    let selected_now = selected == 2;
                     let marker = if selected_now { "▶" } else { " " };
                     let line = format!(
                         "{}{} \x1b[38;5;222m{ICON_DOCUMENT}\x1b[0m   Nuevo archivo",
@@ -890,7 +943,7 @@ impl TerminalModel {
                 }
 
                 if let Some(entry) = self.launcher.entries.get(index - 1) {
-                    let selected_now = selected == index;
+                    let selected_now = selected == index + 2;
                     let marker = if selected_now { "▶" } else { " " };
                     let suffix = if entry.directory { "/" } else { "" };
                     let (icon, icon_color) = file_icon(entry);
@@ -934,17 +987,10 @@ impl TerminalModel {
                 ),
             );
         } else if !self.launcher.creating {
-            let zen_state = if self.zen_requested {
-                "\x1b[1;38;5;222mON\x1b[0m"
-            } else {
-                "\x1b[38;5;244mOFF\x1b[0m"
-            };
             push_line(
                 &mut out,
                 &framed_left(
-                    &format!(
-                        "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  F11 zenmode:{zen_state}  Backspace subir  R refrescar\x1b[0m"
-                    ),
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter elegir/abrir  N nuevo  Backspace subir  R refrescar\x1b[0m",
                     inner_width,
                     "38;5;244",
                 ),
