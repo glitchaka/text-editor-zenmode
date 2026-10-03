@@ -707,10 +707,10 @@ impl TerminalModel {
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 self.launcher.refresh();
             }
-            KeyCode::Char('z') | KeyCode::Char('Z') => {
+            KeyCode::F(11) => {
                 self.zen_requested = !self.zen_requested;
                 self.launcher.message = Some(if self.zen_requested {
-                    "ZENMODE REAL armado: el próximo archivo abrirá en pantalla completa.".into()
+                    "ZENMODE REAL seleccionado: el próximo archivo abrirá en pantalla completa.".into()
                 } else {
                     "ZENMODE REAL desactivado.".into()
                 });
@@ -943,7 +943,7 @@ impl TerminalModel {
                 &mut out,
                 &framed_left(
                     &format!(
-                        "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  Z zenmode:{zen_state}  Backspace subir  R refrescar\x1b[0m"
+                        "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  F11 zenmode:{zen_state}  Backspace subir  R refrescar\x1b[0m"
                     ),
                     inner_width,
                     "38;5;244",
