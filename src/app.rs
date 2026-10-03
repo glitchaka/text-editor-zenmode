@@ -25,6 +25,24 @@ const CELL_HEIGHT: f32 = 18.0;
 const FONT_SIZE: f32 = 14.0;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// Retrofuturistic semigraphic icons for the TUI launcher.
+// These private-use cells are intercepted by our terminal renderer and painted
+// as 16×16 pixel panels spanning two character cells. They are not font icons.
+const ICON_FOLDER: char = '\u{e100}';
+const ICON_DOCUMENT: char = '\u{e101}';
+const ICON_CODE: char = '\u{e102}';
+const ICON_EXECUTABLE: char = '\u{e103}';
+const ICON_COMPONENT: char = '\u{e104}';
+const ICON_BUILD: char = '\u{e105}';
+const ICON_IMAGE: char = '\u{e106}';
+const ICON_AUDIO: char = '\u{e107}';
+const ICON_VIDEO: char = '\u{e108}';
+const ICON_ARCHIVE: char = '\u{e109}';
+const ICON_PDF: char = '\u{e10a}';
+const ICON_OFFICE: char = '\u{e10b}';
+const ICON_LOCK: char = '\u{e10c}';
+const ICON_RUST: char = '\u{e10d}';
+
 const BG: Rgb = Rgb(0x11, 0x16, 0x19);
 const FG: Rgb = Rgb(0xDF, 0xE8, 0xEF);
 const CURSOR: Rgb = Rgb(0xE8, 0xCC, 0x83);
@@ -520,7 +538,7 @@ impl TerminalModel {
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[1;38;5;222m  NUEVO ARCHIVO\x1b[0m",
+                    &format!("\x1b[1;38;5;222m{ICON_DOCUMENT}\x1b[0m   NUEVO ARCHIVO"),
                     inner_width,
                     "38;5;244",
                 ),
@@ -563,7 +581,7 @@ impl TerminalModel {
                     let selected_now = selected == 0;
                     let marker = if selected_now { "▶" } else { " " };
                     let line = format!(
-                        "{}{} \x1b[38;5;222m\x1b[0m  Nuevo archivo",
+                        "{}{} \x1b[38;5;222m{ICON_DOCUMENT}\x1b[0m   Nuevo archivo",
                         if selected_now { "\x1b[1;38;5;222m" } else { "" },
                         marker,
                     );
@@ -589,11 +607,11 @@ impl TerminalModel {
 
                     let row = if selected_now {
                         format!(
-                            "\x1b[1;38;5;117m{marker}\x1b[0m  \x1b[{icon_color}m{icon}\x1b[0m  \x1b[1;38;5;255m{name}\x1b[0m"
+                            "\x1b[1;38;5;117m{marker}\x1b[0m  \x1b[{icon_color}m{icon}\x1b[0m   \x1b[1;38;5;255m{name}\x1b[0m"
                         )
                     } else {
                         format!(
-                            "{marker}  \x1b[{icon_color}m{icon}\x1b[0m  \x1b[38;5;250m{name}\x1b[0m"
+                            "{marker}  \x1b[{icon_color}m{icon}\x1b[0m   \x1b[38;5;250m{name}\x1b[0m"
                         )
                     };
 
@@ -713,6 +731,22 @@ impl TerminalModel {
                 let mut pen_x = x;
                 let baseline = y + (cell_height * 0.80).round() as i32;
                 for ch in content.chars() {
+                    if let Some(icon) = terminal_icon(ch) {
+                        draw_terminal_icon(
+                            pixels,
+                            width,
+                            height,
+                            pen_x,
+                            y,
+                            cell_width,
+                            cell_height,
+                            icon,
+                            fg,
+                        );
+                        pen_x += (cell_width * 2.0).round() as i32;
+                        continue;
+                    }
+
                     let key = (ch, font_key);
                     if !self.glyphs.contains_key(&key) {
                         let (metrics, alpha) = self.font.rasterize(ch, font_px);
@@ -912,9 +946,9 @@ fn raw_key_code(text: &str, shift: bool) -> Option<KeyCode> {
     (chars.next().is_none() && !ch.is_control()).then_some(KeyCode::Char(ch))
 }
 
-fn file_icon(entry: &Entry) -> (&'static str, &'static str) {
+fn file_icon(entry: &Entry) -> (char, &'static str) {
     if entry.directory {
-        return ("", "38;5;109");
+        return (ICON_FOLDER, "38;5;109");
     }
 
     let name = entry.name.to_ascii_lowercase();
@@ -926,30 +960,38 @@ fn file_icon(entry: &Entry) -> (&'static str, &'static str) {
         .to_ascii_lowercase();
 
     if name == "cargo.toml" || name == "cargo.lock" {
-        return ("", "38;5;208");
+        return (ICON_RUST, "38;5;208");
     }
     if name.ends_with(".lock") || name.contains("artifact-lock") || name.contains("build-lock") {
-        return ("", "38;5;244");
+        return (ICON_LOCK, "38;5;244");
     }
 
     match extension.as_str() {
-        "" | "txt" | "text" | "md" | "markdown" | "rst" | "log" => ("", "38;5;255"),
-        "pdf" => ("", "38;5;203"),
-        "doc" | "docx" | "odt" | "rtf" => ("", "38;5;75"),
-        "xls" | "xlsx" | "ods" | "csv" => ("", "38;5;108"),
-        "ppt" | "pptx" | "odp" => ("", "38;5;208"),
-        "rs" => ("", "38;5;208"),
+        "" | "txt" | "text" | "md" | "markdown" | "rst" | "log" => {
+            (ICON_DOCUMENT, "38;5;255")
+        }
+        "pdf" => (ICON_PDF, "38;5;203"),
+        "doc" | "docx" | "odt" | "rtf"
+        | "xls" | "xlsx" | "ods" | "csv"
+        | "ppt" | "pptx" | "odp" => (ICON_OFFICE, "38;5;75"),
+        "rs" => (ICON_RUST, "38;5;208"),
         "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts"
         | "tsx" | "jsx" | "html" | "css" | "scss" | "toml" | "yaml" | "yml"
-        | "json" | "xml" | "sh" | "bash" | "ps1" | "bat" | "cmd" => ("", "38;5;114"),
-        "exe" | "com" | "msi" => ("", "38;5;75"),
-        "dll" => ("", "38;5;110"),
-        "pdb" | "obj" | "lib" | "a" => ("", "38;5;244"),
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => ("", "38;5;176"),
-        "mp3" | "wav" | "flac" | "ogg" | "m4a" => ("", "38;5;175"),
-        "mp4" | "mkv" | "avi" | "mov" | "webm" => ("", "38;5;175"),
-        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" | "bz2" => ("", "38;5;179"),
-        _ => ("", "38;5;250"),
+        | "json" | "xml" | "sh" | "bash" | "ps1" | "bat" | "cmd" => {
+            (ICON_CODE, "38;5;114")
+        }
+        "exe" | "com" | "msi" => (ICON_EXECUTABLE, "38;5;75"),
+        "dll" => (ICON_COMPONENT, "38;5;110"),
+        "pdb" | "obj" | "lib" | "a" => (ICON_BUILD, "38;5;244"),
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" => {
+            (ICON_IMAGE, "38;5;176")
+        }
+        "mp3" | "wav" | "flac" | "ogg" | "m4a" => (ICON_AUDIO, "38;5;175"),
+        "mp4" | "mkv" | "avi" | "mov" | "webm" => (ICON_VIDEO, "38;5;175"),
+        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" | "bz2" => {
+            (ICON_ARCHIVE, "38;5;179")
+        }
+        _ => (ICON_DOCUMENT, "38;5;250"),
     }
 }
 
@@ -994,7 +1036,7 @@ fn visible_width(text: &str) -> usize {
         }
 
         if let Some(ch) = text[index..].chars().next() {
-            visible += 1;
+            visible += if terminal_icon(ch).is_some() { 2 } else { 1 };
             index += ch.len_utf8();
         } else {
             break;
@@ -1056,6 +1098,228 @@ fn terminal_color(value: vt100::Color, default: Rgb) -> Rgb {
             let i = i - 16;
             let component = |n| if n == 0 { 0 } else { 55 + n * 40 };
             Rgb(component(i / 36), component(i / 6 % 6), component(i % 6))
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TerminalIcon {
+    Folder,
+    Document,
+    Code,
+    Executable,
+    Component,
+    Build,
+    Image,
+    Audio,
+    Video,
+    Archive,
+    Pdf,
+    Office,
+    Lock,
+    Rust,
+}
+
+fn terminal_icon(ch: char) -> Option<TerminalIcon> {
+    Some(match ch {
+        ICON_FOLDER => TerminalIcon::Folder,
+        ICON_DOCUMENT => TerminalIcon::Document,
+        ICON_CODE => TerminalIcon::Code,
+        ICON_EXECUTABLE => TerminalIcon::Executable,
+        ICON_COMPONENT => TerminalIcon::Component,
+        ICON_BUILD => TerminalIcon::Build,
+        ICON_IMAGE => TerminalIcon::Image,
+        ICON_AUDIO => TerminalIcon::Audio,
+        ICON_VIDEO => TerminalIcon::Video,
+        ICON_ARCHIVE => TerminalIcon::Archive,
+        ICON_PDF => TerminalIcon::Pdf,
+        ICON_OFFICE => TerminalIcon::Office,
+        ICON_LOCK => TerminalIcon::Lock,
+        ICON_RUST => TerminalIcon::Rust,
+        _ => return None,
+    })
+}
+
+fn icon_shade(color: Rgb, numerator: u16, denominator: u16) -> Rgb {
+    let scale = |component: u8| {
+        ((u16::from(component) * numerator / denominator).min(255)) as u8
+    };
+    Rgb(scale(color.0), scale(color.1), scale(color.2))
+}
+
+fn icon_bright(color: Rgb) -> Rgb {
+    let lift = |component: u8| component.saturating_add(48);
+    Rgb(lift(color.0), lift(color.1), lift(color.2))
+}
+
+fn icon_rect(
+    pixels: &mut [Rgba8Pixel],
+    width: u32,
+    height: u32,
+    origin_x: i32,
+    origin_y: i32,
+    icon_width: i32,
+    icon_height: i32,
+    gx: i32,
+    gy: i32,
+    gw: i32,
+    gh: i32,
+    color: Rgb,
+) {
+    let x0 = origin_x + gx * icon_width / 16;
+    let y0 = origin_y + gy * icon_height / 16;
+    let x1 = origin_x + (gx + gw) * icon_width / 16;
+    let y1 = origin_y + (gy + gh) * icon_height / 16;
+    fill_rect(
+        pixels,
+        width,
+        height,
+        x0,
+        y0,
+        (x1 - x0).max(1),
+        (y1 - y0).max(1),
+        color,
+    );
+}
+
+fn draw_terminal_icon(
+    pixels: &mut [Rgba8Pixel],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    cell_width: f32,
+    cell_height: f32,
+    icon: TerminalIcon,
+    color: Rgb,
+) {
+    let iw = (cell_width * 2.0).round().max(12.0) as i32;
+    let ih = cell_height.round().max(14.0) as i32;
+    let dark = icon_shade(color, 2, 5);
+    let mid = icon_shade(color, 3, 4);
+    let bright = icon_bright(color);
+
+    match icon {
+        // Data cassette / directory module with raised tab.
+        TerminalIcon::Folder => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 2, 3, 6, 2, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 1, 5, 14, 9, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 2, 6, 12, 7, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 3, 8, 9, 1, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 11, 11, 2, 2, mid);
+        }
+
+        // Technical document plate with clipped corner and scan lines.
+        TerminalIcon::Document | TerminalIcon::Pdf | TerminalIcon::Office => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 3, 1, 10, 14, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 2, 8, 12, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 10, 1, 3, 3, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 5, 6, 6, 1, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 5, 9, 5, 1, mid);
+            icon_rect(pixels, width, height, x, y, iw, ih, 5, 12, 4, 1, mid);
+            if matches!(icon, TerminalIcon::Pdf) {
+                icon_rect(pixels, width, height, x, y, iw, ih, 4, 13, 8, 1, bright);
+            } else if matches!(icon, TerminalIcon::Office) {
+                icon_rect(pixels, width, height, x, y, iw, ih, 8, 5, 1, 8, bright);
+            }
+        }
+
+        // Microterminal module: frame + angular prompt chevrons.
+        TerminalIcon::Code => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 1, 2, 14, 12, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 2, 3, 12, 10, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 6, 2, 1, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 5, 7, 2, 1, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 8, 2, 1, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 9, 9, 3, 1, mid);
+        }
+
+        // Executable as a glowing computational core.
+        TerminalIcon::Executable => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 2, 8, 12, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 2, 5, 12, 6, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 5, 4, 6, 8, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 6, 6, 4, 4, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 7, 7, 2, 2, mid);
+        }
+
+        // Plug-in board with connector pins.
+        TerminalIcon::Component => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 3, 4, 10, 8, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 5, 8, 6, dark);
+            for pin_y in [5, 8, 11] {
+                icon_rect(pixels, width, height, x, y, iw, ih, 1, pin_y, 2, 1, bright);
+                icon_rect(pixels, width, height, x, y, iw, ih, 13, pin_y, 2, 1, bright);
+            }
+            icon_rect(pixels, width, height, x, y, iw, ih, 6, 7, 4, 2, mid);
+        }
+
+        // Wireframe build block / package.
+        TerminalIcon::Build => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 3, 8, 2, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 2, 5, 12, 8, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 3, 6, 10, 6, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 7, 5, 2, 8, mid);
+            icon_rect(pixels, width, height, x, y, iw, ih, 3, 8, 10, 1, bright);
+        }
+
+        // CRT image frame: horizon and synthetic sun.
+        TerminalIcon::Image => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 1, 2, 14, 12, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 2, 3, 12, 10, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 10, 5, 2, 2, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 3, 10, 10, 1, mid);
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 9, 3, 1, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 7, 8, 3, 2, color);
+        }
+
+        // Oscilloscope / waveform.
+        TerminalIcon::Audio => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 1, 3, 14, 10, dark);
+            for (gx, gy, gh) in [(3, 7, 3), (5, 5, 6), (7, 3, 10), (9, 5, 6), (11, 7, 3)] {
+                icon_rect(pixels, width, height, x, y, iw, ih, gx, gy, 1, gh, bright);
+            }
+        }
+
+        // Small monitor with angular play marker.
+        TerminalIcon::Video => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 1, 2, 14, 11, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 2, 3, 12, 9, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 6, 5, 2, 6, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 8, 6, 2, 4, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 10, 7, 1, 2, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 5, 14, 6, 1, mid);
+        }
+
+        // Cartridge stack.
+        TerminalIcon::Archive => {
+            for gy in [3, 7, 11] {
+                icon_rect(pixels, width, height, x, y, iw, ih, 2, gy, 12, 3, color);
+                icon_rect(pixels, width, height, x, y, iw, ih, 3, gy + 1, 8, 1, dark);
+                icon_rect(pixels, width, height, x, y, iw, ih, 12, gy + 1, 1, 1, bright);
+            }
+        }
+
+        // Security module with hard-edged shackle.
+        TerminalIcon::Lock => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 5, 2, 6, 2, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 4, 2, 4, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 10, 4, 2, 4, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 3, 7, 10, 7, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 8, 8, 5, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 7, 9, 2, 3, bright);
+        }
+
+        // Rust/Cargo shown as a gear-like reactor ring.
+        TerminalIcon::Rust => {
+            icon_rect(pixels, width, height, x, y, iw, ih, 6, 1, 4, 2, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 6, 13, 4, 2, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 1, 6, 2, 4, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 13, 6, 2, 4, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 3, 3, 10, 10, color);
+            icon_rect(pixels, width, height, x, y, iw, ih, 4, 4, 8, 8, dark);
+            icon_rect(pixels, width, height, x, y, iw, ih, 6, 6, 4, 4, bright);
+            icon_rect(pixels, width, height, x, y, iw, ih, 7, 7, 2, 2, mid);
         }
     }
 }
