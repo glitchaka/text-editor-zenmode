@@ -48,7 +48,7 @@ pub fn run_lsp(
                                 },
                                 "semanticTokensProvider": {
                                     "legend": {
-                                        "tokenTypes": ["comment", "keyword", "string", "macro", "regexp"],
+                                        "tokenTypes": crate::format::SEMANTIC_TOKEN_TYPES,
                                         "tokenModifiers": []
                                     },
                                     "full": true
@@ -455,9 +455,37 @@ impl SpellServer {
                 ));
                 continue;
             }
-            push_delimited_tokens(line_number, line, "**", 2, &mut absolute);
-            push_delimited_tokens(line_number, line, "==", 3, &mut absolute);
-            push_single_asterisk_tokens(line_number, line, 4, &mut absolute);
+
+            let mut ranges = crate::format::style_ranges(line);
+            ranges.sort_by_key(|range| {
+                (
+                    range.start,
+                    range.end.saturating_sub(range.start),
+                    range.semantic_token(),
+                )
+            });
+            let mut occupied_until = 0usize;
+            for range in ranges {
+                if range.start < occupied_until
+                    || range.start >= range.end
+                    || !line.is_char_boundary(range.start)
+                    || !line.is_char_boundary(range.end)
+                {
+                    continue;
+                }
+                let start_utf16 = line[..range.start].encode_utf16().count() as u32;
+                let length_utf16 = line[range.start..range.end].encode_utf16().count() as u32;
+                if length_utf16 == 0 {
+                    continue;
+                }
+                absolute.push((
+                    line_number,
+                    start_utf16,
+                    length_utf16,
+                    range.semantic_token(),
+                ));
+                occupied_until = range.end;
+            }
         }
 
         absolute.sort_unstable();
@@ -587,65 +615,6 @@ fn collect_library_words(
                 output.insert(word);
             }
         }
-    }
-}
-
-fn push_single_asterisk_tokens(
-    line_number: u32,
-    line: &str,
-    token_type: u32,
-    output: &mut Vec<(u32, u32, u32, u32)>,
-) {
-    let chars = line.char_indices().collect::<Vec<_>>();
-    let mut markers = Vec::new();
-
-    for (index, (byte, ch)) in chars.iter().enumerate() {
-        if *ch != '*' {
-            continue;
-        }
-        let previous_is_star = index
-            .checked_sub(1)
-            .and_then(|previous| chars.get(previous))
-            .is_some_and(|(_, ch)| *ch == '*');
-        let next_is_star = chars.get(index + 1).is_some_and(|(_, ch)| *ch == '*');
-        if !previous_is_star && !next_is_star {
-            markers.push(*byte);
-        }
-    }
-
-    for pair in markers.chunks_exact(2) {
-        let start = pair[0] + 1;
-        let end = pair[1];
-        if start >= end {
-            continue;
-        }
-        let start_utf16 = line[..start].encode_utf16().count() as u32;
-        let length_utf16 = line[start..end].encode_utf16().count() as u32;
-        output.push((line_number, start_utf16, length_utf16, token_type));
-    }
-}
-
-fn push_delimited_tokens(
-    line_number: u32,
-    line: &str,
-    marker: &str,
-    token_type: u32,
-    output: &mut Vec<(u32, u32, u32, u32)>,
-) {
-    let mut cursor = 0usize;
-    while let Some(open_relative) = line[cursor..].find(marker) {
-        let open = cursor + open_relative;
-        let content_start = open + marker.len();
-        let Some(close_relative) = line[content_start..].find(marker) else {
-            break;
-        };
-        let close = content_start + close_relative;
-        let start_utf16 = line[..content_start].encode_utf16().count() as u32;
-        let length_utf16 = line[content_start..close].encode_utf16().count() as u32;
-        if length_utf16 > 0 {
-            output.push((line_number, start_utf16, length_utf16, token_type));
-        }
-        cursor = close + marker.len();
     }
 }
 
