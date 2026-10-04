@@ -861,12 +861,12 @@ impl TerminalModel {
                 self.launcher.refresh();
             }
             KeyCode::Char('e') | KeyCode::Char('E') => {
-                if let Some(entry) = self.launcher.selected_entry().cloned() {
-                    if !entry.directory {
-                        self.launcher.exporting = Some(entry.path);
-                        self.launcher.export_selected = 0;
-                        self.launcher.message = None;
-                    }
+                if let Some(entry) = self.launcher.selected_entry().cloned()
+                    && !entry.directory
+                {
+                    self.launcher.exporting = Some(entry.path);
+                    self.launcher.export_selected = 0;
+                    self.launcher.message = None;
                 }
             }
             KeyCode::Char('z') | KeyCode::Char('Z') => {
@@ -878,13 +878,13 @@ impl TerminalModel {
                 });
             }
             KeyCode::Backspace => {
-                if self.launcher.cwd != self.library.documents {
-                    if let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf) {
-                        self.launcher.cwd = parent;
-                        self.launcher.selected = 0;
-                        self.launcher.message = None;
-                        self.launcher.refresh();
-                    }
+                if self.launcher.cwd != self.library.documents
+                    && let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf)
+                {
+                    self.launcher.cwd = parent;
+                    self.launcher.selected = 0;
+                    self.launcher.message = None;
+                    self.launcher.refresh();
                 }
             }
             KeyCode::Esc => {
