@@ -27,8 +27,13 @@ fn spell_lsp_process_advertises_code_actions() {
     {
         let mut stdin = child.stdin.take().expect("stdin del helper");
         for message in [initialize, shutdown, exit] {
-            write!(stdin, "Content-Length: {}\r\n\r\n{}", message.len(), message)
-                .expect("debe poder enviarse una trama LSP");
+            write!(
+                stdin,
+                "Content-Length: {}\r\n\r\n{}",
+                message.len(),
+                message
+            )
+            .expect("debe poder enviarse una trama LSP");
         }
     }
 
