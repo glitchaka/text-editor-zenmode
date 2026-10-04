@@ -302,7 +302,8 @@ impl EditorSession {
         let changed = document.body != body;
 
         if changed {
-            document.formatting = document::remap_formatting(&document.formatting, &previous_body, &body);
+            document.formatting =
+                document::remap_formatting(&document.formatting, &previous_body, &body);
             document.body = body.clone();
             document::write(&source, &document)
                 .with_context(|| format!("No se pudo guardar {}", source.display()))?;
@@ -840,10 +841,7 @@ fn encode_command_colon(win32: bool) -> Vec<u8> {
         const VK_OEM_1: u16 = 0xBA;
         const SHIFT_PRESSED: u32 = 0x10;
         let scan = unsafe {
-            windows_sys::Win32::UI::Input::KeyboardAndMouse::MapVirtualKeyW(
-                VK_OEM_1.into(),
-                0,
-            )
+            windows_sys::Win32::UI::Input::KeyboardAndMouse::MapVirtualKeyW(VK_OEM_1.into(), 0)
         };
         let mut bytes = Vec::new();
         for down in [1, 0] {

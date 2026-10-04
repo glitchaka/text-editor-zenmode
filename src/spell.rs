@@ -548,7 +548,6 @@ impl SpellServer {
     }
 }
 
-
 fn semantic_token_for_style(style: crate::format::TextStyle) -> Option<u32> {
     use crate::format::{MarkKind, StyleRange};
     let kind = if let Some(color) = style.foreground {
@@ -564,7 +563,14 @@ fn semantic_token_for_style(style: crate::format::TextStyle) -> Option<u32> {
     } else {
         return None;
     };
-    Some(StyleRange { start: 0, end: 1, kind }.semantic_token())
+    Some(
+        StyleRange {
+            start: 0,
+            end: 1,
+            kind,
+        }
+        .semantic_token(),
+    )
 }
 
 fn append_native_format_tokens(

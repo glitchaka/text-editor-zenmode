@@ -37,8 +37,14 @@ fn main() -> Result<()> {
             .map(String::as_str)
             .filter(|value| *value != "-");
         let source = args.get(3).map(PathBuf::from);
-        let cursor_line = args.get(4).and_then(|value| value.parse().ok()).unwrap_or(1);
-        let cursor_column = args.get(5).and_then(|value| value.parse().ok()).unwrap_or(1);
+        let cursor_line = args
+            .get(4)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1);
+        let cursor_column = args
+            .get(5)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1);
         format::run_filter(action, value, source.as_deref(), cursor_line, cursor_column)?;
         return Ok(());
     }
