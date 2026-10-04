@@ -324,7 +324,7 @@ impl EditorSession {
             }
         }
 
-        bytes.extend_from_slice(&encode_paste(&prepared));
+        bytes.extend_from_slice(&encode_paste(&prepared, win32));
 
         let mut writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
         writer.write_all(&bytes)?;
@@ -754,12 +754,28 @@ fn normalize_pasted_text(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-fn encode_paste(text: &str) -> Vec<u8> {
+fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
     let normalized = normalize_pasted_text(text);
-    let mut bytes = Vec::with_capacity(normalized.len() + 12);
-    bytes.extend_from_slice(b"\x1b[200~");
-    bytes.extend_from_slice(normalized.as_bytes());
-    bytes.extend_from_slice(b"\x1b[201~");
+
+    if !win32 {
+        let mut bytes = Vec::with_capacity(normalized.len() + 12);
+        bytes.extend_from_slice(b"\x1b[200~");
+        bytes.extend_from_slice(normalized.as_bytes());
+        bytes.extend_from_slice(b"\x1b[201~");
+        return bytes;
+    }
+
+    let mut bytes = Vec::with_capacity(normalized.len() * 8);
+    for ch in normalized.chars() {
+        let code = match ch {
+            '\n' => KeyCode::Enter,
+            '\t' => KeyCode::Tab,
+            other => KeyCode::Char(other),
+        };
+        if let Some(encoded) = encode_input(KeyEvent::new(code, KeyModifiers::NONE), true) {
+            bytes.extend_from_slice(&encoded);
+        }
+    }
     bytes
 }
 
@@ -1029,17 +1045,25 @@ mod tests {
             &encode_input(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), win32)
                 .expect("i debe codificarse"),
         );
-        bytes.extend_from_slice(&encode_paste(&prepared));
+        bytes.extend_from_slice(&encode_paste(&prepared, win32));
         assert!(bytes.starts_with(b"\x1bi\x1b[200~"));
     }
 
     #[test]
-    fn multiline_paste_preserves_paragraph_breaks_as_one_bracketed_paste() {
-        let encoded = encode_paste("uno\r\ndos\rtres\ncuatro");
+    fn multiline_paste_preserves_paragraph_breaks_in_vt_mode() {
+        let encoded = encode_paste("uno\r\ndos\rtres\ncuatro", false);
         assert!(encoded.starts_with(b"\x1b[200~"));
         assert!(encoded.ends_with(b"\x1b[201~"));
         let payload = &encoded[6..encoded.len() - 6];
         assert_eq!(payload, b"uno\ndos\ntres\ncuatro");
+    }
+
+    #[test]
+    fn multiline_paste_turns_line_breaks_into_enter_in_win32_mode() {
+        let encoded = String::from_utf8(encode_paste("uno\r\ndos\ntres", true))
+            .expect("la entrada Win32 debe quedar codificada como ASCII");
+        let enter_down = ";13;1;0;1_";
+        assert_eq!(encoded.matches(enter_down).count(), 2);
     }
 
     #[test]
