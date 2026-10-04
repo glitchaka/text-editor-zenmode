@@ -187,6 +187,14 @@ fn write_docx(target: &Path, documents: &[ExportDocument]) -> Result<()> {
 </Relationships>"#,
     )?;
 
+    zip.start_file("word/_rels/document.xml.rels", options)?;
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"#,
+    )?;
+
     zip.start_file("word/styles.xml", options)?;
     zip.write_all(
         br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -538,5 +546,34 @@ mod tests {
     #[test]
     fn export_names_are_safe_on_windows() {
         assert_eq!(sanitize_filename("Capítulo: 1?"), "Capítulo_ 1_");
+    }
+
+    #[test]
+    fn docx_and_pdf_outputs_have_expected_container_signatures() {
+        let root = std::env::temp_dir().join(format!(
+            "helix-sst-export-smoke-{}",
+            std::process::id()
+        ));
+        let _ = fs::create_dir_all(&root);
+        let document = ExportDocument {
+            title: "Capítulo 1".into(),
+            body: "Texto **fuerte**, *cursivo* y ==destacado==.".into(),
+        };
+
+        let docx = root.join("test.docx");
+        write_docx(&docx, std::slice::from_ref(&document)).expect("DOCX debe generarse");
+        let file = fs::File::open(&docx).expect("DOCX debe abrirse");
+        let mut archive = zip::ZipArchive::new(file).expect("DOCX debe ser un ZIP OOXML válido");
+        assert!(archive.by_name("word/document.xml").is_ok());
+        assert!(archive.by_name("word/styles.xml").is_ok());
+        assert!(archive.by_name("word/_rels/document.xml.rels").is_ok());
+
+        let pdf = root.join("test.pdf");
+        write_pdf(&pdf, &[document]).expect("PDF debe generarse");
+        let bytes = fs::read(&pdf).expect("PDF debe leerse");
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+
+        let _ = fs::remove_dir_all(root);
     }
 }
