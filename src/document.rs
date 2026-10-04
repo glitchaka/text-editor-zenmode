@@ -152,7 +152,9 @@ pub fn project_documents(root: &Path, project: &str) -> Result<Vec<(PathBuf, Doc
         return Ok(documents);
     }
 
-    for entry in fs::read_dir(root).with_context(|| format!("No se pudo leer {}", root.display()))? {
+    for entry in
+        fs::read_dir(root).with_context(|| format!("No se pudo leer {}", root.display()))?
+    {
         let entry = entry?;
         let path = entry.path();
         if !path.is_file() || !is_native_path(&path) {
@@ -218,7 +220,9 @@ pub fn body_without_markup(body: &str) -> String {
 }
 
 fn split_frontmatter(raw: &str) -> Option<(&str, &str)> {
-    let rest = raw.strip_prefix("+++\n").or_else(|| raw.strip_prefix("+++\r\n"))?;
+    let rest = raw
+        .strip_prefix("+++\n")
+        .or_else(|| raw.strip_prefix("+++\r\n"))?;
     let marker_lf = "\n+++\n";
     let marker_crlf = "\r\n+++\r\n";
 
