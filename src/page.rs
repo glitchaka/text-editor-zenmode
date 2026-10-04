@@ -1,5 +1,6 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PaperSize {
+    #[default]
     Letter,
     Oficio,
     Legal,
@@ -7,15 +8,7 @@ pub enum PaperSize {
     A5,
 }
 
-impl Default for PaperSize {
-    fn default() -> Self {
-        Self::Letter
-    }
-}
-
 impl PaperSize {
-    pub const ALL: [Self; 5] = [Self::Letter, Self::Oficio, Self::Legal, Self::A4, Self::A5];
-
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value.to_ascii_lowercase().as_str() {
             "letter" | "carta" => Self::Letter,
@@ -59,16 +52,11 @@ impl PaperSize {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PageOrientation {
+    #[default]
     Portrait,
     Landscape,
-}
-
-impl Default for PageOrientation {
-    fn default() -> Self {
-        Self::Portrait
-    }
 }
 
 impl PageOrientation {
@@ -127,6 +115,7 @@ impl PageProfile {
         }
     }
 
+    #[cfg(test)]
     pub fn content_size_tenth_mm(self) -> (u16, u16) {
         let (width, height) = self.page_size_tenth_mm();
         let horizontal = self
