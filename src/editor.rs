@@ -457,10 +457,9 @@ fn write_language_config(
         None
     };
 
-    let current_file_glob = toml_path(current_file);
     let text_file_types = match extensionless_name {
         Some(name) => {
-            format!("[\"txt\", \"text\", \"{name}\", {{ glob = \"{current_file_glob}\" }}]")
+            format!("[\"txt\", \"text\", \"{name}\", {{ glob = \"*/{name}\" }}]")
         }
         None => "[\"txt\", \"text\"]".to_owned(),
     };
