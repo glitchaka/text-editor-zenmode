@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -404,6 +404,8 @@ struct TerminalModel {
     launcher: Launcher,
     library: LibraryPaths,
     editor: Option<EditorSession>,
+    current_file: Option<PathBuf>,
+    chapter_switch_until: Option<Instant>,
     width: u32,
     height: u32,
     scale: f32,
@@ -447,6 +449,8 @@ impl TerminalModel {
             launcher: Launcher::new(cwd),
             library,
             editor: None,
+            current_file: None,
+            chapter_switch_until: None,
             width: 980,
             height: 680,
             scale: 1.0,
@@ -625,6 +629,8 @@ impl TerminalModel {
         let session = EditorSession::start(&file, cols, rows)
             .with_context(|| format!("No se pudo abrir {}", file.display()))?;
         self.reset_parser();
+        self.current_file = Some(file);
+        self.chapter_switch_until = None;
         self.editor = Some(session);
         self.dirty = true;
         Ok(())
@@ -662,6 +668,8 @@ impl TerminalModel {
 
         if finished {
             self.editor = None;
+            self.current_file = None;
+            self.chapter_switch_until = None;
             self.launcher.refresh();
             self.reset_parser();
             self.render_launcher();
@@ -682,6 +690,10 @@ impl TerminalModel {
     }
 
     fn editor_key(&mut self, key: KeyEvent) {
+        if self.try_continue_to_next_chapter(key) {
+            return;
+        }
+
         let zen_toggle = matches!(key.code, KeyCode::Char('z') | KeyCode::Char('Z'))
             && !key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
@@ -714,6 +726,105 @@ impl TerminalModel {
 
             let _ = editor.send_key(key, editor.win32_input());
         }
+    }
+
+    fn try_continue_to_next_chapter(&mut self, key: KeyEvent) -> bool {
+        if key.code != KeyCode::Down
+            || !key.modifiers.is_empty()
+            || !self.helix_is_normal_mode()
+            || self.helix_is_modified()
+            || self
+                .chapter_switch_until
+                .is_some_and(|until| Instant::now() < until)
+        {
+            return false;
+        }
+
+        let Some(current) = self.current_file.clone() else {
+            return false;
+        };
+        let Some(metadata) = document::read_metadata(&current) else {
+            return false;
+        };
+        if !metadata.kind.eq_ignore_ascii_case("chapter")
+            || metadata.chapter.is_none()
+            || metadata.project.trim().is_empty()
+        {
+            return false;
+        }
+
+        let Some(line) = self.helix_current_line() else {
+            return false;
+        };
+        let Ok(raw) = fs::read_to_string(&current) else {
+            return false;
+        };
+        let total_lines = raw.bytes().filter(|byte| *byte == b'\n').count() + 1;
+        if line < total_lines {
+            return false;
+        }
+
+        let Ok(chapters) =
+            document::project_chapters(&self.library.documents, &metadata.project)
+        else {
+            return false;
+        };
+        let Some(index) = chapters
+            .iter()
+            .position(|(path, _)| paths_equivalent(path, &current))
+        else {
+            return false;
+        };
+        let Some((next, next_metadata)) = chapters.get(index + 1) else {
+            return false;
+        };
+
+        let command = format!(":open \"{}\"", helix_path(next));
+        let Some(editor) = self.editor.as_ref() else {
+            return false;
+        };
+        if editor.send_command(&command).is_err() || editor.send_command(":goto 1").is_err() {
+            return false;
+        }
+
+        self.current_file = Some(next.clone());
+        self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));
+        self.launcher.message = Some(format!(
+            "{} → {}",
+            metadata.title,
+            next_metadata.title
+        ));
+        true
+    }
+
+    fn helix_status_text(&self) -> String {
+        let screen = self.parser.screen();
+        let (rows, cols) = screen.size();
+        let start_row = rows.saturating_sub(3);
+        let mut output = String::new();
+
+        for row in start_row..rows {
+            for col in 0..cols {
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
+                output.push_str(cell.contents());
+            }
+            output.push('\n');
+        }
+
+        output
+    }
+
+    fn helix_is_modified(&self) -> bool {
+        self.helix_status_text().contains("[+]")
+    }
+
+    fn helix_current_line(&self) -> Option<usize> {
+        status_line_number(&self.helix_status_text())
     }
 
     fn helix_is_normal_mode(&self) -> bool {
@@ -1490,6 +1601,32 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     Ok(())
 }
 
+fn status_line_number(status: &str) -> Option<usize> {
+    status
+        .split_whitespace()
+        .rev()
+        .find_map(|token| {
+            let (line, column) = token.split_once(':')?;
+            if column.parse::<usize>().is_err() {
+                return None;
+            }
+            line.parse::<usize>().ok()
+        })
+}
+
+fn helix_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .replace('"', "\\\"")
+}
+
+fn paths_equivalent(left: &Path, right: &Path) -> bool {
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
+}
+
 fn control_pressed(reported: bool) -> bool {
     if reported {
         return true;
@@ -2128,5 +2265,9 @@ mod app_input_tests {
         );
         assert_eq!(raw_key_code("\x08", false), Some(KeyCode::Backspace));
         assert_eq!(raw_key_code("\x7f", false), Some(KeyCode::Delete));
+        assert_eq!(
+            status_line_number("NORMAL  Capítulo 1.hsst      12:4 utf-8 prose"),
+            Some(12)
+        );
     }
 }

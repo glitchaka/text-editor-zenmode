@@ -177,6 +177,14 @@ pub fn project_documents(root: &Path, project: &str) -> Result<Vec<(PathBuf, Doc
     Ok(documents)
 }
 
+pub fn project_chapters(root: &Path, project: &str) -> Result<Vec<(PathBuf, DocumentMetadata)>> {
+    let mut chapters = project_documents(root, project)?;
+    chapters.retain(|(_, metadata)| {
+        metadata.kind.eq_ignore_ascii_case("chapter") && metadata.chapter.is_some()
+    });
+    Ok(chapters)
+}
+
 pub fn project_counts(root: &Path) -> Vec<(String, usize)> {
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     let Ok(entries) = fs::read_dir(root) else {

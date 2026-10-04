@@ -180,21 +180,7 @@ impl EditorSession {
         // Force Helix onto the managed "prose" language once startup has settled.
         // Route the synthetic command through the same keyboard encoder as real
         // input so it also works after Helix enables Windows input mode (?9001h).
-        let win32 = self.win32_input();
-        let mut bytes = Vec::new();
-        for ch in ":set-language prose".chars() {
-            if let Some(encoded) =
-                encode_input(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE), win32)
-            {
-                bytes.extend_from_slice(&encoded);
-            }
-        }
-        if let Some(encoded) =
-            encode_input(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), win32)
-        {
-            bytes.extend_from_slice(&encoded);
-        }
-        self.write_reply(&bytes)?;
+        self.send_command(":set-language prose")?;
         self.startup_language_sent = true;
         Ok(())
     }
@@ -221,6 +207,26 @@ impl EditorSession {
         let Some(bytes) = encode_input(key, win32) else {
             return Ok(());
         };
+        self.write_reply(&bytes)
+    }
+
+    pub fn send_command(&self, command: &str) -> Result<()> {
+        let win32 = self.win32_input();
+        let mut bytes = Vec::new();
+
+        for ch in command.chars() {
+            if let Some(encoded) =
+                encode_input(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE), win32)
+            {
+                bytes.extend_from_slice(&encoded);
+            }
+        }
+        if let Some(encoded) =
+            encode_input(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), win32)
+        {
+            bytes.extend_from_slice(&encoded);
+        }
+
         self.write_reply(&bytes)
     }
 
