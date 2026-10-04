@@ -177,12 +177,12 @@ impl EditorSession {
         }
 
         // Extensionless prose files are a first-class Zenmode use case.
-        // Force Helix onto the managed "text" language once startup has settled.
+        // Force Helix onto the managed "prose" language once startup has settled.
         // Route the synthetic command through the same keyboard encoder as real
         // input so it also works after Helix enables Windows input mode (?9001h).
         let win32 = self.win32_input();
         let mut bytes = Vec::new();
-        for ch in ":set-language text".chars() {
+        for ch in ":set-language prose".chars() {
             if let Some(encoded) =
                 encode_input(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE), win32)
             {
@@ -478,7 +478,7 @@ command = "{launcher}"
 args = ["--helix-sst-spell", "{user_dictionary}"]
 
 [[language]]
-name = "text"
+name = "prose"
 scope = "text.plain"
 file-types = {text_file_types}
 language-servers = ["helix-sst-spell"]
@@ -722,6 +722,10 @@ fn function_key(number: u8, shift: bool, alt: bool, ctrl: bool) -> Option<Vec<u8
         10 => "21~",
         11 => "23~",
         12 => "24~",
+        13 => "25~",
+        14 => "26~",
+        15 => "28~",
+        16 => "29~",
         _ => return None,
     };
     Some(csi_tilde(base, shift, alt, ctrl))
@@ -746,6 +750,10 @@ mod tests {
         assert_eq!(
             encode_key(KeyEvent::new(KeyCode::Delete, ctrl)).as_deref(),
             Some(b"\x1b[3;5~".as_slice())
+        );
+        assert_eq!(
+            encode_key(KeyEvent::new(KeyCode::F(16), KeyModifiers::NONE)).as_deref(),
+            Some(b"\x1b[29~".as_slice())
         );
     }
 
@@ -837,24 +845,24 @@ mod tests {
 
         let text = languages
             .iter()
-            .find(|language| language.get("name").and_then(toml::Value::as_str) == Some("text"))
-            .expect("debe existir el lenguaje text");
+            .find(|language| language.get("name").and_then(toml::Value::as_str) == Some("prose"))
+            .expect("debe existir el lenguaje prose");
 
         let servers = text
             .get("language-servers")
             .and_then(toml::Value::as_array)
-            .expect("text debe declarar language-servers");
+            .expect("prose debe declarar language-servers");
         assert!(
             servers
                 .iter()
                 .any(|server| server.as_str() == Some("helix-sst-spell")),
-            "text debe usar helix-sst-spell"
+            "prose debe usar helix-sst-spell"
         );
 
         let file_types = text
             .get("file-types")
             .and_then(toml::Value::as_array)
-            .expect("text debe declarar file-types");
+            .expect("prose debe declarar file-types");
         assert!(
             file_types
                 .iter()

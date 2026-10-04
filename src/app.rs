@@ -1343,9 +1343,7 @@ fn control_pressed(reported: bool) -> bool {
 }
 
 fn bridged_word_shortcut(key: KeyEvent) -> Option<KeyCode> {
-    if !key.modifiers.contains(KeyModifiers::CONTROL)
-        || key.modifiers.contains(KeyModifiers::ALT)
-    {
+    if !key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
         return None;
     }
 
@@ -1428,7 +1426,8 @@ fn raw_key_code(text: &str, shift: bool) -> Option<KeyCode> {
     match text {
         "\r" | "\n" => return Some(KeyCode::Enter),
         "\x1b" => return Some(KeyCode::Esc),
-        "\x08" | "\x7f" => return Some(KeyCode::Backspace),
+        "\x08" => return Some(KeyCode::Backspace),
+        "\x7f" => return Some(KeyCode::Delete),
         _ => {}
     }
 
@@ -1935,7 +1934,6 @@ fn draw_glyph(
     }
 }
 
-
 #[cfg(test)]
 mod app_input_tests {
     use super::*;
@@ -1964,5 +1962,7 @@ mod app_input_tests {
             bridged_word_shortcut(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
             None
         );
+        assert_eq!(raw_key_code("\x08", false), Some(KeyCode::Backspace));
+        assert_eq!(raw_key_code("\x7f", false), Some(KeyCode::Delete));
     }
 }
