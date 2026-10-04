@@ -586,9 +586,7 @@ fn push_single_asterisk_tokens(
             .checked_sub(1)
             .and_then(|previous| chars.get(previous))
             .is_some_and(|(_, ch)| *ch == '*');
-        let next_is_star = chars
-            .get(index + 1)
-            .is_some_and(|(_, ch)| *ch == '*');
+        let next_is_star = chars.get(index + 1).is_some_and(|(_, ch)| *ch == '*');
         if !previous_is_star && !next_is_star {
             markers.push(*byte);
         }
