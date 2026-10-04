@@ -419,7 +419,11 @@ impl TerminalModel {
 
         let (cwd, file_to_open) = match initial {
             Some(path) if path.is_dir() => {
-                let absolute = if path.is_absolute() { path } else { current.join(path) };
+                let absolute = if path.is_absolute() {
+                    path
+                } else {
+                    current.join(path)
+                };
                 (absolute, None)
             }
             Some(path) => {
@@ -746,12 +750,10 @@ impl TerminalModel {
                     self.launcher.message = None;
                 }
                 KeyCode::Up => {
-                    self.launcher.export_selected =
-                        self.launcher.export_selected.saturating_sub(1);
+                    self.launcher.export_selected = self.launcher.export_selected.saturating_sub(1);
                 }
                 KeyCode::Down => {
-                    self.launcher.export_selected =
-                        (self.launcher.export_selected + 1).min(5);
+                    self.launcher.export_selected = (self.launcher.export_selected + 1).min(5);
                 }
                 KeyCode::Enter => {
                     let format = ExportFormat::ALL[self.launcher.export_selected % 3];
