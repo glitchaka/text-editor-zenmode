@@ -1,15 +1,18 @@
 use std::{
     fs,
+    io::{Read, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result};
+use serde_json::{Map, Value, json};
+use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::page::{PageOrientation, PageProfile, PaperSize};
 
 pub const EXTENSION: &str = "hsst";
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DocumentMetadata {
@@ -90,14 +93,315 @@ pub fn create_native(path: &Path, title: &str) -> Result<()> {
         metadata: DocumentMetadata::new(title),
         body: String::new(),
     };
-    fs::write(path, serialize(&document))
-        .with_context(|| format!("No se pudo crear {}", path.display()))
+    write(path, &document)
 }
 
 pub fn read(path: &Path) -> Result<HsstDocument> {
-    let raw =
-        fs::read_to_string(path).with_context(|| format!("No se pudo leer {}", path.display()))?;
+    let bytes = fs::read(path).with_context(|| format!("No se pudo leer {}", path.display()))?;
+    if bytes.starts_with(b"PK\x03\x04") {
+        return read_container(path);
+    }
+    let raw = String::from_utf8(bytes).with_context(|| {
+        format!(
+            "{} no es UTF-8 ni un contenedor HSST válido",
+            path.display()
+        )
+    })?;
     Ok(parse(&raw, path))
+}
+
+pub fn write(path: &Path, document: &HsstDocument) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let (plain, formatting) = formatting_payload(&document.body);
+    let manifest = manifest_json(&document.metadata);
+    let temporary = path.with_extension("hsst.tmp");
+    let backup = path.with_extension("hsst.bak");
+
+    {
+        let file = fs::File::create(&temporary)
+            .with_context(|| format!("No se pudo crear {}", temporary.display()))?;
+        let mut archive = ZipWriter::new(file);
+        let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+        archive.start_file("manifest.json", options)?;
+        archive.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
+        archive.start_file("content.txt", options)?;
+        archive.write_all(plain.as_bytes())?;
+        archive.start_file("formatting.json", options)?;
+        archive.write_all(serde_json::to_string_pretty(&formatting)?.as_bytes())?;
+        archive.start_file("history.jsonl", options)?;
+        archive.write_all(b"")?;
+        archive.finish()?;
+    }
+
+    if backup.exists() {
+        let _ = fs::remove_file(&backup);
+    }
+    if path.exists() {
+        fs::rename(path, &backup)
+            .with_context(|| format!("No se pudo preparar reemplazo de {}", path.display()))?;
+    }
+    if let Err(error) = fs::rename(&temporary, path) {
+        if backup.exists() {
+            let _ = fs::rename(&backup, path);
+        }
+        return Err(error).with_context(|| format!("No se pudo guardar {}", path.display()));
+    }
+    if backup.exists() {
+        let _ = fs::remove_file(&backup);
+    }
+    Ok(())
+}
+
+fn read_container(path: &Path) -> Result<HsstDocument> {
+    let file = fs::File::open(path)?;
+    let mut archive = ZipArchive::new(file)
+        .with_context(|| format!("{} no es un contenedor HSST válido", path.display()))?;
+
+    let manifest: Value = {
+        let mut raw = String::new();
+        archive.by_name("manifest.json")?.read_to_string(&mut raw)?;
+        serde_json::from_str(&raw)?
+    };
+    let content = {
+        let mut raw = String::new();
+        archive.by_name("content.txt")?.read_to_string(&mut raw)?;
+        raw
+    };
+    let formatting: Value = match archive.by_name("formatting.json") {
+        Ok(mut entry) => {
+            let mut raw = String::new();
+            entry.read_to_string(&mut raw)?;
+            serde_json::from_str(&raw).unwrap_or_else(|_| json!({"version": 1, "runs": []}))
+        }
+        Err(_) => json!({"version": 1, "runs": []}),
+    };
+
+    Ok(HsstDocument {
+        metadata: metadata_from_manifest(&manifest, path),
+        body: body_from_parts(&content, &formatting),
+    })
+}
+
+fn manifest_json(metadata: &DocumentMetadata) -> Value {
+    let page = metadata.page;
+    json!({
+        "format": FORMAT_VERSION,
+        "id": metadata.id,
+        "title": metadata.title,
+        "project": metadata.project,
+        "type": metadata.kind,
+        "chapter": metadata.chapter,
+        "order": metadata.order,
+        "language": metadata.language,
+        "status": metadata.status,
+        "page": {
+            "paper": page.paper.name(),
+            "orientation": page.orientation.name(),
+            "margin_top_mm": page.margin_top_mm,
+            "margin_right_mm": page.margin_right_mm,
+            "margin_bottom_mm": page.margin_bottom_mm,
+            "margin_left_mm": page.margin_left_mm
+        }
+    })
+}
+
+fn metadata_from_manifest(value: &Value, source: &Path) -> DocumentMetadata {
+    let fallback = fallback_metadata(source);
+    let page_value = value.get("page").unwrap_or(&Value::Null);
+    let margin = |key: &str, fallback_value: u16| {
+        page_value
+            .get(key)
+            .and_then(Value::as_u64)
+            .and_then(|value| u16::try_from(value).ok())
+            .filter(|value| (5..=60).contains(value))
+            .unwrap_or(fallback_value)
+    };
+    let page = PageProfile {
+        paper: page_value
+            .get("paper")
+            .and_then(Value::as_str)
+            .and_then(PaperSize::parse)
+            .unwrap_or(fallback.page.paper),
+        orientation: page_value
+            .get("orientation")
+            .and_then(Value::as_str)
+            .and_then(PageOrientation::parse)
+            .unwrap_or(fallback.page.orientation),
+        margin_top_mm: margin("margin_top_mm", fallback.page.margin_top_mm),
+        margin_right_mm: margin("margin_right_mm", fallback.page.margin_right_mm),
+        margin_bottom_mm: margin("margin_bottom_mm", fallback.page.margin_bottom_mm),
+        margin_left_mm: margin("margin_left_mm", fallback.page.margin_left_mm),
+    };
+
+    DocumentMetadata {
+        format: value
+            .get("format")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(FORMAT_VERSION),
+        id: value
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or(&fallback.id)
+            .to_owned(),
+        title: value
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or(&fallback.title)
+            .to_owned(),
+        project: value
+            .get("project")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        kind: value
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("document")
+            .to_owned(),
+        chapter: value
+            .get("chapter")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0),
+        order: value.get("order").and_then(Value::as_i64).unwrap_or(0),
+        language: value
+            .get("language")
+            .and_then(Value::as_str)
+            .unwrap_or("es-CL")
+            .to_owned(),
+        status: value
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("draft")
+            .to_owned(),
+        page,
+    }
+}
+
+fn formatting_payload(body: &str) -> (String, Value) {
+    let mut plain = String::new();
+    let mut ranges = Vec::new();
+
+    for run in crate::format::styled_runs(body) {
+        let start = plain.len();
+        plain.push_str(&run.text);
+        let end = plain.len();
+        if start == end || run.style == crate::format::TextStyle::default() {
+            continue;
+        }
+
+        let mut object = Map::new();
+        object.insert("start".into(), json!(start));
+        object.insert("end".into(), json!(end));
+        if run.style.bold {
+            object.insert("bold".into(), json!(true));
+        }
+        if run.style.italic {
+            object.insert("italic".into(), json!(true));
+        }
+        if run.style.underline {
+            object.insert("underline".into(), json!(true));
+        }
+        if let Some(color) = run.style.foreground {
+            object.insert("foreground".into(), json!(color.name()));
+        }
+        if let Some(color) = run.style.background {
+            object.insert("background".into(), json!(color.name()));
+        }
+        ranges.push(Value::Object(object));
+    }
+
+    (
+        plain,
+        json!({
+            "version": 1,
+            "unit": "utf8-byte",
+            "runs": ranges
+        }),
+    )
+}
+
+fn body_from_parts(content: &str, formatting: &Value) -> String {
+    let mut ranges = formatting
+        .get("runs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+            let start = value
+                .get("start")?
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())?;
+            let end = value
+                .get("end")?
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())?;
+            let style = crate::format::TextStyle {
+                bold: value.get("bold").and_then(Value::as_bool).unwrap_or(false),
+                italic: value
+                    .get("italic")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                underline: value
+                    .get("underline")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                foreground: value
+                    .get("foreground")
+                    .and_then(Value::as_str)
+                    .and_then(crate::format::PaletteColor::parse),
+                background: value
+                    .get("background")
+                    .and_then(Value::as_str)
+                    .and_then(crate::format::PaletteColor::parse),
+            };
+            Some((start, end, style))
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_by_key(|(start, end, _)| (*start, *end));
+
+    let mut output = String::with_capacity(content.len());
+    let mut cursor = 0usize;
+    for (start, end, style) in ranges {
+        if start < cursor
+            || start >= end
+            || end > content.len()
+            || !content.is_char_boundary(start)
+            || !content.is_char_boundary(end)
+        {
+            continue;
+        }
+        output.push_str(&content[cursor..start]);
+        output.push_str(&encode_styled_segment(&content[start..end], style));
+        cursor = end;
+    }
+    output.push_str(&content[cursor..]);
+    output
+}
+
+fn encode_styled_segment(segment: &str, style: crate::format::TextStyle) -> String {
+    let mut output = segment.to_owned();
+    if style.underline {
+        output = format!("__{output}__");
+    }
+    if style.italic {
+        output = format!("*{output}*");
+    }
+    if style.bold {
+        output = format!("**{output}**");
+    }
+    if let Some(color) = style.background {
+        output = format!("{{{{bg:{}}}}}{output}{{{{/bg}}}}", color.name());
+    }
+    if let Some(color) = style.foreground {
+        output = format!("{{{{fg:{}}}}}{output}{{{{/fg}}}}", color.name());
+    }
+    output
 }
 
 pub fn read_metadata(path: &Path) -> Option<DocumentMetadata> {
@@ -166,7 +470,7 @@ pub fn set_page_profile(path: &Path, page: PageProfile) -> Result<()> {
         return Ok(());
     }
     document.metadata.page = page;
-    fs::write(path, serialize(&document)).with_context(|| {
+    write(path, &document).with_context(|| {
         format!(
             "No se pudo actualizar el perfil de página de {}",
             path.display()

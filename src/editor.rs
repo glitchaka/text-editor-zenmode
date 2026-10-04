@@ -295,7 +295,7 @@ impl EditorSession {
 
         if changed {
             document.body = body;
-            fs::write(&source, document::serialize(&document))
+            document::write(&source, &document)
                 .with_context(|| format!("No se pudo guardar {}", source.display()))?;
         }
 
