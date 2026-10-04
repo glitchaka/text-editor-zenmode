@@ -127,7 +127,7 @@ fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<Ex
         bail!("El documento no está asignado a un proyecto.");
     }
 
-    let members = document::project_documents(library_documents, &current.metadata.project)?;
+    let members = document::project_chapters(library_documents, &current.metadata.project)?;
     if members.is_empty() {
         return Ok(vec![ExportDocument {
             title: current.metadata.title,
