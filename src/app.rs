@@ -1335,7 +1335,7 @@ fn control_pressed(reported: bool) -> bool {
     unsafe {
         // Slint/winit can report special-key events without the modifier bit on
         // some Windows paths. Ask USER32 for the physical Control key state.
-        return (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0;
+        (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0
     }
 
     #[cfg(not(windows))]
