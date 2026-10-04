@@ -97,4 +97,22 @@ text = text.replace(
 )
 
 path.write_text(text, encoding="utf-8")
-print("Runtime de página corregido")
+
+export_path = Path("src/export.rs")
+export_text = export_path.read_text(encoding="utf-8")
+test_initializer = '''        let document = ExportDocument {
+            title: "Capítulo 1".into(),
+            body: "Texto **fuerte**, *cursivo* y ==destacado==.".into(),
+        };'''
+test_initializer_fixed = '''        let document = ExportDocument {
+            title: "Capítulo 1".into(),
+            body: "Texto **fuerte**, *cursivo* y ==destacado==.".into(),
+            page: PageProfile::default(),
+        };'''
+if test_initializer in export_text:
+    export_text = export_text.replace(test_initializer, test_initializer_fixed, 1)
+elif test_initializer_fixed not in export_text:
+    raise SystemExit("No se encontró inicializador de prueba de ExportDocument")
+export_path.write_text(export_text, encoding="utf-8")
+
+print("Runtime y pruebas de página corregidos")
