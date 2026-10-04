@@ -742,6 +742,59 @@ mod tests {
     }
 
     #[test]
+    fn editor_config_keeps_windows_word_shortcuts() {
+        let root =
+            std::env::temp_dir().join(format!("helix-sst-editor-config-{}", std::process::id()));
+        let _ = fs::create_dir_all(&root);
+
+        let output = root.join("config.toml");
+        let launcher = root.join("helix-sst-zen.exe");
+        write_editor_config(&output, &launcher).expect("config.toml debe generarse");
+
+        let raw = fs::read_to_string(&output).expect("config.toml debe leerse");
+        let parsed: toml::Value =
+            toml::from_str(&raw).expect("config.toml debe ser TOML válido");
+
+        let keys = parsed
+            .get("keys")
+            .and_then(toml::Value::as_table)
+            .expect("debe existir [keys]");
+
+        let normal = keys
+            .get("normal")
+            .and_then(toml::Value::as_table)
+            .expect("debe existir [keys.normal]");
+        assert_eq!(
+            normal.get("C-left").and_then(toml::Value::as_str),
+            Some("move_prev_word_start")
+        );
+        assert_eq!(
+            normal.get("C-right").and_then(toml::Value::as_str),
+            Some("move_next_word_start")
+        );
+
+        let insert = keys
+            .get("insert")
+            .and_then(toml::Value::as_table)
+            .expect("debe existir [keys.insert]");
+        for (key, command) in [
+            ("C-left", "move_prev_word_start"),
+            ("C-right", "move_next_word_start"),
+            ("C-backspace", "delete_word_backward"),
+            ("C-del", "delete_word_forward"),
+        ] {
+            assert_eq!(
+                insert.get(key).and_then(toml::Value::as_str),
+                Some(command),
+                "binding incorrecto para {key}"
+            );
+        }
+
+        let _ = fs::remove_file(output);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn extensionless_language_config_attaches_spell_server() {
         let root =
             std::env::temp_dir().join(format!("helix-sst-language-config-{}", std::process::id()));
