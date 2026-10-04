@@ -134,13 +134,11 @@ slint::slint! {
         }
 
         island := Rectangle {
-            visible: !root.zen-active
-                || zen-reveal.has-hover
-                || zen-title-hover.has-hover
-                || zen-touch.has-hover
-                || minimize-touch.has-hover
-                || maximize-touch.has-hover
-                || close-touch.has-hover;
+            visible: root.zen-active
+                ? (zen-reveal.has-hover
+                    || zen-title-hover.has-hover
+                    || zen-touch.has-hover)
+                : true;
             width: min(650px, root.width - 20px);
             height: 34px;
             x: (root.width - self.width) / 2;
@@ -769,8 +767,12 @@ impl TerminalModel {
         let Ok(current_document) = document::read(&current) else {
             return false;
         };
-        let total_lines =
-            current_document.body.bytes().filter(|byte| *byte == b'\n').count() + 1;
+        let total_lines = current_document
+            .body
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
         if line < total_lines {
             return false;
         }
