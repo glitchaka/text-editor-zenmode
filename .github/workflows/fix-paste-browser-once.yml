@@ -1,0 +1,134 @@
+name: Fix Word paste and file browser once
+
+on:
+  push:
+    branches:
+      - "main"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Patch Word line breaks and browser visibility
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          app = Path("src/app.rs")
+          text = app.read_text(encoding="utf-8")
+          old = '''                    if !directory && !document::is_supported_text_path(&path) {
+                              return None;
+                          }
+          '''
+          if old not in text:
+              old = '''                    if !directory && !document::is_supported_text_path(&path) {
+                              return None;
+                          }
+          '''
+          # Be tolerant of rustfmt indentation by replacing the exact logical block.
+          text = text.replace(
+              '''                    if !directory && !document::is_supported_text_path(&path) {
+                              return None;
+                          }
+          ''',
+              ''''''
+          )
+          text = text.replace(
+              '''                    if !directory && !document::is_supported_text_path(&path) {
+                            return None;
+                        }
+          ''',
+              ''''''
+          )
+          # Fallback for the current four-space structure.
+          text = text.replace(
+              '''                    if !directory && !document::is_supported_text_path(&path) {
+                        return None;
+                    }
+          ''',
+              ''''''
+          )
+          app.write_text(text, encoding="utf-8")
+
+          editor = Path("src/editor.rs")
+          text = editor.read_text(encoding="utf-8")
+          old = '''fn normalize_pasted_text(text: &str) -> String {
+              text.replace("\\r\\n", "\\n").replace('\\r', "\\n")
+          }
+          '''
+          new = '''fn normalize_pasted_text(text: &str) -> String {
+              let mut normalized = String::with_capacity(text.len());
+              let mut chars = text.chars().peekable();
+
+              while let Some(ch) = chars.next() {
+                  match ch {
+                      '\\r' => {
+                          if chars.peek() == Some(&'\\n') {
+                              chars.next();
+                          }
+                          normalized.push('\\n');
+                      }
+                      // Word can expose manual line/paragraph separators through
+                      // plain-text clipboard formats instead of CR/LF.
+                      '\\u{000B}' | '\\u{000C}' | '\\u{0085}' | '\\u{2028}' | '\\u{2029}' => {
+                          normalized.push('\\n');
+                      }
+                      other => normalized.push(other),
+                  }
+              }
+
+              normalized
+          }
+          '''
+          if old not in text:
+              raise SystemExit("normalize_pasted_text block not found")
+          text = text.replace(old, new, 1)
+
+          marker = '''    #[test]
+              fn pasted_prose_preserves_original_paragraph_structure() {
+          '''
+          test = '''    #[test]
+              fn pasted_word_manual_breaks_become_real_lines() {
+                  let input = "Uno\\u{000B}Dos\\rTres\\r\\nCuatro\\u{0085}Cinco\\u{2028}Seis\\u{2029}Siete";
+                  assert_eq!(
+                      normalize_pasted_text(input),
+                      "Uno\\nDos\\nTres\\nCuatro\\nCinco\\nSeis\\nSiete"
+                  );
+              }
+
+          '''
+          if test not in text:
+              if marker not in text:
+                  raise SystemExit("paste test insertion point not found")
+              text = text.replace(marker, test + marker, 1)
+          editor.write_text(text, encoding="utf-8")
+          '@ | python -
+
+          cargo fmt --all
+
+          git diff -- src/app.rs src/editor.rs
+
+          if (Select-String -Path "src/app.rs" -Pattern 'is_supported_text_path\(&path\)' -Quiet) {
+            throw "El filtro del navegador sigue presente"
+          }
+
+      - name: Commit fix and remove one-shot workflow
+        shell: pwsh
+        run: |
+          Remove-Item .github/workflows/fix-paste-browser-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs src/editor.rs .github/workflows/fix-paste-browser-once.yml
+          git commit -m "Respetar saltos de Word y mostrar todos los archivos"
+          git push origin HEAD:main
