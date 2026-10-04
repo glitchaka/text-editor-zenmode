@@ -791,6 +791,33 @@ mod tests {
     }
 
     #[test]
+    fn zen_theme_is_valid_toml_and_keeps_highlighter_background() {
+        let root =
+            std::env::temp_dir().join(format!("helix-sst-theme-{}", std::process::id()));
+        let _ = fs::create_dir_all(&root);
+        let output = root.join("helix-sst-zen.toml");
+
+        write_zen_theme(&output).expect("el tema debe generarse");
+        let raw = fs::read_to_string(&output).expect("el tema debe leerse");
+        let parsed: toml::Value = toml::from_str(&raw).expect("el tema debe ser TOML válido");
+
+        assert_eq!(
+            parsed.get("inherits").and_then(toml::Value::as_str),
+            Some("gruvbox")
+        );
+        assert_eq!(
+            parsed
+                .get("macro")
+                .and_then(toml::Value::as_table)
+                .and_then(|style| style.get("bg"))
+                .and_then(toml::Value::as_str),
+            Some("#fabd2f")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn editor_config_keeps_windows_word_shortcuts() {
         let root =
             std::env::temp_dir().join(format!("helix-sst-editor-config-{}", std::process::id()));
