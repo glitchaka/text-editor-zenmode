@@ -324,7 +324,7 @@ impl EditorSession {
             }
         }
 
-        bytes.extend_from_slice(&encode_paste(&prepared, win32));
+        bytes.extend_from_slice(&encode_paste(&prepared));
 
         let mut writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
         writer.write_all(&bytes)?;
@@ -567,15 +567,7 @@ cursorline = true
 bufferline = "multiple"
 color-modes = true
 auto-completion = true
-text-width = 88
 end-of-line-diagnostics = "disable"
-
-[editor.soft-wrap]
-enable = true
-wrap-at-text-width = true
-max-wrap = 25
-max-indent-retain = 0
-wrap-indicator = ""
 
 [editor.inline-diagnostics]
 cursor-line = "warning"
@@ -710,8 +702,6 @@ args = ["--helix-sst-spell", "{user_dictionary}", "{library_root}", "{source_fil
 name = "prose"
 scope = "text.plain"
 file-types = {text_file_types}
-text-width = 88
-soft-wrap = {{ enable = true, wrap-at-text-width = true, max-wrap = 25, max-indent-retain = 0, wrap-indicator = "" }}
 language-servers = ["helix-sst-spell"]
 
 [[language]]
@@ -764,28 +754,12 @@ fn normalize_pasted_text(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-
-    if !win32 {
-        let mut bytes = Vec::with_capacity(normalized.len() + 12);
-        bytes.extend_from_slice(b"\x1b[200~");
-        bytes.extend_from_slice(normalized.as_bytes());
-        bytes.extend_from_slice(b"\x1b[201~");
-        return bytes;
-    }
-
-    let mut bytes = Vec::with_capacity(normalized.len() * 8);
-    for ch in normalized.chars() {
-        let code = match ch {
-            '\n' => KeyCode::Enter,
-            '\t' => KeyCode::Tab,
-            other => KeyCode::Char(other),
-        };
-        if let Some(encoded) = encode_input(KeyEvent::new(code, KeyModifiers::NONE), true) {
-            bytes.extend_from_slice(&encoded);
-        }
-    }
+fn encode_paste(text: &str) -> Vec<u8> {
+    let normalized = normalize_pasted_text(text);
+    let mut bytes = Vec::with_capacity(normalized.len() + 12);
+    bytes.extend_from_slice(b"\x1b[200~");
+    bytes.extend_from_slice(normalized.as_bytes());
+    bytes.extend_from_slice(b"\x1b[201~");
     bytes
 }
 
@@ -1055,25 +1029,17 @@ mod tests {
             &encode_input(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), win32)
                 .expect("i debe codificarse"),
         );
-        bytes.extend_from_slice(&encode_paste(&prepared, win32));
+        bytes.extend_from_slice(&encode_paste(&prepared));
         assert!(bytes.starts_with(b"\x1bi\x1b[200~"));
     }
 
     #[test]
-    fn multiline_paste_preserves_paragraph_breaks_in_vt_mode() {
-        let encoded = encode_paste("uno\r\ndos\rtres\ncuatro", false);
+    fn multiline_paste_preserves_paragraph_breaks_as_one_bracketed_paste() {
+        let encoded = encode_paste("uno\r\ndos\rtres\ncuatro");
         assert!(encoded.starts_with(b"\x1b[200~"));
         assert!(encoded.ends_with(b"\x1b[201~"));
         let payload = &encoded[6..encoded.len() - 6];
         assert_eq!(payload, b"uno\ndos\ntres\ncuatro");
-    }
-
-    #[test]
-    fn multiline_paste_turns_line_breaks_into_enter_in_win32_mode() {
-        let encoded = String::from_utf8(encode_paste("uno\r\ndos\ntres", true))
-            .expect("la entrada Win32 debe quedar codificada como ASCII");
-        let enter_down = ";13;1;0;1_";
-        assert_eq!(encoded.matches(enter_down).count(), 2);
     }
 
     #[test]
@@ -1125,7 +1091,7 @@ mod tests {
     }
 
     #[test]
-    fn editor_config_keeps_windows_word_shortcuts() {
+    fn editor_config_keeps_windows_word_shortcuts_without_forced_wrap() {
         let root =
             std::env::temp_dir().join(format!("helix-sst-editor-config-{}", std::process::id()));
         let _ = fs::create_dir_all(&root);
@@ -1141,25 +1107,13 @@ mod tests {
             .get("editor")
             .and_then(toml::Value::as_table)
             .expect("debe existir [editor]");
-        assert_eq!(
-            editor_table
-                .get("text-width")
-                .and_then(toml::Value::as_integer),
-            Some(88)
+        assert!(
+            editor_table.get("text-width").is_none(),
+            "Zenmode no debe imponer un ancho lógico de 88 columnas"
         );
-        let soft_wrap = editor_table
-            .get("soft-wrap")
-            .and_then(toml::Value::as_table)
-            .expect("debe existir [editor.soft-wrap]");
-        assert_eq!(
-            soft_wrap.get("enable").and_then(toml::Value::as_bool),
-            Some(true)
-        );
-        assert_eq!(
-            soft_wrap
-                .get("wrap-at-text-width")
-                .and_then(toml::Value::as_bool),
-            Some(true)
+        assert!(
+            editor_table.get("soft-wrap").is_none(),
+            "Zenmode no debe partir visualmente cada párrafo como si fuera una sola línea"
         );
         assert_eq!(
             editor_table
@@ -1228,7 +1182,7 @@ mod tests {
     }
 
     #[test]
-    fn extensionless_language_config_attaches_spell_server() {
+    fn extensionless_language_config_attaches_spell_server_without_forced_wrap() {
         let root =
             std::env::temp_dir().join(format!("helix-sst-language-config-{}", std::process::id()));
         let _ = fs::create_dir_all(&root);
@@ -1253,6 +1207,9 @@ mod tests {
             .iter()
             .find(|language| language.get("name").and_then(toml::Value::as_str) == Some("prose"))
             .expect("debe existir el lenguaje prose");
+
+        assert!(text.get("text-width").is_none());
+        assert!(text.get("soft-wrap").is_none());
 
         let servers = text
             .get("language-servers")
