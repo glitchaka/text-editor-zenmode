@@ -4,6 +4,7 @@ mod app;
 mod document;
 mod editor;
 mod export;
+mod format;
 mod library;
 mod pty_protocol;
 mod spell;
@@ -26,6 +27,13 @@ fn main() -> Result<()> {
         let library_root = args.get(2).map(PathBuf::from);
         let source_file = args.get(3).map(PathBuf::from);
         std::process::exit(spell::run_lsp(path, library_root, source_file)?);
+    }
+
+    if args.first().map(String::as_str) == Some("--hsst-format") {
+        let action = args.get(1).map(String::as_str).unwrap_or("");
+        let value = args.get(2).map(String::as_str);
+        format::run_filter(action, value)?;
+        return Ok(());
     }
 
     if args.first().map(String::as_str) == Some("--clipboard-get") {
