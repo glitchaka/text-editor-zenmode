@@ -1,0 +1,32 @@
+name: Apply true HSST compound model once
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Apply HSST model migration
+        run: python scripts/migrate_hsst_true_container.py
+
+      - name: Commit changes
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/document.rs src/editor.rs src/format.rs src/main.rs src/app.rs src/spell.rs src/export.rs
+          git commit -m "Separar contenido y formato dentro de HSST"
+          git push origin HEAD:main
