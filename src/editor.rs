@@ -456,7 +456,7 @@ F14 = "extend_next_word_start"
 fn write_zen_theme(path: &Path) -> Result<()> {
     fs::write(
         path,
-        r#"inherits = "gruvbox"
+        r##"inherits = "gruvbox"
 
 # HSST semantic tokens. The prose LSP uses these scopes only for native
 # writing markup; the rest of Gruvbox remains inherited.
@@ -465,7 +465,7 @@ fn write_zen_theme(path: &Path) -> Result<()> {
 "string" = { fg = "#ebdbb2", modifiers = ["bold"] }
 "regexp" = { fg = "#d3869b", modifiers = ["italic"] }
 "macro" = { fg = "#282828", bg = "#fabd2f", modifiers = ["bold"] }
-"#,
+"##,
     )?;
     Ok(())
 }
