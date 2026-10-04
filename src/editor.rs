@@ -752,8 +752,7 @@ mod tests {
         write_editor_config(&output, &launcher).expect("config.toml debe generarse");
 
         let raw = fs::read_to_string(&output).expect("config.toml debe leerse");
-        let parsed: toml::Value =
-            toml::from_str(&raw).expect("config.toml debe ser TOML válido");
+        let parsed: toml::Value = toml::from_str(&raw).expect("config.toml debe ser TOML válido");
 
         let keys = parsed
             .get("keys")
