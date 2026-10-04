@@ -19,7 +19,7 @@ use windows_sys::Win32::{
     Foundation::HWND,
     System::Threading::{AttachThreadInput, GetCurrentThreadId},
     UI::{
-        Input::KeyboardAndMouse::{SetActiveWindow, SetFocus},
+        Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
             BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
             HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
@@ -691,6 +691,12 @@ impl TerminalModel {
         }
 
         if let Some(editor) = self.editor.as_ref() {
+            if let Some(code) = bridged_word_shortcut(key) {
+                let internal = KeyEvent::new(code, KeyModifiers::NONE);
+                let _ = editor.send_key(internal, editor.win32_input());
+                return;
+            }
+
             let _ = editor.send_key(key, editor.win32_input());
         }
     }
@@ -1320,6 +1326,38 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     Ok(())
 }
 
+fn control_pressed(reported: bool) -> bool {
+    if reported {
+        return true;
+    }
+
+    #[cfg(windows)]
+    unsafe {
+        // Slint/winit can report special-key events without the modifier bit on
+        // some Windows paths. Ask USER32 for the physical Control key state.
+        return (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0;
+    }
+
+    #[cfg(not(windows))]
+    false
+}
+
+fn bridged_word_shortcut(key: KeyEvent) -> Option<KeyCode> {
+    if !key.modifiers.contains(KeyModifiers::CONTROL)
+        || key.modifiers.contains(KeyModifiers::ALT)
+    {
+        return None;
+    }
+
+    match key.code {
+        KeyCode::Left => Some(KeyCode::F(13)),
+        KeyCode::Right => Some(KeyCode::F(14)),
+        KeyCode::Backspace => Some(KeyCode::F(15)),
+        KeyCode::Delete => Some(KeyCode::F(16)),
+        _ => None,
+    }
+}
+
 fn handle_key(model: &mut TerminalModel, text: &str, ctrl: bool, alt: bool, shift: bool) {
     use slint::platform::Key;
 
@@ -1344,6 +1382,8 @@ fn handle_key(model: &mut TerminalModel, text: &str, ctrl: bool, alt: bool, shif
     {
         return;
     }
+
+    let ctrl = control_pressed(ctrl);
 
     let mut modifiers = KeyModifiers::NONE;
     if ctrl {
@@ -1892,5 +1932,37 @@ fn draw_glyph(
                 a: 255,
             };
         }
+    }
+}
+
+
+#[cfg(test)]
+mod app_input_tests {
+    use super::*;
+
+    #[test]
+    fn bridged_word_shortcut_maps_requested_ctrl_keys() {
+        let ctrl = KeyModifiers::CONTROL;
+
+        assert_eq!(
+            bridged_word_shortcut(KeyEvent::new(KeyCode::Left, ctrl)),
+            Some(KeyCode::F(13))
+        );
+        assert_eq!(
+            bridged_word_shortcut(KeyEvent::new(KeyCode::Right, ctrl)),
+            Some(KeyCode::F(14))
+        );
+        assert_eq!(
+            bridged_word_shortcut(KeyEvent::new(KeyCode::Backspace, ctrl)),
+            Some(KeyCode::F(15))
+        );
+        assert_eq!(
+            bridged_word_shortcut(KeyEvent::new(KeyCode::Delete, ctrl)),
+            Some(KeyCode::F(16))
+        );
+        assert_eq!(
+            bridged_word_shortcut(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+            None
+        );
     }
 }

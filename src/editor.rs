@@ -415,6 +415,8 @@ paste = {{ command = "{exe}", args = ["--clipboard-set"] }}
 F2 = "code_action"
 C-left = "move_prev_word_start"
 C-right = "move_next_word_start"
+F13 = "move_prev_word_start"
+F14 = "move_next_word_start"
 
 [keys.insert]
 F2 = "code_action"
@@ -424,11 +426,17 @@ C-left = "move_prev_word_start"
 C-right = "move_next_word_start"
 C-backspace = "delete_word_backward"
 C-del = "delete_word_forward"
+F13 = "move_prev_word_start"
+F14 = "move_next_word_start"
+F15 = "delete_word_backward"
+F16 = "delete_word_forward"
 
 [keys.select]
 F2 = "code_action"
 C-left = "extend_prev_word_start"
 C-right = "extend_next_word_start"
+F13 = "extend_prev_word_start"
+F14 = "extend_next_word_start"
 "#
     );
     fs::write(path, content)?;
@@ -771,6 +779,14 @@ mod tests {
             normal.get("C-right").and_then(toml::Value::as_str),
             Some("move_next_word_start")
         );
+        assert_eq!(
+            normal.get("F13").and_then(toml::Value::as_str),
+            Some("move_prev_word_start")
+        );
+        assert_eq!(
+            normal.get("F14").and_then(toml::Value::as_str),
+            Some("move_next_word_start")
+        );
 
         let insert = keys
             .get("insert")
@@ -781,6 +797,10 @@ mod tests {
             ("C-right", "move_next_word_start"),
             ("C-backspace", "delete_word_backward"),
             ("C-del", "delete_word_forward"),
+            ("F13", "move_prev_word_start"),
+            ("F14", "move_next_word_start"),
+            ("F15", "delete_word_backward"),
+            ("F16", "delete_word_forward"),
         ] {
             assert_eq!(
                 insert.get(key).and_then(toml::Value::as_str),
