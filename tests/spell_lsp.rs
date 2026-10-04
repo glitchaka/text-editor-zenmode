@@ -18,16 +18,26 @@ fn spell_lsp_process_advertises_code_actions() {
         .spawn()
         .expect("el helper ortográfico debe poder arrancar");
 
-    let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+    let initialize = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+    let shutdown = r#"{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}"#;
+    let exit = r#"{"jsonrpc":"2.0","method":"exit","params":null}"#;
+
     {
         let mut stdin = child.stdin.take().expect("stdin del helper");
-        write!(stdin, "Content-Length: {}\r\n\r\n{}", body.len(), body)
-            .expect("debe poder enviarse initialize");
+        for message in [initialize, shutdown, exit] {
+            write!(
+                stdin,
+                "Content-Length: {}\r\n\r\n{}",
+                message.len(),
+                message
+            )
+            .expect("debe poder enviarse una trama LSP");
+        }
     }
 
     let output = child
         .wait_with_output()
-        .expect("el helper ortográfico debe finalizar al cerrar stdin");
+        .expect("el helper ortográfico debe finalizar tras exit");
 
     assert!(
         output.status.success(),
