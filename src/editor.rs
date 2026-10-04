@@ -307,11 +307,9 @@ impl EditorSession {
     }
 
     pub fn paste(&self, text: &str) -> Result<()> {
-        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        let bytes = encode_paste(text, self.win32_input());
         let mut writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
-        writer.write_all(b"\x1b[200~")?;
-        writer.write_all(normalized.as_bytes())?;
-        writer.write_all(b"\x1b[201~")?;
+        writer.write_all(&bytes)?;
         writer.flush()?;
         Ok(())
     }
@@ -551,7 +549,15 @@ cursorline = true
 bufferline = "multiple"
 color-modes = true
 auto-completion = true
+text-width = 88
 end-of-line-diagnostics = "disable"
+
+[editor.soft-wrap]
+enable = true
+wrap-at-text-width = true
+max-wrap = 25
+max-indent-retain = 0
+wrap-indicator = ""
 
 [editor.inline-diagnostics]
 cursor-line = "warning"
@@ -665,6 +671,8 @@ args = ["--helix-sst-spell", "{user_dictionary}", "{library_root}", "{source_fil
 name = "prose"
 scope = "text.plain"
 file-types = {text_file_types}
+text-width = 88
+soft-wrap = { enable = true, wrap-at-text-width = true, max-wrap = 25, max-indent-retain = 0, wrap-indicator = "" }
 language-servers = ["helix-sst-spell"]
 
 [[language]]
@@ -711,6 +719,33 @@ fn find_named(root: &Path, name: &str, directory: bool) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+
+    if !win32 {
+        let mut bytes = Vec::with_capacity(normalized.len() + 12);
+        bytes.extend_from_slice(b"\x1b[200~");
+        bytes.extend_from_slice(normalized.as_bytes());
+        bytes.extend_from_slice(b"\x1b[201~");
+        return bytes;
+    }
+
+    let mut bytes = Vec::with_capacity(normalized.len() * 8);
+    for ch in normalized.chars() {
+        let code = match ch {
+            '\n' => KeyCode::Enter,
+            '\t' => KeyCode::Tab,
+            other => KeyCode::Char(other),
+        };
+        if let Some(encoded) =
+            encode_input(KeyEvent::new(code, KeyModifiers::NONE), true)
+        {
+            bytes.extend_from_slice(&encoded);
+        }
+    }
+    bytes
 }
 
 fn encode_input(key: KeyEvent, win32: bool) -> Option<Vec<u8>> {
@@ -956,6 +991,23 @@ mod tests {
 
 
     #[test]
+    fn multiline_paste_preserves_paragraph_breaks_in_vt_mode() {
+        let encoded = encode_paste("uno\r\ndos\rtres\ncuatro", false);
+        assert!(encoded.starts_with(b"\x1b[200~"));
+        assert!(encoded.ends_with(b"\x1b[201~"));
+        let payload = &encoded[6..encoded.len() - 6];
+        assert_eq!(payload, b"uno\ndos\ntres\ncuatro");
+    }
+
+    #[test]
+    fn multiline_paste_turns_line_breaks_into_enter_in_win32_mode() {
+        let encoded = String::from_utf8(encode_paste("uno\r\ndos\ntres", true))
+            .expect("la entrada Win32 debe quedar codificada como ASCII");
+        let enter_down = ";13;1;0;1_";
+        assert_eq!(encoded.matches(enter_down).count(), 2);
+    }
+
+    #[test]
     fn vt_ctrl_word_navigation_preserves_control_modifier() {
         let ctrl = KeyModifiers::CONTROL;
 
@@ -1015,6 +1067,29 @@ mod tests {
 
         let raw = fs::read_to_string(&output).expect("config.toml debe leerse");
         let parsed: toml::Value = toml::from_str(&raw).expect("config.toml debe ser TOML válido");
+
+        let editor_table = parsed
+            .get("editor")
+            .and_then(toml::Value::as_table)
+            .expect("debe existir [editor]");
+        assert_eq!(
+            editor_table.get("text-width").and_then(toml::Value::as_integer),
+            Some(88)
+        );
+        let soft_wrap = editor_table
+            .get("soft-wrap")
+            .and_then(toml::Value::as_table)
+            .expect("debe existir [editor.soft-wrap]");
+        assert_eq!(
+            soft_wrap.get("enable").and_then(toml::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            soft_wrap
+                .get("wrap-at-text-width")
+                .and_then(toml::Value::as_bool),
+            Some(true)
+        );
 
         let keys = parsed
             .get("keys")
