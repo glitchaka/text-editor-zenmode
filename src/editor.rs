@@ -672,7 +672,7 @@ name = "prose"
 scope = "text.plain"
 file-types = {text_file_types}
 text-width = 88
-soft-wrap = { enable = true, wrap-at-text-width = true, max-wrap = 25, max-indent-retain = 0, wrap-indicator = "" }
+soft-wrap = {{ enable = true, wrap-at-text-width = true, max-wrap = 25, max-indent-retain = 0, wrap-indicator = "" }}
 language-servers = ["helix-sst-spell"]
 
 [[language]]
