@@ -373,6 +373,10 @@ F2 = "code_action"
 F2 = "code_action"
 A-d = "@—"
 C-g = "@—"
+C-left = "move_prev_word_start"
+C-right = "move_next_word_start"
+C-backspace = "delete_word_backward"
+C-del = "delete_word_forward"
 
 [keys.select]
 F2 = "code_action"
@@ -662,4 +666,57 @@ fn function_key(number: u8, shift: bool, alt: bool, ctrl: bool) -> Option<Vec<u8
         _ => return None,
     };
     Some(csi_tilde(base, shift, alt, ctrl))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vt_ctrl_word_navigation_preserves_control_modifier() {
+        let ctrl = KeyModifiers::CONTROL;
+
+        assert_eq!(
+            encode_key(KeyEvent::new(KeyCode::Left, ctrl)).as_deref(),
+            Some(b"\x1b[1;5D".as_slice())
+        );
+        assert_eq!(
+            encode_key(KeyEvent::new(KeyCode::Right, ctrl)).as_deref(),
+            Some(b"\x1b[1;5C".as_slice())
+        );
+        assert_eq!(
+            encode_key(KeyEvent::new(KeyCode::Delete, ctrl)).as_deref(),
+            Some(b"\x1b[3;5~".as_slice())
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn win32_ctrl_special_keys_keep_control_state() {
+        let ctrl = KeyModifiers::CONTROL;
+
+        let left = String::from_utf8(
+            encode_input(KeyEvent::new(KeyCode::Left, ctrl), true)
+                .expect("Ctrl+Left debe codificarse"),
+        )
+        .expect("la secuencia Win32 debe ser ASCII");
+        assert!(left.contains(";1;264;1_"));
+        assert!(left.contains(";0;264;1_"));
+
+        let backspace = String::from_utf8(
+            encode_input(KeyEvent::new(KeyCode::Backspace, ctrl), true)
+                .expect("Ctrl+Backspace debe codificarse"),
+        )
+        .expect("la secuencia Win32 debe ser ASCII");
+        assert!(backspace.contains(";1;8;1_"));
+        assert!(backspace.contains(";0;8;1_"));
+
+        let delete = String::from_utf8(
+            encode_input(KeyEvent::new(KeyCode::Delete, ctrl), true)
+                .expect("Ctrl+Delete debe codificarse"),
+        )
+        .expect("la secuencia Win32 debe ser ASCII");
+        assert!(delete.contains(";1;264;1_"));
+        assert!(delete.contains(";0;264;1_"));
+    }
 }
