@@ -208,21 +208,37 @@ pub fn project_counts(root: &Path) -> Vec<(String, usize)> {
 
 pub fn body_without_markup(body: &str) -> String {
     let mut output = String::with_capacity(body.len());
-    let chars = body.chars().collect::<Vec<_>>();
-    let mut index = 0usize;
 
-    while index < chars.len() {
-        if index + 1 < chars.len()
-            && matches!(
-                (chars[index], chars[index + 1]),
-                ('*', '*') | ('=', '=') | ('~', '~')
-            )
-        {
-            index += 2;
-            continue;
+    for (line_index, line) in body.lines().enumerate() {
+        if line_index > 0 {
+            output.push('\n');
         }
-        output.push(chars[index]);
-        index += 1;
+
+        let line = line.strip_prefix("# ").unwrap_or(line);
+        let chars = line.chars().collect::<Vec<_>>();
+        let mut index = 0usize;
+
+        while index < chars.len() {
+            if index + 1 < chars.len()
+                && matches!(
+                    (chars[index], chars[index + 1]),
+                    ('*', '*') | ('=', '=') | ('~', '~')
+                )
+            {
+                index += 2;
+                continue;
+            }
+            if chars[index] == '*' {
+                index += 1;
+                continue;
+            }
+            output.push(chars[index]);
+            index += 1;
+        }
+    }
+
+    if body.ends_with('\n') {
+        output.push('\n');
     }
     output
 }
@@ -365,5 +381,14 @@ mod tests {
     fn new_names_default_to_hsst() {
         let path = native_path_for_name(Path::new("docs"), "Capítulo 1");
         assert_eq!(path, Path::new("docs").join("Capítulo 1.hsst"));
+    }
+
+    #[test]
+    fn plain_body_removes_native_rich_markup() {
+        let body = "# Título\nUno **dos** *tres* ==cuatro==.\n";
+        assert_eq!(
+            body_without_markup(body),
+            "Título\nUno dos tres cuatro.\n"
+        );
     }
 }
