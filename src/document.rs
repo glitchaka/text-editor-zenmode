@@ -215,26 +215,8 @@ pub fn body_without_markup(body: &str) -> String {
         }
 
         let line = line.strip_prefix("# ").unwrap_or(line);
-        let chars = line.chars().collect::<Vec<_>>();
-        let mut index = 0usize;
-
-        while index < chars.len() {
-            if index + 1 < chars.len()
-                && matches!(
-                    (chars[index], chars[index + 1]),
-                    ('*', '*') | ('=', '=') | ('~', '~')
-                )
-            {
-                index += 2;
-                continue;
-            }
-            if chars[index] == '*' {
-                index += 1;
-                continue;
-            }
-            output.push(chars[index]);
-            index += 1;
-        }
+        let plain = crate::format::strip_markup(line).replace("~~", "");
+        output.push_str(&plain);
     }
 
     if body.ends_with('\n') {
@@ -385,7 +367,10 @@ mod tests {
 
     #[test]
     fn plain_body_removes_native_rich_markup() {
-        let body = "# Título\nUno **dos** *tres* ==cuatro==.\n";
-        assert_eq!(body_without_markup(body), "Título\nUno dos tres cuatro.\n");
+        let body = "# Título\nUno **dos** *tres* ==cuatro== __cinco__ {{fg:red}}seis{{/fg}} {{bg:blue}}siete{{/bg}}.\n";
+        assert_eq!(
+            body_without_markup(body),
+            "Título\nUno dos tres cuatro cinco seis siete.\n"
+        );
     }
 }
