@@ -160,148 +160,148 @@ slint::slint! {
                 width: parent.width;
                 height: parent.height;
                 enabled: !root.zen-active;
+            }
+
+            Text {
+                x: 17px;
+                y: 0;
+                width: 120px;
+                height: parent.height;
+                text: "HELIX SST";
+                color: #dfe8ef;
+                font-family: "Segoe UI Variable";
+                font-size: 14px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+
+            Text {
+                x: 137px;
+                y: 0;
+                width: 125px;
+                height: parent.height;
+                text: root.version-text;
+                color: #7f8b9b;
+                font-family: "Segoe UI Variable";
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+
+            zen-control := Rectangle {
+                visible: island.width >= 470px;
+                x: (island.width - 104px) / 2;
+                y: 3px;
+                width: 104px;
+                height: island.height - 6px;
+                border-radius: 9px;
+                background: zen-touch.pressed
+                    ? rgb(36, 49, 67)
+                    : zen-touch.has-hover ? rgb(23, 35, 52) : transparent;
 
                 Text {
-                    x: 17px;
-                    y: 0;
-                    width: 120px;
-                    height: parent.height;
-                    text: "HELIX SST";
-                    color: #dfe8ef;
+                    width: 100%;
+                    height: 100%;
+                    text: root.editor-active
+                        ? (root.zen-active ? "ZENMODE ACTIVO" : "ENTRAR ZEN")
+                        : "EDITOR";
+                    color: root.zen-active ? #e8cc83 : #8db9bb;
                     font-family: "Segoe UI Variable";
-                    font-size: 14px;
-                    font-weight: 700;
+                    font-size: 11px;
+                    font-weight: 600;
                     vertical-alignment: center;
+                    horizontal-alignment: center;
                 }
 
-                Text {
-                    x: 137px;
-                    y: 0;
-                    width: 125px;
-                    height: parent.height;
-                    text: root.version-text;
-                    color: #7f8b9b;
-                    font-family: "Segoe UI Variable";
-                    font-size: 12px;
-                    vertical-alignment: center;
+                zen-touch := TouchArea {
+                    enabled: root.editor-active;
+                    mouse-cursor: pointer;
+                    clicked => { root.toggle-zen(); }
+                }
+            }
+
+            Rectangle {
+                visible: !root.zen-active;
+                x: island.width - 114px;
+                y: 1px;
+                width: 38px;
+                height: island.height - 2px;
+                border-radius: 10px;
+                background: minimize-touch.pressed
+                    ? rgb(36, 49, 67)
+                    : minimize-touch.has-hover ? rgb(23, 35, 52) : transparent;
+
+                Path {
+                    x: 11px;
+                    y: 10px;
+                    width: 16px;
+                    height: 12px;
+                    commands: "M 1 1 L 8 9 L 15 1";
+                    stroke: #74c8f5;
+                    stroke-width: 2.4px;
+                    stroke-line-cap: round;
+                    stroke-line-join: round;
                 }
 
-                zen-control := Rectangle {
-                    visible: island.width >= 470px;
-                    x: (island.width - 104px) / 2;
-                    y: 3px;
-                    width: 104px;
-                    height: island.height - 6px;
-                    border-radius: 9px;
-                    background: zen-touch.pressed
-                        ? rgb(36, 49, 67)
-                        : zen-touch.has-hover ? rgb(23, 35, 52) : transparent;
+                minimize-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.minimized = true; }
+                }
+            }
 
-                    Text {
-                        width: 100%;
-                        height: 100%;
-                        text: root.editor-active
-                            ? (root.zen-active ? "ZENMODE ACTIVO" : "ENTRAR ZEN")
-                            : "EDITOR";
-                        color: root.zen-active ? #e8cc83 : #8db9bb;
-                        font-family: "Segoe UI Variable";
-                        font-size: 11px;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                        horizontal-alignment: center;
-                    }
+            Rectangle {
+                visible: !root.zen-active;
+                x: island.width - 76px;
+                y: 1px;
+                width: 38px;
+                height: island.height - 2px;
+                border-radius: 10px;
+                background: maximize-touch.pressed
+                    ? rgb(36, 49, 67)
+                    : maximize-touch.has-hover ? rgb(23, 35, 52) : transparent;
 
-                    zen-touch := TouchArea {
-                        enabled: root.editor-active;
-                        mouse-cursor: pointer;
-                        clicked => { root.toggle-zen(); }
-                    }
+                Path {
+                    x: 11px;
+                    y: 11px;
+                    width: 16px;
+                    height: 12px;
+                    commands: "M 1 10 L 8 2 L 15 10";
+                    stroke: #74c8f5;
+                    stroke-width: 2.4px;
+                    stroke-line-cap: round;
+                    stroke-line-join: round;
                 }
 
-                Rectangle {
-                    visible: !root.zen-active;
-                    x: island.width - 114px;
-                    y: 1px;
-                    width: 38px;
-                    height: island.height - 2px;
-                    border-radius: 10px;
-                    background: minimize-touch.pressed
-                        ? rgb(36, 49, 67)
-                        : minimize-touch.has-hover ? rgb(23, 35, 52) : transparent;
+                maximize-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.maximized = !root.maximized; }
+                }
+            }
 
-                    Path {
-                        x: 11px;
-                        y: 10px;
-                        width: 16px;
-                        height: 12px;
-                        commands: "M 1 1 L 8 9 L 15 1";
-                        stroke: #74c8f5;
-                        stroke-width: 2.4px;
-                        stroke-line-cap: round;
-                        stroke-line-join: round;
-                    }
+            Rectangle {
+                visible: !root.zen-active;
+                x: island.width - 38px;
+                y: 1px;
+                width: 38px;
+                height: island.height - 2px;
+                border-radius: 10px;
+                background: close-touch.pressed
+                    ? rgb(62, 23, 36)
+                    : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
 
-                    minimize-touch := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.minimized = true; }
-                    }
+                Path {
+                    x: 10px;
+                    y: 8px;
+                    width: 18px;
+                    height: 18px;
+                    commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
+                    stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
+                    stroke-width: 2px;
+                    stroke-line-cap: round;
                 }
 
-                Rectangle {
-                    visible: !root.zen-active;
-                    x: island.width - 76px;
-                    y: 1px;
-                    width: 38px;
-                    height: island.height - 2px;
-                    border-radius: 10px;
-                    background: maximize-touch.pressed
-                        ? rgb(36, 49, 67)
-                        : maximize-touch.has-hover ? rgb(23, 35, 52) : transparent;
-
-                    Path {
-                        x: 11px;
-                        y: 11px;
-                        width: 16px;
-                        height: 12px;
-                        commands: "M 1 10 L 8 2 L 15 10";
-                        stroke: #74c8f5;
-                        stroke-width: 2.4px;
-                        stroke-line-cap: round;
-                        stroke-line-join: round;
-                    }
-
-                    maximize-touch := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.maximized = !root.maximized; }
-                    }
-                }
-
-                Rectangle {
-                    visible: !root.zen-active;
-                    x: island.width - 38px;
-                    y: 1px;
-                    width: 38px;
-                    height: island.height - 2px;
-                    border-radius: 10px;
-                    background: close-touch.pressed
-                        ? rgb(62, 23, 36)
-                        : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
-
-                    Path {
-                        x: 10px;
-                        y: 8px;
-                        width: 18px;
-                        height: 18px;
-                        commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
-                        stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
-                        stroke-width: 2px;
-                        stroke-line-cap: round;
-                    }
-
-                    close-touch := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.close-window(); }
-                    }
+                close-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.close-window(); }
                 }
             }
         }
