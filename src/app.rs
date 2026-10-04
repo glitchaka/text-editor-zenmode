@@ -1661,8 +1661,7 @@ impl TerminalModel {
                     if let Some(glyph) = self.glyphs.get(&key) {
                         draw_glyph(
                             pixels,
-                            width,
-                            height,
+                            (width, height),
                             pen_x,
                             baseline,
                             glyph,
@@ -2432,14 +2431,14 @@ fn fill_rect(
 
 fn draw_glyph(
     pixels: &mut [Rgba8Pixel],
-    width: u32,
-    height: u32,
+    surface: (u32, u32),
     cell_x: i32,
     baseline: i32,
     glyph: &Glyph,
     color: Rgb,
     italic: bool,
 ) {
+    let (width, height) = surface;
     if glyph.metrics.width == 0 || glyph.metrics.height == 0 {
         return;
     }
