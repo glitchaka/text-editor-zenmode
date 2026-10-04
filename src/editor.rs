@@ -177,9 +177,24 @@ impl EditorSession {
         }
 
         // Extensionless prose files are a first-class Zenmode use case.
-        // Force Helix onto the managed "text" language once startup has settled
-        // so its spell LSP is attached even if filename detection is ambiguous.
-        self.write_reply(b":set-language text\r")?;
+        // Force Helix onto the managed "text" language once startup has settled.
+        // Route the synthetic command through the same keyboard encoder as real
+        // input so it also works after Helix enables Windows input mode (?9001h).
+        let win32 = self.win32_input();
+        let mut bytes = Vec::new();
+        for ch in ":set-language text".chars() {
+            if let Some(encoded) =
+                encode_input(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE), win32)
+            {
+                bytes.extend_from_slice(&encoded);
+            }
+        }
+        if let Some(encoded) =
+            encode_input(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), win32)
+        {
+            bytes.extend_from_slice(&encoded);
+        }
+        self.write_reply(&bytes)?;
         self.startup_language_sent = true;
         Ok(())
     }
