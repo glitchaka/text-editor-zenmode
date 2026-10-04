@@ -436,7 +436,7 @@ fn push_single_asterisk_ranges(line: &str, output: &mut Vec<StyleRange>) {
         stars.push(index);
     }
 
-    for pair in stars.chunks_exact(2) {
+    for pair in stars.as_chunks::<2>().0 {
         if pair[1] > pair[0] + 1 {
             output.push(StyleRange {
                 start: pair[0] + 1,
