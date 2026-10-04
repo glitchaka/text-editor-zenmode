@@ -744,10 +744,8 @@ mod tests {
 
     #[test]
     fn extensionless_language_config_attaches_spell_server() {
-        let root = std::env::temp_dir().join(format!(
-            "helix-sst-language-config-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("helix-sst-language-config-{}", std::process::id()));
         let _ = fs::create_dir_all(&root);
 
         let output = root.join("languages.toml");
@@ -759,7 +757,8 @@ mod tests {
             .expect("languages.toml debe generarse");
 
         let raw = fs::read_to_string(&output).expect("languages.toml debe leerse");
-        let parsed: toml::Value = toml::from_str(&raw).expect("languages.toml debe ser TOML válido");
+        let parsed: toml::Value =
+            toml::from_str(&raw).expect("languages.toml debe ser TOML válido");
         let languages = parsed
             .get("language")
             .and_then(toml::Value::as_array)
