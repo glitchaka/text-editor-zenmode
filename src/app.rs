@@ -1048,9 +1048,16 @@ impl TerminalModel {
     }
 
     fn apply_format(&mut self, action: &str, value: &str) {
+        let leave_insert = self.helix_is_insert_mode();
         let Some(editor) = self.editor.as_ref() else {
             return;
         };
+        if leave_insert {
+            let _ = editor.send_key(
+                KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                editor.win32_input(),
+            );
+        }
         let value = (!value.is_empty()).then_some(value);
         match format::pipe_command(action, value) {
             Ok(command) => {

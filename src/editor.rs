@@ -230,8 +230,14 @@ impl EditorSession {
     pub fn send_command(&self, command: &str) -> Result<()> {
         let win32 = self.win32_input();
         let mut bytes = Vec::new();
+        let payload = if let Some(rest) = command.strip_prefix(':') {
+            bytes.extend_from_slice(&encode_command_colon(win32));
+            rest
+        } else {
+            command
+        };
 
-        for ch in command.chars() {
+        for ch in payload.chars() {
             if let Some(encoded) =
                 encode_input(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE), win32)
             {
@@ -816,6 +822,34 @@ fn wrap_pasted_text(text: &str, width: usize) -> String {
         output.push_str(remaining);
     }
     output
+}
+
+fn encode_command_colon(win32: bool) -> Vec<u8> {
+    if !win32 {
+        return b":".to_vec();
+    }
+
+    #[cfg(windows)]
+    {
+        const VK_OEM_1: u16 = 0xBA;
+        const SHIFT_PRESSED: u32 = 0x10;
+        let scan = unsafe {
+            windows_sys::Win32::UI::Input::KeyboardAndMouse::MapVirtualKeyW(
+                VK_OEM_1.into(),
+                0,
+            )
+        };
+        let mut bytes = Vec::new();
+        for down in [1, 0] {
+            bytes.extend_from_slice(
+                format!("\x1b[{VK_OEM_1};{scan};58;{down};{SHIFT_PRESSED};1_").as_bytes(),
+            );
+        }
+        return bytes;
+    }
+
+    #[cfg(not(windows))]
+    b":".to_vec()
 }
 
 fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
