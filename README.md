@@ -1,80 +1,116 @@
 # Helix-SST Zenmode
 
-Editor de texto sin distracciones basado en Helix, con lanzador de archivos integrado, terminal propia y herramientas de escritura en español.
+Editor de escritura basado en Helix con formato nativo `.hsst`, biblioteca propia, proyectos lógicos, corrector es-CL y exportación.
 
-## Flujo de inicio
+## Biblioteca
 
-Al abrir `helix-sst-zen.exe`, la ventana muestra los archivos y directorios del directorio actual:
+Al abrir Zenmode sin argumentos usa por defecto:
 
 ```text
-HELIX-SST
-C:\Users\...\Documents\Novela
-
-> [ Nuevo archivo ]
-  ▸ notas/
-    capitulo-01.txt
-    capitulo-02.txt
-    worldbuilding.md
+Documentos\Helix SST\
+├── documents\
+└── exports\
 ```
 
-Controles del selector:
+La ruta puede cambiarse con `HELIX_SST_LIBRARY`.
 
-- `↑` / `↓`: mover la selección.
-- `Enter`: abrir el archivo seleccionado o entrar a un directorio.
-- `N`: crear un archivo nuevo.
-- `Backspace`: subir al directorio padre.
-- `R`: refrescar el listado.
-- `Esc`: cerrar el lanzador.
+El launcher solo muestra directorios y documentos de texto relevantes. Los documentos `.hsst` pueden pertenecer a proyectos aunque estén físicamente sueltos en `documents\`.
 
-Al abrir o crear un archivo, la misma ventana pasa al editor. Al cerrar Helix, vuelve al selector y conserva el directorio.
+## Formato .hsst
 
-## Características
+Los documentos nuevos se crean como `.hsst` e incluyen metadata TOML:
 
-- Helix 25.07.1.
-- Interfaz minimalista orientada a escritura sin distracciones.
-- Tema Gruvbox.
-- Corrector ortográfico es-CL.
-- Diagnóstico ortográfico virtual debajo de la línea activa:
-  ```text
-  palabraa
-       └─ Posible error ortográfico: «palabraa»
-  ```
-- `F2` para acciones ortográficas.
-- Diccionario personal para aceptar palabras.
-- `Alt+D` y `Ctrl+G` para insertar `—`.
-- Portapapeles del sistema.
-- Pegado multilínea.
-- UTF-8 y true color.
-- Ventana y terminal propias.
-- PTY dedicado para ejecutar Helix.
-- Redimensionado dinámico de filas y columnas.
-- Normalización de salida VT para evitar desplazamientos incorrectos del cursor durante repaints complejos.
+```text
++++
+format = 1
+id = "..."
+title = "Capítulo 1"
+project = "Puerto Ámbar"
+type = "chapter"
+chapter = 1
+order = 10
+language = "es-CL"
+status = "draft"
++++
 
-## Abrir un archivo directamente
+Texto del capítulo...
+```
 
-También se puede iniciar el editor con una ruta:
+`id` es estable y permite reconocer el documento aunque cambie de nombre.
+
+Marcado enriquecido inicial:
+
+- `**negrita**`
+- `*cursiva*`
+- `==destacado==`
+- `# Título`
+
+## Proyectos
+
+Los campos `project`, `type`, `chapter` y `order` forman proyectos lógicos sin obligar a mover los archivos a carpetas separadas. La exportación de proyecto respeta ese orden.
+
+## Exportación
+
+En el launcher selecciona un documento y pulsa `E`.
+
+Se puede exportar el documento actual o el proyecto completo a:
+
+- TXT: texto limpio.
+- DOCX: Word/OpenXML sin requerir Microsoft Word; conserva títulos, negrita, cursiva y destacados.
+- PDF: salida de lectura/entrega.
+
+Los archivos generados quedan en `Documentos\Helix SST\exports\`.
+
+## Corrector y completado
+
+Los `.hsst` usan el lenguaje `prose` de Helix-SST y cargan automáticamente `helix-sst-spell`.
+
+- diagnósticos ortográficos inline en la línea activa;
+- `F2` para correcciones;
+- diccionario personal;
+- completado LSP con palabras del documento, palabras de otros documentos del mismo proyecto y sugerencias ortográficas;
+- tokens semánticos para metadata, títulos, negrita y destacados.
+
+## Arrastrar un archivo sobre el ejecutable
+
+En Windows, arrastrar un archivo de texto sobre `helix-sst-zen.exe` hace que Windows entregue la ruta como argumento. Zenmode abre directamente Helix con ese archivo cargado, sin pasar por el selector ni esperar la pantalla de bienvenida.
+
+También puede hacerse desde consola:
 
 ```powershell
-helix-sst-zen capitulo-03.txt
+helix-sst-zen "C:\ruta\Capítulo 1.hsst"
+helix-sst-zen --zen "C:\ruta\Capítulo 1.hsst"
 ```
 
-## Compilación
+## Controles principales
 
-El proyecto está pensado inicialmente para Windows.
+Launcher:
+
+- `↑ / ↓`: selección.
+- `Enter`: elegir/abrir.
+- `N`: documento nuevo `.hsst`.
+- `E`: exportar.
+- `Z`: alternar modo normal/Zenmode real.
+- `R`: refrescar.
+- `Backspace`: subir de directorio sin escapar de la biblioteca predeterminada.
+- `Esc`: cerrar.
+
+Editor:
+
+- `Z` en NORMAL: entrar/salir de Zenmode real.
+- `Ctrl+← / Ctrl+→`: mover por palabras.
+- `Ctrl+Backspace / Ctrl+Supr`: borrar palabra.
+- `F2`: corrección ortográfica.
+- `Alt+D` / `Ctrl+G`: insertar raya `—`.
+
+## Compilación
 
 ```powershell
 cargo build --release
 ```
 
-Durante la compilación se obtiene la versión fijada de Helix, JetBrainsMono Nerd Font y el diccionario es-CL.
-
-Se pueden proporcionar archivos locales mediante:
-
-```text
-HELIX_SST_ARCHIVE
-HELIX_SST_FONT_FILE
-```
+GitHub Actions comprueba formato, Clippy, tests y build de Windows.
 
 ## Licencias
 
-La información de componentes de terceros está disponible en `THIRD_PARTY.md` y en el directorio `licenses/`.
+La información de terceros está en `THIRD_PARTY.md` y `licenses/`.

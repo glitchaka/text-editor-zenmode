@@ -17,8 +17,8 @@ pub const DICTIONARY_LICENSE: &str =
 const SOURCE: &str = "Helix-SST ortografía";
 const ADD_WORD_COMMAND: &str = "helix-sst.addWord";
 
-pub fn run_lsp(user_dictionary: PathBuf) -> Result<i32> {
-    let mut server = SpellServer::new(user_dictionary)?;
+pub fn run_lsp(user_dictionary: PathBuf, library_root: Option<PathBuf>) -> Result<i32> {
+    let mut server = SpellServer::new(user_dictionary, library_root)?;
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut input = BufReader::new(stdin.lock());
@@ -39,6 +39,16 @@ pub fn run_lsp(user_dictionary: PathBuf) -> Result<i32> {
                                 "positionEncoding": "utf-16",
                                 "textDocumentSync": 1,
                                 "codeActionProvider": true,
+                                "completionProvider": {
+                                    "triggerCharacters": []
+                                },
+                                "semanticTokensProvider": {
+                                    "legend": {
+                                        "tokenTypes": ["comment", "keyword", "string", "macro"],
+                                        "tokenModifiers": []
+                                    },
+                                    "full": true
+                                },
                                 "executeCommandProvider": {
                                     "commands": [ADD_WORD_COMMAND]
                                 }
@@ -98,6 +108,18 @@ pub fn run_lsp(user_dictionary: PathBuf) -> Result<i32> {
                     )?;
                 }
             }
+            "textDocument/completion" => {
+                if let Some(id) = id {
+                    let items = server.completions(message.get("params").unwrap_or(&Value::Null));
+                    send_response(&mut output, id, Value::Array(items))?;
+                }
+            }
+            "textDocument/semanticTokens/full" => {
+                if let Some(id) = id {
+                    let data = server.semantic_tokens(message.get("params").unwrap_or(&Value::Null));
+                    send_response(&mut output, id, json!({ "data": data }))?;
+                }
+            }
             "textDocument/codeAction" => {
                 if let Some(id) = id {
                     let actions =
@@ -151,10 +173,11 @@ struct SpellServer {
     user_dictionary: PathBuf,
     user_words: HashSet<String>,
     documents: HashMap<String, String>,
+    library_root: Option<PathBuf>,
 }
 
 impl SpellServer {
-    fn new(user_dictionary: PathBuf) -> Result<Self> {
+    fn new(user_dictionary: PathBuf, library_root: Option<PathBuf>) -> Result<Self> {
         let mut dictionary = Dictionary::new(ES_CL_AFF, ES_CL_DIC)
             .map_err(|error| anyhow::anyhow!("diccionario es-CL inválido: {error}"))?;
         let mut user_words = HashSet::new();
@@ -176,6 +199,7 @@ impl SpellServer {
             user_dictionary,
             user_words,
             documents: HashMap::new(),
+            library_root,
         })
     }
 
@@ -193,10 +217,18 @@ impl SpellServer {
     fn diagnostics(&self, text: &str) -> Vec<Value> {
         let mut diagnostics = Vec::new();
         let mut fenced = false;
+        let mut frontmatter = false;
         let fence = "\x60\x60\x60";
 
         for (line_number, line) in text.lines().enumerate() {
             let trimmed = line.trim_start();
+            if trimmed == "+++" {
+                frontmatter = !frontmatter;
+                continue;
+            }
+            if frontmatter {
+                continue;
+            }
             if trimmed.starts_with(fence) || trimmed.starts_with("~~~") {
                 fenced = !fenced;
                 continue;
@@ -321,6 +353,119 @@ impl SpellServer {
         actions
     }
 
+    fn completions(&self, params: &Value) -> Vec<Value> {
+        let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) else {
+            return Vec::new();
+        };
+        let Some(text) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let line = params
+            .pointer("/position/line")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(0);
+        let character = params
+            .pointer("/position/character")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(0);
+        let prefix = word_prefix_at(text, line, character);
+        if prefix.chars().count() < 2 {
+            return Vec::new();
+        }
+
+        let mut candidates = std::collections::BTreeSet::<String>::new();
+        for (_, _, word) in text.lines().flat_map(word_ranges) {
+            if starts_with_case_insensitive(&word, &prefix) && !word.eq_ignore_ascii_case(&prefix) {
+                candidates.insert(word);
+            }
+        }
+
+        if let Some(root) = self.library_root.as_ref() {
+            collect_library_words(root, text, &prefix, &mut candidates);
+        }
+
+        let mut spelling = Vec::new();
+        self.dictionary.suggest(&prefix, &mut spelling);
+        for suggestion in spelling.into_iter().take(8) {
+            candidates.insert(suggestion);
+        }
+
+        candidates
+            .into_iter()
+            .take(20)
+            .map(|label| {
+                json!({
+                    "label": label,
+                    "kind": 1
+                })
+            })
+            .collect()
+    }
+
+    fn semantic_tokens(&self, params: &Value) -> Vec<u32> {
+        let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) else {
+            return Vec::new();
+        };
+        let Some(text) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+
+        let mut absolute = Vec::<(u32, u32, u32, u32)>::new();
+        let mut frontmatter = false;
+
+        for (line_index, line) in text.lines().enumerate() {
+            let line_number = line_index as u32;
+            let trimmed = line.trim_start();
+            let leading = line.len().saturating_sub(trimmed.len());
+
+            if trimmed == "+++" {
+                absolute.push((line_number, leading as u32, 3, 0));
+                frontmatter = !frontmatter;
+                continue;
+            }
+            if frontmatter {
+                absolute.push((
+                    line_number,
+                    0,
+                    line.encode_utf16().count() as u32,
+                    0,
+                ));
+                continue;
+            }
+            if trimmed.starts_with("# ") {
+                absolute.push((
+                    line_number,
+                    leading as u32,
+                    trimmed.encode_utf16().count() as u32,
+                    1,
+                ));
+                continue;
+            }
+            push_delimited_tokens(line_number, line, "**", 2, &mut absolute);
+            push_delimited_tokens(line_number, line, "==", 3, &mut absolute);
+        }
+
+        absolute.sort_unstable();
+        let mut data = Vec::with_capacity(absolute.len() * 5);
+        let mut previous_line = 0u32;
+        let mut previous_start = 0u32;
+
+        for (line, start, length, token_type) in absolute {
+            let delta_line = line.saturating_sub(previous_line);
+            let delta_start = if delta_line == 0 {
+                start.saturating_sub(previous_start)
+            } else {
+                start
+            };
+            data.extend_from_slice(&[delta_line, delta_start, length, token_type, 0]);
+            previous_line = line;
+            previous_start = start;
+        }
+        data
+    }
+
     fn add_user_word(&mut self, word: &str) -> Result<bool> {
         let word = word.trim();
         if word.is_empty()
@@ -351,6 +496,99 @@ impl SpellServer {
             .map_err(|error| anyhow::anyhow!("no se pudo agregar «{word}»: {error}"))?;
         self.user_words.insert(normalized);
         Ok(true)
+    }
+}
+
+fn word_prefix_at(text: &str, line: usize, utf16_character: usize) -> String {
+    let Some(line) = text.lines().nth(line) else {
+        return String::new();
+    };
+
+    let mut utf16 = 0usize;
+    let mut byte_index = line.len();
+    for (index, ch) in line.char_indices() {
+        let next = utf16 + ch.len_utf16();
+        if next > utf16_character {
+            byte_index = index;
+            break;
+        }
+        utf16 = next;
+        byte_index = index + ch.len_utf8();
+        if utf16 == utf16_character {
+            break;
+        }
+    }
+
+    let prefix = &line[..byte_index.min(line.len())];
+    let start = prefix
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !ch.is_alphabetic() && !matches!(ch, '\'' | '’'))
+        .map(|(index, ch)| index + ch.len_utf8())
+        .unwrap_or(0);
+    prefix[start..].to_owned()
+}
+
+fn starts_with_case_insensitive(word: &str, prefix: &str) -> bool {
+    word.to_lowercase().starts_with(&prefix.to_lowercase())
+}
+
+fn collect_library_words(
+    root: &std::path::Path,
+    current_text: &str,
+    prefix: &str,
+    output: &mut std::collections::BTreeSet<String>,
+) {
+    let current_project = crate::document::parse(current_text, std::path::Path::new("current.hsst"))
+        .metadata
+        .project;
+
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !crate::document::is_native_path(&path) {
+            continue;
+        }
+        let Ok(document) = crate::document::read(&path) else {
+            continue;
+        };
+        if !current_project.trim().is_empty()
+            && !document.metadata.project.eq_ignore_ascii_case(&current_project)
+        {
+            continue;
+        }
+        for (_, _, word) in document.body.lines().flat_map(word_ranges) {
+            if starts_with_case_insensitive(&word, prefix) {
+                output.insert(word);
+            }
+        }
+    }
+}
+
+fn push_delimited_tokens(
+    line_number: u32,
+    line: &str,
+    marker: &str,
+    token_type: u32,
+    output: &mut Vec<(u32, u32, u32, u32)>,
+) {
+    let mut cursor = 0usize;
+    while let Some(open_relative) = line[cursor..].find(marker) {
+        let open = cursor + open_relative;
+        let content_start = open + marker.len();
+        let Some(close_relative) = line[content_start..].find(marker) else {
+            break;
+        };
+        let close = content_start + close_relative;
+        let start_utf16 = line[..content_start].encode_utf16().count() as u32;
+        let length_utf16 = line[content_start..close].encode_utf16().count() as u32;
+        if length_utf16 > 0 {
+            output.push((line_number, start_utf16, length_utf16, token_type));
+        }
+        cursor = close + marker.len();
     }
 }
 

@@ -1,7 +1,10 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod app;
+mod document;
 mod editor;
+mod export;
+mod library;
 mod pty_protocol;
 mod spell;
 
@@ -20,7 +23,8 @@ fn main() -> Result<()> {
             .get(1)
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(".spell-user"));
-        std::process::exit(spell::run_lsp(path)?);
+        let library_root = args.get(2).map(PathBuf::from);
+        std::process::exit(spell::run_lsp(path, library_root)?);
     }
 
     if args.first().map(String::as_str) == Some("--clipboard-get") {

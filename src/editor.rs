@@ -391,6 +391,7 @@ true-color = true
 cursorline = true
 bufferline = "multiple"
 color-modes = true
+auto-completion = true
 end-of-line-diagnostics = "disable"
 
 [editor.inline-diagnostics]
@@ -451,6 +452,12 @@ fn write_language_config(
 ) -> Result<()> {
     let launcher = toml_path(launcher);
     let user_dictionary = toml_path(user_dictionary);
+    let library_root = toml_path(
+        current_file
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new(".")),
+    );
 
     // Helix treats a string in file-types as an extension, or as the complete
     // filename when the path has no extension. Register the current extensionless
@@ -467,15 +474,15 @@ fn write_language_config(
 
     let text_file_types = match extensionless_name {
         Some(name) => {
-            format!("[\"txt\", \"text\", \"{name}\", {{ glob = \"*/{name}\" }}]")
+            format!("[\"hsst\", \"txt\", \"text\", \"{name}\", {{ glob = \"*/{name}\" }}]")
         }
-        None => "[\"txt\", \"text\"]".to_owned(),
+        None => "[\"hsst\", \"txt\", \"text\"]".to_owned(),
     };
 
     let content = format!(
         r#"[language-server.helix-sst-spell]
 command = "{launcher}"
-args = ["--helix-sst-spell", "{user_dictionary}"]
+args = ["--helix-sst-spell", "{user_dictionary}", "{library_root}"]
 
 [[language]]
 name = "prose"

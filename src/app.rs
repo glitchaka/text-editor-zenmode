@@ -28,7 +28,12 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::editor::EditorSession;
+use crate::{
+    document::{self, DocumentMetadata},
+    editor::EditorSession,
+    export::{self, ExportFormat, ExportScope},
+    library::LibraryPaths,
+};
 
 const INITIAL_COLS: u16 = 112;
 const INITIAL_ROWS: u16 = 34;
@@ -320,6 +325,7 @@ struct Entry {
     path: PathBuf,
     name: String,
     directory: bool,
+    metadata: Option<DocumentMetadata>,
 }
 
 struct Launcher {
@@ -328,6 +334,8 @@ struct Launcher {
     selected: usize,
     creating: bool,
     new_name: String,
+    exporting: Option<PathBuf>,
+    export_selected: usize,
     message: Option<String>,
 }
 
@@ -339,6 +347,8 @@ impl Launcher {
             selected: 0,
             creating: false,
             new_name: String::new(),
+            exporting: None,
+            export_selected: 0,
             message: None,
         };
         this.refresh();
@@ -349,15 +359,20 @@ impl Launcher {
         let mut entries = match fs::read_dir(&self.cwd) {
             Ok(read_dir) => read_dir
                 .flatten()
-                .map(|entry| {
+                .filter_map(|entry| {
                     let path = entry.path();
                     let directory = path.is_dir();
+                    if !directory && !document::is_supported_text_path(&path) {
+                        return None;
+                    }
                     let name = entry.file_name().to_string_lossy().into_owned();
-                    Entry {
+                    let metadata = document::read_metadata(&path);
+                    Some(Entry {
                         path,
                         name,
                         directory,
-                    }
+                        metadata,
+                    })
                 })
                 .collect::<Vec<_>>(),
             Err(error) => {
@@ -387,35 +402,35 @@ struct TerminalModel {
     font: Font,
     glyphs: HashMap<(char, u16), Glyph>,
     launcher: Launcher,
+    library: LibraryPaths,
     editor: Option<EditorSession>,
     width: u32,
     height: u32,
     scale: f32,
     dirty: bool,
     splash_active: bool,
-    pending_initial: Option<PathBuf>,
     zen_requested: bool,
 }
 
 impl TerminalModel {
     fn new(initial: Option<PathBuf>, zen_requested: bool) -> Result<Self> {
         let current = std::env::current_dir()?;
+        let library = LibraryPaths::ensure()?;
+
         let (cwd, file_to_open) = match initial {
-            Some(path) if path.is_dir() => (path, None),
+            Some(path) if path.is_dir() => {
+                let absolute = if path.is_absolute() { path } else { current.join(path) };
+                (absolute, None)
+            }
             Some(path) => {
                 let absolute = if path.is_absolute() {
                     path
                 } else {
                     current.join(path)
                 };
-                let parent = absolute
-                    .parent()
-                    .filter(|path| !path.as_os_str().is_empty())
-                    .unwrap_or(&current)
-                    .to_path_buf();
-                (parent, Some(absolute))
+                (library.documents.clone(), Some(absolute))
             }
-            None => (current, None),
+            None => (library.documents.clone(), None),
         };
 
         let font = Font::from_bytes(FONT_BYTES, FontSettings::default())
@@ -426,17 +441,21 @@ impl TerminalModel {
             font,
             glyphs: HashMap::new(),
             launcher: Launcher::new(cwd),
+            library,
             editor: None,
             width: 980,
             height: 680,
             scale: 1.0,
             dirty: true,
-            splash_active: true,
-            pending_initial: file_to_open,
+            splash_active: file_to_open.is_none(),
             zen_requested,
         };
 
-        this.render_splash();
+        if let Some(file) = file_to_open {
+            this.open_editor(file)?;
+        } else {
+            this.render_splash();
+        }
         Ok(this)
     }
 
@@ -589,15 +608,7 @@ impl TerminalModel {
 
         self.splash_active = false;
         self.reset_parser();
-
-        if let Some(file) = self.pending_initial.take() {
-            if let Err(error) = self.open_editor(file) {
-                self.launcher.message = Some(error.to_string());
-                self.render_launcher();
-            }
-        } else {
-            self.render_launcher();
-        }
+        self.render_launcher();
     }
 
     fn reset_parser(&mut self) {
@@ -727,6 +738,52 @@ impl TerminalModel {
     }
 
     fn launcher_key(&mut self, key: KeyEvent) {
+        if let Some(source) = self.launcher.exporting.clone() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.launcher.exporting = None;
+                    self.launcher.export_selected = 0;
+                    self.launcher.message = None;
+                }
+                KeyCode::Up => {
+                    self.launcher.export_selected =
+                        self.launcher.export_selected.saturating_sub(1);
+                }
+                KeyCode::Down => {
+                    self.launcher.export_selected =
+                        (self.launcher.export_selected + 1).min(5);
+                }
+                KeyCode::Enter => {
+                    let format = ExportFormat::ALL[self.launcher.export_selected % 3];
+                    let scope = if self.launcher.export_selected < 3 {
+                        ExportScope::Document
+                    } else {
+                        ExportScope::Project
+                    };
+                    match export::export(
+                        &source,
+                        &self.library.documents,
+                        &self.library.exports,
+                        format,
+                        scope,
+                    ) {
+                        Ok(target) => {
+                            self.launcher.message =
+                                Some(format!("Exportado: {}", target.display()));
+                            self.launcher.exporting = None;
+                            self.launcher.export_selected = 0;
+                        }
+                        Err(error) => {
+                            self.launcher.message = Some(format!("No se pudo exportar: {error}"));
+                        }
+                    }
+                }
+                _ => {}
+            }
+            self.render_launcher();
+            return;
+        }
+
         if self.launcher.creating {
             match key.code {
                 KeyCode::Esc => {
@@ -739,23 +796,31 @@ impl TerminalModel {
                     if name.is_empty() {
                         self.launcher.message = Some("Escribe un nombre de archivo.".into());
                     } else {
-                        let path = self.launcher.cwd.join(&name);
+                        let path = document::native_path_for_name(&self.launcher.cwd, &name);
                         if path.is_dir() {
                             self.launcher.message =
                                 Some("Ese nombre corresponde a un directorio.".into());
+                        } else if path.exists() {
+                            self.launcher.message = Some("Ese documento ya existe.".into());
                         } else {
-                            match fs::OpenOptions::new().create(true).append(true).open(&path) {
-                                Ok(_) => {
+                            let title = path
+                                .file_stem()
+                                .and_then(|value| value.to_str())
+                                .unwrap_or("Documento")
+                                .to_owned();
+                            match document::create_native(&path, &title) {
+                                Ok(()) => {
                                     self.launcher.creating = false;
                                     self.launcher.new_name.clear();
                                     self.launcher.message = None;
+                                    self.launcher.refresh();
                                     if let Err(error) = self.open_editor(path) {
                                         self.launcher.message = Some(error.to_string());
                                     }
                                 }
                                 Err(error) => {
                                     self.launcher.message =
-                                        Some(format!("No se pudo crear el archivo: {error}"));
+                                        Some(format!("No se pudo crear el documento: {error}"));
                                 }
                             }
                         }
@@ -793,6 +858,15 @@ impl TerminalModel {
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 self.launcher.refresh();
             }
+            KeyCode::Char('e') | KeyCode::Char('E') => {
+                if let Some(entry) = self.launcher.selected_entry().cloned() {
+                    if !entry.directory {
+                        self.launcher.exporting = Some(entry.path);
+                        self.launcher.export_selected = 0;
+                        self.launcher.message = None;
+                    }
+                }
+            }
             KeyCode::Char('z') | KeyCode::Char('Z') => {
                 self.zen_requested = !self.zen_requested;
                 self.launcher.message = Some(if self.zen_requested {
@@ -802,11 +876,13 @@ impl TerminalModel {
                 });
             }
             KeyCode::Backspace => {
-                if let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf) {
-                    self.launcher.cwd = parent;
-                    self.launcher.selected = 0;
-                    self.launcher.message = None;
-                    self.launcher.refresh();
+                if self.launcher.cwd != self.library.documents {
+                    if let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf) {
+                        self.launcher.cwd = parent;
+                        self.launcher.selected = 0;
+                        self.launcher.message = None;
+                        self.launcher.refresh();
+                    }
                 }
             }
             KeyCode::Esc => {
@@ -895,6 +971,27 @@ impl TerminalModel {
             ),
         );
 
+        if self.launcher.cwd == self.library.documents {
+            let projects = document::project_counts(&self.library.documents);
+            if !projects.is_empty() {
+                let summary = projects
+                    .iter()
+                    .take(4)
+                    .map(|(name, count)| format!("{name}({count})"))
+                    .collect::<Vec<_>>()
+                    .join("  ");
+                let summary = truncate(&summary, inner_width.saturating_sub(12));
+                push_line(
+                    &mut out,
+                    &framed_left(
+                        &format!("\x1b[38;5;244mPROYECTOS\x1b[0m  \x1b[38;5;109m{summary}\x1b[0m"),
+                        inner_width,
+                        "38;5;244",
+                    ),
+                );
+            }
+        }
+
         push_line(
             &mut out,
             &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
@@ -939,7 +1036,51 @@ impl TerminalModel {
             &framed_left("\x1b[1;38;5;222mARCHIVOS\x1b[0m", inner_width, "38;5;244"),
         );
 
-        if self.launcher.creating {
+        if let Some(source) = self.launcher.exporting.as_ref() {
+            let source_name = source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Documento");
+            push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    &format!(
+                        "\x1b[1;38;5;222mEXPORTAR\x1b[0m  \x1b[38;5;250m{}\x1b[0m",
+                        truncate(source_name, inner_width.saturating_sub(12))
+                    ),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+
+            for index in 0..6 {
+                let scope = if index < 3 {
+                    ExportScope::Document
+                } else {
+                    ExportScope::Project
+                };
+                let format = ExportFormat::ALL[index % 3];
+                let selected = self.launcher.export_selected == index;
+                let marker = if selected { "▶" } else { " " };
+                let row = format!("{marker}  {:<9} {}", scope.label(), format.label());
+                let row = if selected {
+                    format!("\x1b[1;38;5;117m{row}\x1b[0m")
+                } else {
+                    format!("\x1b[38;5;250m{row}\x1b[0m")
+                };
+                push_line(&mut out, &framed_left(&row, inner_width, "38;5;244"));
+            }
+
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[38;5;244m↑↓ seleccionar  ·  Enter exportar  ·  Esc cancelar\x1b[0m",
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+        } else if self.launcher.creating {
             push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
             push_line(
                 &mut out,
@@ -970,7 +1111,7 @@ impl TerminalModel {
                 ),
             );
         } else {
-            let chrome_rows = 15usize;
+            let chrome_rows = 16usize;
             let available = (rows as usize).saturating_sub(chrome_rows).max(3);
             let selected = self.launcher.selected;
             let total = self.launcher.entries.len() + 1;
@@ -1001,8 +1142,29 @@ impl TerminalModel {
                     let marker = if selected_now { "▶" } else { " " };
                     let suffix = if entry.directory { "/" } else { "" };
                     let (icon, icon_color) = file_icon(entry);
+                    let metadata_suffix = entry
+                        .metadata
+                        .as_ref()
+                        .map(|metadata| {
+                            let mut parts = Vec::new();
+                            if !metadata.project.trim().is_empty() {
+                                parts.push(metadata.project.clone());
+                            }
+                            if let Some(chapter) = metadata.chapter_label() {
+                                parts.push(chapter);
+                            }
+                            if parts.is_empty() {
+                                String::new()
+                            } else {
+                                format!("  [{}]", parts.join(" · "))
+                            }
+                        })
+                        .unwrap_or_default();
                     let max_name = inner_width.saturating_sub(8);
-                    let name = truncate(&format!("{}{suffix}", entry.name), max_name);
+                    let name = truncate(
+                        &format!("{}{suffix}{metadata_suffix}", entry.name),
+                        max_name,
+                    );
 
                     let row = if selected_now {
                         format!(
@@ -1034,11 +1196,11 @@ impl TerminalModel {
                     "38;5;244",
                 ),
             );
-        } else if !self.launcher.creating {
+        } else if !self.launcher.creating && self.launcher.exporting.is_none() {
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[38;5;244m↑↓ seleccionar  Enter elegir/abrir  N nuevo  Z alternar modo  Backspace subir  R refrescar\x1b[0m",
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  Backspace subir  R refrescar\x1b[0m",
                     inner_width,
                     "38;5;244",
                 ),
