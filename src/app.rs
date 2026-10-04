@@ -764,8 +764,7 @@ impl TerminalModel {
             return false;
         }
 
-        let Ok(chapters) =
-            document::project_chapters(&self.library.documents, &metadata.project)
+        let Ok(chapters) = document::project_chapters(&self.library.documents, &metadata.project)
         else {
             return false;
         };
@@ -789,11 +788,7 @@ impl TerminalModel {
 
         self.current_file = Some(next.clone());
         self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));
-        self.launcher.message = Some(format!(
-            "{} → {}",
-            metadata.title,
-            next_metadata.title
-        ));
+        self.launcher.message = Some(format!("{} → {}", metadata.title, next_metadata.title));
         true
     }
 
@@ -1602,16 +1597,13 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
 }
 
 fn status_line_number(status: &str) -> Option<usize> {
-    status
-        .split_whitespace()
-        .rev()
-        .find_map(|token| {
-            let (line, column) = token.split_once(':')?;
-            if column.parse::<usize>().is_err() {
-                return None;
-            }
-            line.parse::<usize>().ok()
-        })
+    status.split_whitespace().rev().find_map(|token| {
+        let (line, column) = token.split_once(':')?;
+        if column.parse::<usize>().is_err() {
+            return None;
+        }
+        line.parse::<usize>().ok()
+    })
 }
 
 fn helix_path(path: &Path) -> String {
