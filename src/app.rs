@@ -1671,8 +1671,7 @@ impl TerminalModel {
                         if cell.bold() {
                             draw_glyph(
                                 pixels,
-                                width,
-                                height,
+                                (width, height),
                                 pen_x + scale.max(1.0).round() as i32,
                                 baseline,
                                 glyph,
