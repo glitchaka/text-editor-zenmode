@@ -91,5 +91,10 @@ borrow_new = '''        self.current_file = Some(next.clone());
 if borrow_old in text:
     text = text.replace(borrow_old, borrow_new, 1)
 
+text = text.replace(
+    "let zoom = (available_width / nominal_width).min(1.0).max(0.45);",
+    "let zoom = (available_width / nominal_width).clamp(0.45, 1.0);",
+)
+
 path.write_text(text, encoding="utf-8")
 print("Runtime de página corregido")
