@@ -989,7 +989,6 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-
     #[test]
     fn multiline_paste_preserves_paragraph_breaks_in_vt_mode() {
         let encoded = encode_paste("uno\r\ndos\rtres\ncuatro", false);
