@@ -105,7 +105,7 @@ fn read_export_document(path: &Path) -> Result<ExportDocument> {
     if document::is_native_path(path) {
         let document = document::read(path)?;
         return Ok(ExportDocument {
-            title: document.metadata.title,
+            title: document.metadata.title.clone(),
             body: document::rich_body(&document),
             page: document.metadata.page,
         });
@@ -136,7 +136,7 @@ fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<Ex
     let members = document::project_chapters(library_documents, &current.metadata.project)?;
     if members.is_empty() {
         return Ok(vec![ExportDocument {
-            title: current.metadata.title,
+            title: current.metadata.title.clone(),
             body: document::rich_body(&current),
             page: current.metadata.page,
         }]);
