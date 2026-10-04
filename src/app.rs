@@ -475,6 +475,7 @@ impl TerminalModel {
         if self.editor.is_some() {
             self.zen_requested = !self.zen_requested;
             self.dirty = true;
+            self.glyphs.clear();
         }
     }
 
@@ -1546,6 +1547,14 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         });
     }
 
+    {
+        let model = model.borrow();
+        let zen = model.zen_engaged();
+        ui.set_zen_active(zen);
+        ui.set_editor_active(model.editor.is_some());
+        ui.window().set_fullscreen(zen);
+    }
+
     ui.show()?;
 
     let weak = ui.as_weak();
@@ -1568,6 +1577,7 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
 
             let zen = model.zen_engaged();
             ui.set_editor_active(model.editor.is_some());
+            ui.set_zen_active(zen);
 
             if zen != last_zen.get() {
                 ui.set_zen_active(zen);

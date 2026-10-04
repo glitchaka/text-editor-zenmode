@@ -917,6 +917,45 @@ fn function_key(number: u8, shift: bool, alt: bool, ctrl: bool) -> Option<Vec<u8
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn native_hsst_shadow_contains_only_body() {
+        let root = std::env::temp_dir().join(format!(
+            "helix-sst-shadow-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("debe crear temp");
+
+        let source = root.join("Capítulo 1.hsst");
+        let document = document::HsstDocument {
+            metadata: document::DocumentMetadata {
+                format: 1,
+                id: "shadow-test".into(),
+                title: "Capítulo 1".into(),
+                project: "Puerto Ámbar".into(),
+                kind: "chapter".into(),
+                chapter: Some(1),
+                order: 10,
+                language: "es-CL".into(),
+                status: "draft".into(),
+            },
+            body: "Primera línea.\nSegunda línea.\n".into(),
+        };
+        fs::write(&source, document::serialize(&document)).expect("debe crear HSST");
+
+        let shadow_root = root.join("shadow");
+        let native = prepare_native_buffer(&source, &shadow_root).expect("debe preparar buffer");
+        let editable = fs::read_to_string(&native.edit).expect("debe leer buffer");
+
+        assert_eq!(editable, document.body);
+        assert!(!editable.contains("format ="));
+        assert!(!editable.contains("project ="));
+        assert!(!editable.contains("+++"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
     use super::*;
 
     #[test]
