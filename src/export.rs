@@ -244,20 +244,35 @@ fn paragraph_xml(text: &str, style: Option<&str>) -> String {
 }
 
 fn rich_paragraph_xml(line: &str) -> String {
-    let runs = rich_runs(line);
+    let runs = crate::format::styled_runs(line);
     let mut xml = String::from("<w:p>");
     for run in runs {
+        let style = run.style;
         xml.push_str("<w:r>");
-        if run.bold || run.italic || run.highlight {
+        if style.bold
+            || style.italic
+            || style.underline
+            || style.foreground.is_some()
+            || style.background.is_some()
+        {
             xml.push_str("<w:rPr>");
-            if run.bold {
+            if style.bold {
                 xml.push_str("<w:b/>");
             }
-            if run.italic {
+            if style.italic {
                 xml.push_str("<w:i/>");
             }
-            if run.highlight {
-                xml.push_str(r#"<w:highlight w:val="yellow"/>"#);
+            if style.underline {
+                xml.push_str(r#"<w:u w:val="single"/>"#);
+            }
+            if let Some(color) = style.foreground {
+                xml.push_str(&format!(r#"<w:color w:val="{}"/>"#, color.hex()));
+            }
+            if let Some(color) = style.background {
+                xml.push_str(&format!(
+                    r#"<w:highlight w:val="{}"/>"#,
+                    color.word_highlight()
+                ));
             }
             xml.push_str("</w:rPr>");
         }
@@ -267,65 +282,6 @@ fn rich_paragraph_xml(line: &str) -> String {
     }
     xml.push_str("</w:p>");
     xml
-}
-
-#[derive(Clone, Debug)]
-struct RichRun {
-    text: String,
-    bold: bool,
-    italic: bool,
-    highlight: bool,
-}
-
-fn rich_runs(line: &str) -> Vec<RichRun> {
-    let mut runs = Vec::new();
-    let mut current = String::new();
-    let mut bold = false;
-    let mut italic = false;
-    let mut highlight = false;
-    let chars = line.chars().collect::<Vec<_>>();
-    let mut index = 0usize;
-
-    let flush = |runs: &mut Vec<RichRun>,
-                 current: &mut String,
-                 bold: bool,
-                 italic: bool,
-                 highlight: bool| {
-        if !current.is_empty() {
-            runs.push(RichRun {
-                text: std::mem::take(current),
-                bold,
-                italic,
-                highlight,
-            });
-        }
-    };
-
-    while index < chars.len() {
-        if index + 1 < chars.len() && chars[index] == '*' && chars[index + 1] == '*' {
-            flush(&mut runs, &mut current, bold, italic, highlight);
-            bold = !bold;
-            index += 2;
-            continue;
-        }
-        if index + 1 < chars.len() && chars[index] == '=' && chars[index + 1] == '=' {
-            flush(&mut runs, &mut current, bold, italic, highlight);
-            highlight = !highlight;
-            index += 2;
-            continue;
-        }
-        if chars[index] == '*' {
-            flush(&mut runs, &mut current, bold, italic, highlight);
-            italic = !italic;
-            index += 1;
-            continue;
-        }
-        current.push(chars[index]);
-        index += 1;
-    }
-
-    flush(&mut runs, &mut current, bold, italic, highlight);
-    runs
 }
 
 fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
@@ -535,12 +491,18 @@ mod tests {
 
     #[test]
     fn rich_markup_becomes_word_runs() {
-        let xml = rich_paragraph_xml("Uno **dos** *tres* ==cuatro==");
+        let xml = rich_paragraph_xml(
+            "Uno **dos** *tres* ==cuatro== __cinco__ {{fg:red}}seis{{/fg}} {{bg:blue}}siete{{/bg}}",
+        );
         assert!(xml.contains("<w:b/>"));
         assert!(xml.contains("<w:i/>"));
+        assert!(xml.contains(r#"<w:u w:val="single"/>"#));
+        assert!(xml.contains(r#"<w:color w:val="FB4934"/>"#));
         assert!(xml.contains(r#"<w:highlight w:val="yellow"/>"#));
+        assert!(xml.contains(r#"<w:highlight w:val="blue"/>"#));
         assert!(!xml.contains("**"));
-        assert!(!xml.contains("=="));
+        assert!(!xml.contains("{{fg:"));
+        assert!(!xml.contains("{{bg:"));
     }
 
     #[test]
