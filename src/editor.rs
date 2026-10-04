@@ -35,6 +35,8 @@ pub struct EditorSession {
     output: mpsc::Receiver<io::Result<Vec<u8>>>,
     finished: mpsc::Receiver<u32>,
     previous_was_cr: bool,
+    startup_language_at: Option<Instant>,
+    startup_language_sent: bool,
 }
 
 impl EditorSession {
@@ -60,6 +62,8 @@ impl EditorSession {
         command.env("COLORTERM", "truecolor");
         command.arg("--config");
         command.arg(&install.config);
+        command.arg("--log");
+        command.arg(install.config.with_file_name("helix.log"));
         command.arg(file);
 
         let mut reader = pair.master.try_clone_reader()?;
@@ -128,6 +132,11 @@ impl EditorSession {
             output,
             finished,
             previous_was_cr: false,
+            startup_language_at: file
+                .extension()
+                .is_none()
+                .then(|| Instant::now() + Duration::from_millis(350)),
+            startup_language_sent: false,
         })
     }
 
@@ -152,6 +161,26 @@ impl EditorSession {
 
     pub fn exit_status(&self) -> Option<u32> {
         self.finished.try_recv().ok()
+    }
+
+    pub fn settle_startup_language(&mut self) -> Result<()> {
+        if self.startup_language_sent {
+            return Ok(());
+        }
+
+        let Some(when) = self.startup_language_at else {
+            return Ok(());
+        };
+        if Instant::now() < when {
+            return Ok(());
+        }
+
+        // Extensionless prose files are a first-class Zenmode use case.
+        // Force Helix onto the managed "text" language once startup has settled
+        // so its spell LSP is attached even if filename detection is ambiguous.
+        self.write_reply(b":set-language text\r")?;
+        self.startup_language_sent = true;
+        Ok(())
     }
 
     pub fn write_reply(&self, bytes: &[u8]) -> Result<()> {
@@ -408,8 +437,11 @@ fn write_language_config(
         None
     };
 
+    let current_file_glob = toml_path(current_file);
     let text_file_types = match extensionless_name {
-        Some(name) => format!("[\"txt\", \"text\", \"{name}\"]"),
+        Some(name) => format!(
+            "[\"txt\", \"text\", \"{name}\", {{ glob = \"{current_file_glob}\" }}]"
+        ),
         None => "[\"txt\", \"text\"]".to_owned(),
     };
 

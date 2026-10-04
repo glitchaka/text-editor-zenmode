@@ -84,7 +84,9 @@ slint::slint! {
         in property <image> terminal-image;
         in property <string> version-text: "v0.0.0";
         in property <bool> zen-active: false;
+        in property <bool> editor-active: false;
         callback key-input(string, bool, bool, bool);
+        callback toggle-zen();
         callback close-window();
 
         Image {
@@ -119,8 +121,22 @@ slint::slint! {
             }
         }
 
+        zen-reveal := TouchArea {
+            x: 0;
+            y: 0;
+            width: 100%;
+            height: 48px;
+            enabled: root.zen-active;
+        }
+
         island := Rectangle {
-            visible: !root.zen-active;
+            visible: !root.zen-active
+                || zen-reveal.has-hover
+                || zen-title-hover.has-hover
+                || zen-touch.has-hover
+                || minimize-touch.has-hover
+                || maximize-touch.has-hover
+                || close-touch.has-hover;
             width: min(650px, root.width - 20px);
             height: 34px;
             x: (root.width - self.width) / 2;
@@ -130,7 +146,15 @@ slint::slint! {
             border-width: 1px;
             border-color: #2b3547;
 
-            WindowMoveArea {
+            zen-title-hover := TouchArea {
+                x: 0;
+                y: 0;
+                width: island.width - 114px;
+                height: island.height;
+                enabled: root.zen-active;
+            }
+
+            island-move := WindowMoveArea {
                 x: 0;
                 y: 0;
                 width: parent.width;
@@ -161,19 +185,36 @@ slint::slint! {
                     vertical-alignment: center;
                 }
 
-                Text {
+                zen-control := Rectangle {
                     visible: island.width >= 470px;
-                    x: (island.width - 80px) / 2;
-                    y: 0;
-                    width: 80px;
-                    height: parent.height;
-                    text: "ZENMODE";
-                    color: #8db9bb;
-                    font-family: "Segoe UI Variable";
-                    font-size: 11px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    horizontal-alignment: center;
+                    x: (island.width - 104px) / 2;
+                    y: 3px;
+                    width: 104px;
+                    height: island.height - 6px;
+                    border-radius: 9px;
+                    background: zen-touch.pressed
+                        ? rgb(36, 49, 67)
+                        : zen-touch.has-hover ? rgb(23, 35, 52) : transparent;
+
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: root.editor-active
+                            ? (root.zen-active ? "ZENMODE ACTIVO" : "ENTRAR ZEN")
+                            : "EDITOR";
+                        color: root.zen-active ? #e8cc83 : #8db9bb;
+                        font-family: "Segoe UI Variable";
+                        font-size: 11px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+
+                    zen-touch := TouchArea {
+                        enabled: root.editor-active;
+                        mouse-cursor: pointer;
+                        clicked => { root.toggle-zen(); }
+                    }
                 }
 
                 Rectangle {
@@ -402,6 +443,13 @@ impl TerminalModel {
         self.zen_requested && self.editor.is_some()
     }
 
+    fn toggle_editor_zen(&mut self) {
+        if self.editor.is_some() {
+            self.zen_requested = !self.zen_requested;
+            self.dirty = true;
+        }
+    }
+
     fn geometry(&self) -> (f32, f32, f32, f32) {
         let scale = self.scale.max(0.5);
         let left_pad = (PAD_X * scale).round();
@@ -577,6 +625,8 @@ impl TerminalModel {
         let mut finished = false;
 
         if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.settle_startup_language();
+
             while let Some(result) = editor.try_output() {
                 match result {
                     Ok(bytes) => {
@@ -599,7 +649,6 @@ impl TerminalModel {
 
         if finished {
             self.editor = None;
-            self.zen_requested = false;
             self.launcher.refresh();
             self.reset_parser();
             self.render_launcher();
@@ -1157,6 +1206,13 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     }
 
     {
+        let model = model.clone();
+        ui.on_toggle_zen(move || {
+            model.borrow_mut().toggle_editor_zen();
+        });
+    }
+
+    {
         let weak = ui.as_weak();
         let model = model.clone();
         ui.on_close_window(move || {
@@ -1193,6 +1249,8 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             model.tick();
 
             let zen = model.zen_engaged();
+            ui.set_editor_active(model.editor.is_some());
+
             if zen != last_zen.get() {
                 ui.set_zen_active(zen);
                 ui.window().set_fullscreen(zen);
