@@ -560,6 +560,7 @@ mod tests {
         let document = ExportDocument {
             title: "Capítulo 1".into(),
             body: "Texto **fuerte**, *cursivo* y ==destacado==.".into(),
+            page: PageProfile::default(),
         };
 
         let docx = root.join("test.docx");
