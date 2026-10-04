@@ -1350,7 +1350,9 @@ impl TerminalModel {
         self.page_profile = next_metadata.page;
         let (cols, rows) = self.terminal_size();
         self.parser.screen_mut().set_size(rows, cols);
-        let _ = editor.resize(cols, rows);
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.resize(cols, rows);
+        }
         self.glyphs.clear();
         self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));
         self.launcher.message = Some(format!("{} → {}", metadata.title, next_metadata.title));
@@ -1358,45 +1360,6 @@ impl TerminalModel {
     }
 
     fn helix_status_text(&self) -> String {
-        if let Some(page) = self.page_visual() {
-            let page_x = page.x.round() as i32;
-            let page_y = page.y.round() as i32;
-            let page_w = page.width.round() as i32;
-            let page_h = page.height.round() as i32;
-            fill_rect(
-                pixels,
-                (width, height),
-                (page_x, page_y, page_w, page_h),
-                PAGE_BG,
-            );
-            fill_rect(
-                pixels,
-                (width, height),
-                (page_x, page_y, 1, page_h),
-                PAGE_EDGE,
-            );
-            fill_rect(
-                pixels,
-                (width, height),
-                (page_x + page_w - 1, page_y, 1, page_h),
-                PAGE_EDGE,
-            );
-            let left_guide = (page.x + page.margin_left).round() as i32;
-            let right_guide = (page.x + page.width - page.margin_right).round() as i32;
-            fill_rect(
-                pixels,
-                (width, height),
-                (left_guide - 1, page_y, 1, page_h),
-                PAGE_MARGIN,
-            );
-            fill_rect(
-                pixels,
-                (width, height),
-                (right_guide, page_y, 1, page_h),
-                PAGE_MARGIN,
-            );
-        }
-
         let screen = self.parser.screen();
         let (rows, cols) = screen.size();
         let start_row = rows.saturating_sub(3);
@@ -1943,6 +1906,45 @@ impl TerminalModel {
             b: BG.2,
             a: 255,
         });
+
+        if let Some(page) = self.page_visual() {
+            let page_x = page.x.round() as i32;
+            let page_y = page.y.round() as i32;
+            let page_w = page.width.round() as i32;
+            let page_h = page.height.round() as i32;
+            fill_rect(
+                pixels,
+                (width, height),
+                (page_x, page_y, page_w, page_h),
+                PAGE_BG,
+            );
+            fill_rect(
+                pixels,
+                (width, height),
+                (page_x, page_y, 1, page_h),
+                PAGE_EDGE,
+            );
+            fill_rect(
+                pixels,
+                (width, height),
+                (page_x + page_w - 1, page_y, 1, page_h),
+                PAGE_EDGE,
+            );
+            let left_guide = (page.x + page.margin_left).round() as i32;
+            let right_guide = (page.x + page.width - page.margin_right).round() as i32;
+            fill_rect(
+                pixels,
+                (width, height),
+                (left_guide - 1, page_y, 1, page_h),
+                PAGE_MARGIN,
+            );
+            fill_rect(
+                pixels,
+                (width, height),
+                (right_guide, page_y, 1, page_h),
+                PAGE_MARGIN,
+            );
+        }
 
         let screen = self.parser.screen();
         let (rows, cols) = screen.size();
