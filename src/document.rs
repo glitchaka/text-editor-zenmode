@@ -59,16 +59,13 @@ pub fn is_supported_text_path(path: &Path) -> bool {
         return true;
     }
 
-    match path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("hsst" | "txt" | "text" | "md" | "markdown" | "rst") => true,
-        None => true,
-        _ => false,
-    }
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("hsst" | "txt" | "text" | "md" | "markdown" | "rst") | None
+    )
 }
 
 pub fn native_path_for_name(directory: &Path, requested_name: &str) -> PathBuf {
@@ -100,7 +97,10 @@ pub fn read(path: &Path) -> Result<HsstDocument> {
 }
 
 pub fn read_metadata(path: &Path) -> Option<DocumentMetadata> {
-    is_native_path(path).then(|| read(path).ok().map(|document| document.metadata))?
+    if !is_native_path(path) {
+        return None;
+    }
+    read(path).ok().map(|document| document.metadata)
 }
 
 pub fn parse(raw: &str, source: &Path) -> HsstDocument {
