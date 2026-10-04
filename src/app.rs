@@ -855,7 +855,7 @@ impl TerminalModel {
         let page_height_mm = f32::from(page_height_tenth_mm) / 10.0;
         let nominal_width = page_width_mm * PAGE_PX_PER_MM * scale;
         let available_width = (self.width as f32 - PAD_X * scale * 2.0).max(240.0);
-        let zoom = (available_width / nominal_width).min(1.0).max(0.45);
+        let zoom = (available_width / nominal_width).clamp(0.45, 1.0);
         let px_per_mm = PAGE_PX_PER_MM * scale * zoom;
         let width = page_width_mm * px_per_mm;
         let height = page_height_mm * px_per_mm;
