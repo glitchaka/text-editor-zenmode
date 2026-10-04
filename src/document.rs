@@ -229,11 +229,13 @@ fn split_frontmatter(raw: &str) -> Option<(&str, &str)> {
     if let Some(index) = rest.find(marker_lf) {
         let frontmatter = &rest[..index];
         let body = &rest[index + marker_lf.len()..];
+        let body = body.strip_prefix('\n').unwrap_or(body);
         return Some((frontmatter, body));
     }
     if let Some(index) = rest.find(marker_crlf) {
         let frontmatter = &rest[..index];
         let body = &rest[index + marker_crlf.len()..];
+        let body = body.strip_prefix("\r\n").unwrap_or(body);
         return Some((frontmatter, body));
     }
     None
