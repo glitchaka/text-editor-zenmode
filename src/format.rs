@@ -482,6 +482,86 @@ fn push_tagged_ranges(line: &str, tag: &str, foreground: bool, output: &mut Vec<
     }
 }
 
+pub fn markup_spans(line: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    push_delimiter_markup_spans(line, "**", &mut spans);
+    push_delimiter_markup_spans(line, "__", &mut spans);
+    push_delimiter_markup_spans(line, "==", &mut spans);
+    push_single_asterisk_markup_spans(line, &mut spans);
+    push_tag_markup_spans(line, "fg", &mut spans);
+    push_tag_markup_spans(line, "bg", &mut spans);
+    spans.sort_unstable();
+    spans.dedup();
+    spans
+}
+
+fn push_delimiter_markup_spans(line: &str, delimiter: &str, output: &mut Vec<(usize, usize)>) {
+    let mut offset = 0usize;
+    while let Some(open_rel) = line[offset..].find(delimiter) {
+        let open = offset + open_rel;
+        let inner_start = open + delimiter.len();
+        let Some(close_rel) = line[inner_start..].find(delimiter) else {
+            break;
+        };
+        let close = inner_start + close_rel;
+        if close > inner_start {
+            output.push((open, inner_start));
+            output.push((close, close + delimiter.len()));
+        }
+        offset = close + delimiter.len();
+    }
+}
+
+fn push_single_asterisk_markup_spans(line: &str, output: &mut Vec<(usize, usize)>) {
+    let bytes = line.as_bytes();
+    let mut stars = Vec::new();
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte != b'*' {
+            continue;
+        }
+        let previous = index.checked_sub(1).and_then(|i| bytes.get(i));
+        let next = bytes.get(index + 1);
+        if previous == Some(&b'*') || next == Some(&b'*') {
+            continue;
+        }
+        stars.push(index);
+    }
+
+    for pair in stars.as_chunks::<2>().0 {
+        if pair[1] > pair[0] + 1 {
+            output.push((pair[0], pair[0] + 1));
+            output.push((pair[1], pair[1] + 1));
+        }
+    }
+}
+
+fn push_tag_markup_spans(line: &str, tag: &str, output: &mut Vec<(usize, usize)>) {
+    let prefix = format!("{{{{{tag}:");
+    let close = format!("{{{{/{tag}}}}}");
+    let mut offset = 0usize;
+
+    while let Some(open_rel) = line[offset..].find(&prefix) {
+        let open = offset + open_rel;
+        let Some(tag_end_rel) = line[open + prefix.len()..].find("}}") else {
+            break;
+        };
+        let tag_end = open + prefix.len() + tag_end_rel;
+        if PaletteColor::parse(&line[open + prefix.len()..tag_end]).is_none() {
+            offset = tag_end + 2;
+            continue;
+        }
+        let open_end = tag_end + 2;
+        output.push((open, open_end));
+
+        let Some(close_rel) = line[open_end..].find(&close) else {
+            break;
+        };
+        let close_start = open_end + close_rel;
+        output.push((close_start, close_start + close.len()));
+        offset = close_start + close.len();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
