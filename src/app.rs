@@ -667,6 +667,16 @@ impl TerminalModel {
     }
 
     fn editor_key(&mut self, key: KeyEvent) {
+        let zen_toggle = matches!(key.code, KeyCode::Char('z') | KeyCode::Char('Z'))
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+            && self.helix_is_normal_mode();
+
+        if zen_toggle {
+            self.toggle_editor_zen();
+            return;
+        }
+
         let ctrl_v = key.modifiers.contains(KeyModifiers::CONTROL)
             && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'));
 
@@ -683,6 +693,31 @@ impl TerminalModel {
         if let Some(editor) = self.editor.as_ref() {
             let _ = editor.send_key(key, editor.win32_input());
         }
+    }
+
+    fn helix_is_normal_mode(&self) -> bool {
+        let screen = self.parser.screen();
+        let (rows, cols) = screen.size();
+        let start_row = rows.saturating_sub(3);
+
+        for row in start_row..rows {
+            let mut text = String::new();
+            for col in 0..cols.min(32) {
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
+                text.push_str(cell.contents());
+            }
+
+            if text.trim_start().starts_with("NORMAL") {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn launcher_key(&mut self, key: KeyEvent) {
