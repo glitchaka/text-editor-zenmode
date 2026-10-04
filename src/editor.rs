@@ -321,6 +321,9 @@ fn ensure_installed(current_file: &Path) -> Result<Install> {
     fs::create_dir_all(&helix_config)?;
 
     write_editor_config(&config, &launcher)?;
+    let themes_dir = helix_config.join("themes");
+    fs::create_dir_all(&themes_dir)?;
+    write_zen_theme(&themes_dir.join("helix-sst-zen.toml"))?;
     write_language_config(
         &helix_config.join("languages.toml"),
         &launcher,
@@ -388,7 +391,7 @@ fn write_install_marker(root: &Path, marker: &Path, hx: &Path, runtime: &Path) -
 fn write_editor_config(path: &Path, launcher: &Path) -> Result<()> {
     let exe = toml_path(launcher);
     let content = format!(
-        r#"theme = "gruvbox"
+        r#"theme = "helix-sst-zen"
 
 [editor]
 line-number = "absolute"
@@ -447,6 +450,23 @@ F14 = "extend_next_word_start"
 "#
     );
     fs::write(path, content)?;
+    Ok(())
+}
+
+fn write_zen_theme(path: &Path) -> Result<()> {
+    fs::write(
+        path,
+        r#"inherits = "gruvbox"
+
+# HSST semantic tokens. The prose LSP uses these scopes only for native
+# writing markup; the rest of Gruvbox remains inherited.
+"comment" = { fg = "#928374", modifiers = ["dim"] }
+"keyword" = { fg = "#fabd2f", modifiers = ["bold"] }
+"string" = { fg = "#ebdbb2", modifiers = ["bold"] }
+"regexp" = { fg = "#d3869b", modifiers = ["italic"] }
+"macro" = { fg = "#282828", bg = "#fabd2f", modifiers = ["bold"] }
+"#,
+    )?;
     Ok(())
 }
 
