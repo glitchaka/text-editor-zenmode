@@ -739,9 +739,7 @@ fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
             '\t' => KeyCode::Tab,
             other => KeyCode::Char(other),
         };
-        if let Some(encoded) =
-            encode_input(KeyEvent::new(code, KeyModifiers::NONE), true)
-        {
+        if let Some(encoded) = encode_input(KeyEvent::new(code, KeyModifiers::NONE), true) {
             bytes.extend_from_slice(&encoded);
         }
     }
@@ -1072,7 +1070,9 @@ mod tests {
             .and_then(toml::Value::as_table)
             .expect("debe existir [editor]");
         assert_eq!(
-            editor_table.get("text-width").and_then(toml::Value::as_integer),
+            editor_table
+                .get("text-width")
+                .and_then(toml::Value::as_integer),
             Some(88)
         );
         let soft_wrap = editor_table
