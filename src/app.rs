@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
@@ -41,7 +41,6 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const ISLAND_TOP: f32 = 6.0;
 const ISLAND_HEIGHT: f32 = 34.0;
 const CONTENT_TOP_GAP: f32 = 8.0;
-const SPLASH_DURATION: Duration = Duration::from_millis(1300);
 
 // Retrofuturistic semigraphic icons for the TUI launcher.
 // These private-use cells are intercepted by our terminal renderer and painted
@@ -394,7 +393,6 @@ struct TerminalModel {
     scale: f32,
     dirty: bool,
     splash_active: bool,
-    splash_started: Instant,
     pending_initial: Option<PathBuf>,
     zen_requested: bool,
 }
@@ -434,7 +432,6 @@ impl TerminalModel {
             scale: 1.0,
             dirty: true,
             splash_active: true,
-            splash_started: Instant::now(),
             pending_initial: file_to_open,
             zen_requested,
         };
@@ -620,9 +617,6 @@ impl TerminalModel {
 
     fn tick(&mut self) {
         if self.splash_active {
-            if self.splash_started.elapsed() >= SPLASH_DURATION {
-                self.finish_splash();
-            }
             return;
         }
 
@@ -1293,6 +1287,11 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
 
 fn handle_key(model: &mut TerminalModel, text: &str, ctrl: bool, alt: bool, shift: bool) {
     use slint::platform::Key;
+
+    if model.splash_active {
+        model.finish_splash();
+        return;
+    }
 
     if [
         Key::Shift,
