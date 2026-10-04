@@ -39,6 +39,7 @@ struct NativeBuffer {
     source: PathBuf,
     edit: PathBuf,
     last_stamp: Option<FileStamp>,
+    last_body: String,
 }
 
 pub struct EditorSession {
@@ -294,19 +295,22 @@ impl EditorSession {
 
         let source = native.source.clone();
         let edit = native.edit.clone();
+        let previous_body = native.last_body.clone();
         let body = fs::read_to_string(&edit)
             .with_context(|| format!("No se pudo leer el cuerpo editable {}", edit.display()))?;
         let mut document = document::read(&source)?;
         let changed = document.body != body;
 
         if changed {
-            document.body = body;
+            document.formatting = document::remap_formatting(&document.formatting, &previous_body, &body);
+            document.body = body.clone();
             document::write(&source, &document)
                 .with_context(|| format!("No se pudo guardar {}", source.display()))?;
         }
 
         if let Some(native) = self.native.as_mut() {
             native.last_stamp = stamp;
+            native.last_body = body;
         }
 
         Ok(changed)
@@ -380,11 +384,13 @@ fn prepare_native_buffer(source: &Path, root: &Path) -> Result<NativeBuffer> {
     fs::write(&edit, document.body.as_bytes())
         .with_context(|| format!("No se pudo preparar {}", source.display()))?;
     let last_stamp = file_stamp(&edit);
+    let last_body = document.body;
 
     Ok(NativeBuffer {
         source: source.to_path_buf(),
         edit,
         last_stamp,
+        last_body,
     })
 }
 

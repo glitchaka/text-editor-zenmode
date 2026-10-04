@@ -1048,6 +1048,13 @@ impl TerminalModel {
     }
 
     fn apply_format(&mut self, action: &str, value: &str) {
+        let Some(current) = self.current_file.clone() else {
+            return;
+        };
+        if !document::is_native_path(&current) {
+            return;
+        }
+        let (cursor_line, cursor_column) = self.helix_cursor_position().unwrap_or((1, 1));
         let leave_insert = self.helix_is_insert_mode();
         let Some(editor) = self.editor.as_ref() else {
             return;
@@ -1059,7 +1066,7 @@ impl TerminalModel {
             );
         }
         let value = (!value.is_empty()).then_some(value);
-        match format::pipe_command(action, value) {
+        match format::pipe_command(action, value, &current, cursor_line, cursor_column) {
             Ok(command) => {
                 if let Err(error) = editor.send_command(&command) {
                     self.launcher.message = Some(format!("No se pudo aplicar formato: {error}"));

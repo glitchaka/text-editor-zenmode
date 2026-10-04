@@ -106,7 +106,7 @@ fn read_export_document(path: &Path) -> Result<ExportDocument> {
         let document = document::read(path)?;
         return Ok(ExportDocument {
             title: document.metadata.title,
-            body: document.body,
+            body: document::rich_body(&document),
             page: document.metadata.page,
         });
     }
@@ -137,7 +137,7 @@ fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<Ex
     if members.is_empty() {
         return Ok(vec![ExportDocument {
             title: current.metadata.title,
-            body: current.body,
+            body: document::rich_body(&current),
             page: current.metadata.page,
         }]);
     }
@@ -148,7 +148,7 @@ fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<Ex
             let document = document::read(&path)?;
             Ok(ExportDocument {
                 title: metadata.title,
-                body: document.body,
+                body: document::rich_body(&document),
                 page: document.metadata.page,
             })
         })

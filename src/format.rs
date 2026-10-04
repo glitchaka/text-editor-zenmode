@@ -162,11 +162,27 @@ pub struct StyledRun {
     pub style: TextStyle,
 }
 
-pub fn run_filter(action: &str, value: Option<&str>) -> Result<()> {
+pub fn run_filter(
+    action: &str,
+    value: Option<&str>,
+    source: Option<&std::path::Path>,
+    cursor_line: usize,
+    cursor_column: usize,
+) -> Result<()> {
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input)?;
-    let output = apply_to_selection(&input, action, value.unwrap_or(""));
-    std::io::stdout().write_all(output.as_bytes())?;
+    if let Some(source) = source {
+        let _ = crate::document::apply_format_selection(
+            source,
+            &input,
+            cursor_line,
+            cursor_column,
+            action,
+            value.unwrap_or(""),
+        )?;
+    }
+    // Helix recibe exactamente el mismo texto: el formato vive fuera de content.txt.
+    std::io::stdout().write_all(input.as_bytes())?;
     Ok(())
 }
 
@@ -227,18 +243,26 @@ fn outer_tag(input: &str, tag: &str) -> Option<(PaletteColor, usize, usize)> {
     Some((color, open_end, input.len() - close.len()))
 }
 
-pub fn pipe_command(action: &str, value: Option<&str>) -> Result<String> {
+pub fn pipe_command(
+    action: &str,
+    value: Option<&str>,
+    source: &std::path::Path,
+    cursor_line: usize,
+    cursor_column: usize,
+) -> Result<String> {
     let executable = std::env::current_exe().context("No se pudo localizar Helix-SST")?;
     let executable = executable
         .to_string_lossy()
         .replace('\\', "/")
         .replace('"', "\\\"");
-    let mut command = format!(":pipe \"{executable}\" --hsst-format {action}");
-    if let Some(value) = value.filter(|value| !value.is_empty()) {
-        command.push(' ');
-        command.push_str(value);
-    }
-    Ok(command)
+    let source = source
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace('"', "\\\"");
+    let value = value.filter(|value| !value.is_empty()).unwrap_or("-");
+    Ok(format!(
+        ":pipe \"{executable}\" --hsst-format {action} {value} \"{source}\" {cursor_line} {cursor_column}"
+    ))
 }
 
 pub fn ensure_theme() -> Result<PathBuf> {

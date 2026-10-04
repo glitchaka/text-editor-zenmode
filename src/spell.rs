@@ -488,6 +488,14 @@ impl SpellServer {
             }
         }
 
+        if let Some(source) = self.source_file.as_ref()
+            && crate::document::is_native_path(source)
+            && let Ok(document) = crate::document::read(source)
+            && document.body == *text
+        {
+            append_native_format_tokens(text, &document, &mut absolute);
+        }
+
         absolute.sort_unstable();
         let mut data = Vec::with_capacity(absolute.len() * 5);
         let mut previous_line = 0u32;
@@ -537,6 +545,68 @@ impl SpellServer {
             .map_err(|error| anyhow::anyhow!("no se pudo agregar «{word}»: {error}"))?;
         self.user_words.insert(normalized);
         Ok(true)
+    }
+}
+
+
+fn semantic_token_for_style(style: crate::format::TextStyle) -> Option<u32> {
+    use crate::format::{MarkKind, StyleRange};
+    let kind = if let Some(color) = style.foreground {
+        MarkKind::Foreground(color)
+    } else if let Some(color) = style.background {
+        MarkKind::Background(color)
+    } else if style.underline {
+        MarkKind::Underline
+    } else if style.bold {
+        MarkKind::Bold
+    } else if style.italic {
+        MarkKind::Italic
+    } else {
+        return None;
+    };
+    Some(StyleRange { start: 0, end: 1, kind }.semantic_token())
+}
+
+fn append_native_format_tokens(
+    text: &str,
+    document: &crate::document::HsstDocument,
+    output: &mut Vec<(u32, u32, u32, u32)>,
+) {
+    let mut lines = Vec::new();
+    let mut offset = 0usize;
+    for (line_index, segment) in text.split_inclusive('\n').enumerate() {
+        let content = segment.strip_suffix('\n').unwrap_or(segment);
+        lines.push((line_index as u32, offset, content));
+        offset += segment.len();
+    }
+    if text.is_empty() || !text.ends_with('\n') {
+        if lines.is_empty() {
+            lines.push((0, 0, text));
+        }
+    }
+
+    for (start, end, style) in crate::document::formatting_runs(document) {
+        let Some(token_type) = semantic_token_for_style(style) else {
+            continue;
+        };
+        for &(line_number, line_start, line) in &lines {
+            let line_end = line_start + line.len();
+            let part_start = start.max(line_start);
+            let part_end = end.min(line_end);
+            if part_start >= part_end
+                || !text.is_char_boundary(part_start)
+                || !text.is_char_boundary(part_end)
+            {
+                continue;
+            }
+            let relative_start = part_start - line_start;
+            let relative_end = part_end - line_start;
+            let start_utf16 = line[..relative_start].encode_utf16().count() as u32;
+            let length_utf16 = line[relative_start..relative_end].encode_utf16().count() as u32;
+            if length_utf16 > 0 {
+                output.push((line_number, start_utf16, length_utf16, token_type));
+            }
+        }
     }
 }
 

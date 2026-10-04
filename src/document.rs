@@ -31,7 +31,10 @@ pub struct DocumentMetadata {
 #[derive(Clone, Debug)]
 pub struct HsstDocument {
     pub metadata: DocumentMetadata,
+    /// Texto plano que Helix edita. Nunca contiene marcas de formato HSST.
     pub body: String,
+    /// Formato paralelo del contenido, almacenado en formatting.json.
+    pub formatting: Value,
 }
 
 impl DocumentMetadata {
@@ -92,6 +95,7 @@ pub fn create_native(path: &Path, title: &str) -> Result<()> {
     let document = HsstDocument {
         metadata: DocumentMetadata::new(title),
         body: String::new(),
+        formatting: empty_formatting(),
     };
     write(path, &document)
 }
@@ -115,7 +119,8 @@ pub fn write(path: &Path, document: &HsstDocument) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    let (plain, formatting) = formatting_payload(&document.body);
+    let plain = &document.body;
+    let formatting = sanitize_formatting(&document.formatting, document.body.len());
     let manifest = manifest_json(&document.metadata);
     let temporary = path.with_extension("hsst.tmp");
     let backup = path.with_extension("hsst.bak");
@@ -182,7 +187,8 @@ fn read_container(path: &Path) -> Result<HsstDocument> {
 
     Ok(HsstDocument {
         metadata: metadata_from_manifest(&manifest, path),
-        body: body_from_parts(&content, &formatting),
+        body: content,
+        formatting: sanitize_formatting(&formatting, usize::MAX),
     })
 }
 
@@ -326,7 +332,15 @@ fn formatting_payload(body: &str) -> (String, Value) {
     )
 }
 
-fn body_from_parts(content: &str, formatting: &Value) -> String {
+fn empty_formatting() -> Value {
+    json!({
+        "version": 1,
+        "unit": "utf8-byte",
+        "runs": []
+    })
+}
+
+fn decode_formatting_runs(formatting: &Value) -> Vec<(usize, usize, crate::format::TextStyle)> {
     let mut ranges = formatting
         .get("runs")
         .and_then(Value::as_array)
@@ -360,11 +374,73 @@ fn body_from_parts(content: &str, formatting: &Value) -> String {
                     .and_then(Value::as_str)
                     .and_then(crate::format::PaletteColor::parse),
             };
-            Some((start, end, style))
+            (start < end && style != crate::format::TextStyle::default())
+                .then_some((start, end, style))
         })
         .collect::<Vec<_>>();
     ranges.sort_by_key(|(start, end, _)| (*start, *end));
+    ranges
+}
 
+fn encode_formatting_runs(runs: &[(usize, usize, crate::format::TextStyle)]) -> Value {
+    let mut encoded = Vec::new();
+    for &(start, end, style) in runs {
+        if start >= end || style == crate::format::TextStyle::default() {
+            continue;
+        }
+        let mut object = Map::new();
+        object.insert("start".into(), json!(start));
+        object.insert("end".into(), json!(end));
+        if style.bold {
+            object.insert("bold".into(), json!(true));
+        }
+        if style.italic {
+            object.insert("italic".into(), json!(true));
+        }
+        if style.underline {
+            object.insert("underline".into(), json!(true));
+        }
+        if let Some(color) = style.foreground {
+            object.insert("foreground".into(), json!(color.name()));
+        }
+        if let Some(color) = style.background {
+            object.insert("background".into(), json!(color.name()));
+        }
+        encoded.push(Value::Object(object));
+    }
+    json!({
+        "version": 1,
+        "unit": "utf8-byte",
+        "runs": encoded
+    })
+}
+
+fn sanitize_formatting(formatting: &Value, content_len: usize) -> Value {
+    let runs = decode_formatting_runs(formatting)
+        .into_iter()
+        .filter(|(start, end, _)| *start < *end && *end <= content_len)
+        .collect::<Vec<_>>();
+    encode_formatting_runs(&runs)
+}
+
+pub fn formatting_runs(document: &HsstDocument) -> Vec<(usize, usize, crate::format::TextStyle)> {
+    decode_formatting_runs(&document.formatting)
+        .into_iter()
+        .filter(|(start, end, _)| {
+            *start < *end
+                && *end <= document.body.len()
+                && document.body.is_char_boundary(*start)
+                && document.body.is_char_boundary(*end)
+        })
+        .collect()
+}
+
+pub fn rich_body(document: &HsstDocument) -> String {
+    body_from_parts(&document.body, &document.formatting)
+}
+
+fn body_from_parts(content: &str, formatting: &Value) -> String {
+    let ranges = decode_formatting_runs(formatting);
     let mut output = String::with_capacity(content.len());
     let mut cursor = 0usize;
     for (start, end, style) in ranges {
@@ -404,6 +480,208 @@ fn encode_styled_segment(segment: &str, style: crate::format::TextStyle) -> Stri
     output
 }
 
+fn style_at(
+    runs: &[(usize, usize, crate::format::TextStyle)],
+    offset: usize,
+) -> crate::format::TextStyle {
+    runs.iter()
+        .find(|(start, end, _)| *start <= offset && offset < *end)
+        .map(|(_, _, style)| *style)
+        .unwrap_or_default()
+}
+
+fn apply_style_action(style: &mut crate::format::TextStyle, action: &str, value: &str) {
+    match action {
+        "bold" => style.bold = !style.bold,
+        "italic" => style.italic = !style.italic,
+        "underline" => style.underline = !style.underline,
+        "highlight" => {
+            style.background = if style.background == Some(crate::format::PaletteColor::Yellow) {
+                None
+            } else {
+                Some(crate::format::PaletteColor::Yellow)
+            };
+        }
+        "font-color" => {
+            let next = crate::format::PaletteColor::parse(value);
+            style.foreground = if next.is_some() && style.foreground == next {
+                None
+            } else {
+                next
+            };
+        }
+        "highlight-color" => {
+            let next = crate::format::PaletteColor::parse(value);
+            style.background = if next.is_some() && style.background == next {
+                None
+            } else {
+                next
+            };
+        }
+        _ => {}
+    }
+}
+
+fn normalized_runs_for_selection(
+    body: &str,
+    formatting: &Value,
+    selection_start: usize,
+    selection_end: usize,
+    action: &str,
+    value: &str,
+) -> Vec<(usize, usize, crate::format::TextStyle)> {
+    let existing = decode_formatting_runs(formatting);
+    let mut boundaries = vec![0usize, body.len(), selection_start, selection_end];
+    for (start, end, _) in &existing {
+        boundaries.push((*start).min(body.len()));
+        boundaries.push((*end).min(body.len()));
+    }
+    boundaries.sort_unstable();
+    boundaries.dedup();
+
+    let mut result: Vec<(usize, usize, crate::format::TextStyle)> = Vec::new();
+    for pair in boundaries.windows(2) {
+        let start = pair[0];
+        let end = pair[1];
+        if start >= end || !body.is_char_boundary(start) || !body.is_char_boundary(end) {
+            continue;
+        }
+        let mut style = style_at(&existing, start);
+        if start < selection_end && end > selection_start {
+            apply_style_action(&mut style, action, value);
+        }
+        if style == crate::format::TextStyle::default() {
+            continue;
+        }
+        if let Some((_, previous_end, previous_style)) = result.last_mut()
+            && *previous_end == start
+            && *previous_style == style
+        {
+            *previous_end = end;
+        } else {
+            result.push((start, end, style));
+        }
+    }
+    result
+}
+
+fn line_column_to_byte(body: &str, line: usize, column: usize) -> usize {
+    let target_line = line.saturating_sub(1);
+    let target_column = column.saturating_sub(1);
+    let mut line_start = 0usize;
+    for (index, segment) in body.split_inclusive('\n').enumerate() {
+        if index == target_line {
+            let line_body = segment.strip_suffix('\n').unwrap_or(segment);
+            let relative = line_body
+                .char_indices()
+                .nth(target_column)
+                .map(|(offset, _)| offset)
+                .unwrap_or(line_body.len());
+            return line_start + relative;
+        }
+        line_start += segment.len();
+    }
+    body.len()
+}
+
+pub fn apply_format_selection(
+    path: &Path,
+    selected_text: &str,
+    cursor_line: usize,
+    cursor_column: usize,
+    action: &str,
+    value: &str,
+) -> Result<bool> {
+    if !is_native_path(path) || selected_text.is_empty() {
+        return Ok(false);
+    }
+    let mut document = read(path)?;
+    let cursor = line_column_to_byte(&document.body, cursor_line, cursor_column);
+
+    let mut best: Option<(usize, usize, usize)> = None;
+    for (start, _) in document.body.match_indices(selected_text) {
+        let end = start + selected_text.len();
+        let distance = cursor.abs_diff(start).min(cursor.abs_diff(end));
+        if best.is_none_or(|(_, _, current)| distance < current) {
+            best = Some((start, end, distance));
+        }
+    }
+    let Some((start, end, _)) = best else {
+        return Ok(false);
+    };
+
+    let runs = normalized_runs_for_selection(
+        &document.body,
+        &document.formatting,
+        start,
+        end,
+        action,
+        value,
+    );
+    let next = encode_formatting_runs(&runs);
+    if next == document.formatting {
+        return Ok(false);
+    }
+    document.formatting = next;
+    write(path, &document)?;
+    Ok(true)
+}
+
+pub fn remap_formatting(formatting: &Value, old: &str, new: &str) -> Value {
+    if old == new {
+        return sanitize_formatting(formatting, new.len());
+    }
+
+    let mut prefix = 0usize;
+    for (left, right) in old.chars().zip(new.chars()) {
+        if left != right {
+            break;
+        }
+        prefix += left.len_utf8();
+    }
+
+    let old_tail = &old[prefix..];
+    let new_tail = &new[prefix..];
+    let mut suffix = 0usize;
+    for (left, right) in old_tail.chars().rev().zip(new_tail.chars().rev()) {
+        if left != right {
+            break;
+        }
+        suffix += left.len_utf8();
+    }
+
+    let old_edit_end = old.len().saturating_sub(suffix);
+    let new_edit_end = new.len().saturating_sub(suffix);
+    let delta = new_edit_end as isize - old_edit_end as isize;
+    let shift = |value: usize| -> usize { value.saturating_add_signed(delta) };
+
+    let mut remapped = Vec::new();
+    for (start, end, style) in decode_formatting_runs(formatting) {
+        if end <= prefix {
+            remapped.push((start, end, style));
+        } else if start >= old_edit_end {
+            remapped.push((shift(start), shift(end), style));
+        } else if start < prefix && end > old_edit_end {
+            remapped.push((start, shift(end), style));
+        } else {
+            if start < prefix {
+                remapped.push((start, prefix, style));
+            }
+            if end > old_edit_end {
+                remapped.push((new_edit_end, shift(end), style));
+            }
+        }
+    }
+
+    remapped.retain(|(start, end, _)| {
+        start < end
+            && *end <= new.len()
+            && new.is_char_boundary(*start)
+            && new.is_char_boundary(*end)
+    });
+    encode_formatting_runs(&remapped)
+}
+
 pub fn read_metadata(path: &Path) -> Option<DocumentMetadata> {
     if !is_native_path(path) {
         return None;
@@ -412,23 +690,22 @@ pub fn read_metadata(path: &Path) -> Option<DocumentMetadata> {
 }
 
 pub fn parse(raw: &str, source: &Path) -> HsstDocument {
-    let Some((frontmatter, body)) = split_frontmatter(raw) else {
-        return HsstDocument {
-            metadata: fallback_metadata(source),
-            body: raw.to_owned(),
-        };
+    let (metadata, legacy_body) = if let Some((frontmatter, body)) = split_frontmatter(raw) {
+        let value = frontmatter.parse::<toml::Value>().ok();
+        let metadata = value
+            .as_ref()
+            .and_then(toml::Value::as_table)
+            .map(|table| metadata_from_table(table, source))
+            .unwrap_or_else(|| fallback_metadata(source));
+        (metadata, body.to_owned())
+    } else {
+        (fallback_metadata(source), raw.to_owned())
     };
-
-    let value = frontmatter.parse::<toml::Value>().ok();
-    let metadata = value
-        .as_ref()
-        .and_then(toml::Value::as_table)
-        .map(|table| metadata_from_table(table, source))
-        .unwrap_or_else(|| fallback_metadata(source));
-
+    let (body, formatting) = formatting_payload(&legacy_body);
     HsstDocument {
         metadata,
-        body: body.to_owned(),
+        body,
+        formatting,
     }
 }
 
@@ -458,7 +735,7 @@ pub fn serialize(document: &HsstDocument) -> String {
         page.margin_right_mm,
         page.margin_bottom_mm,
         page.margin_left_mm,
-        document.body
+        rich_body(document)
     )
 }
 
@@ -710,7 +987,8 @@ mod tests {
                 status: "draft".into(),
                 page: PageProfile::default(),
             },
-            body: "Texto **en negrita**.\n".into(),
+            body: "Texto en negrita.\n".into(),
+            formatting: json!({"version": 1, "unit": "utf8-byte", "runs": [{"start": 6, "end": 16, "bold": true}]}),
         };
 
         let encoded = serialize(&document);
