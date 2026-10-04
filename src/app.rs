@@ -845,37 +845,7 @@ impl TerminalModel {
     }
 
     fn page_visual(&self) -> Option<PageVisual> {
-        let current = self.current_file.as_ref()?;
-        if !document::is_native_path(current) {
-            return None;
-        }
-        let scale = self.scale.max(0.5);
-        let (page_width_tenth_mm, page_height_tenth_mm) = self.page_profile.page_size_tenth_mm();
-        let page_width_mm = f32::from(page_width_tenth_mm) / 10.0;
-        let page_height_mm = f32::from(page_height_tenth_mm) / 10.0;
-        let nominal_width = page_width_mm * PAGE_PX_PER_MM * scale;
-        let available_width = (self.width as f32 - PAD_X * scale * 2.0).max(240.0);
-        let zoom = (available_width / nominal_width).clamp(0.45, 1.0);
-        let px_per_mm = PAGE_PX_PER_MM * scale * zoom;
-        let width = page_width_mm * px_per_mm;
-        let height = page_height_mm * px_per_mm;
-        let x = ((self.width as f32 - width) / 2.0).max(0.0);
-        let y = if self.zen_engaged() {
-            (PAD_Y * scale).round()
-        } else {
-            ((ISLAND_TOP + ISLAND_HEIGHT + CONTENT_TOP_GAP) * scale).round()
-        };
-        Some(PageVisual {
-            x,
-            y,
-            width,
-            height,
-            margin_left: f32::from(self.page_profile.margin_left_mm) * px_per_mm,
-            margin_right: f32::from(self.page_profile.margin_right_mm) * px_per_mm,
-            margin_top: f32::from(self.page_profile.margin_top_mm) * px_per_mm,
-            margin_bottom: f32::from(self.page_profile.margin_bottom_mm) * px_per_mm,
-            zoom,
-        })
+        None
     }
 
     fn geometry(&self) -> (f32, f32, f32, f32) {
