@@ -183,9 +183,7 @@ pub fn apply_to_selection(input: &str, action: &str, value: &str) -> String {
 }
 
 fn toggle_delimited(input: &str, left: &str, right: &str) -> String {
-    if input.len() >= left.len() + right.len()
-        && input.starts_with(left)
-        && input.ends_with(right)
+    if input.len() >= left.len() + right.len() && input.starts_with(left) && input.ends_with(right)
     {
         return input[left.len()..input.len() - right.len()].to_owned();
     }
@@ -290,10 +288,7 @@ pub const ENHANCED_THEME: &str = r##"inherits = "gruvbox"
 "##;
 
 pub fn strip_markup(input: &str) -> String {
-    styled_runs(input)
-        .into_iter()
-        .map(|run| run.text)
-        .collect()
+    styled_runs(input).into_iter().map(|run| run.text).collect()
 }
 
 pub fn styled_runs(input: &str) -> Vec<StyledRun> {
@@ -452,12 +447,7 @@ fn push_single_asterisk_ranges(line: &str, output: &mut Vec<StyleRange>) {
     }
 }
 
-fn push_tagged_ranges(
-    line: &str,
-    tag: &str,
-    foreground: bool,
-    output: &mut Vec<StyleRange>,
-) {
+fn push_tagged_ranges(line: &str, tag: &str, foreground: bool, output: &mut Vec<StyleRange>) {
     let prefix = format!("{{{{{tag}:");
     let close = format!("{{{{/{tag}}}}}");
     let mut offset = 0usize;

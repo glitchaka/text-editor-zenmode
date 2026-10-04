@@ -427,7 +427,7 @@ slint::slint! {
             Rectangle { x: 51px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fe8019; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "orange"); root.font-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 73px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fabd2f; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "yellow"); root.font-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 95px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #b8bb26; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "green"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 117px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #8ec07c; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "cyan"); root.font-palette-open = false; terminal-focus.focus(); } } }
+            Rectangle { x: 117px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: rgb(142, 192, 124); TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "cyan"); root.font-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 139px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #83a598; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "blue"); root.font-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 161px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #d3869b; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "purple"); root.font-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 183px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #928374; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "gray"); root.font-palette-open = false; terminal-focus.focus(); } } }
@@ -455,7 +455,7 @@ slint::slint! {
             Rectangle { x: 51px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fe8019; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "orange"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 73px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fabd2f; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "yellow"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 95px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #b8bb26; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "green"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 117px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #8ec07c; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "cyan"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
+            Rectangle { x: 117px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: rgb(142, 192, 124); TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "cyan"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 139px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #83a598; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "blue"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 161px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #d3869b; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "purple"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 183px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #928374; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "gray"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
@@ -605,11 +605,19 @@ impl TerminalModel {
 
         let (cwd, file_to_open) = match initial {
             Some(path) if path.is_dir() => {
-                let absolute = if path.is_absolute() { path } else { current.join(path) };
+                let absolute = if path.is_absolute() {
+                    path
+                } else {
+                    current.join(path)
+                };
                 (absolute, None)
             }
             Some(path) => {
-                let absolute = if path.is_absolute() { path } else { current.join(path) };
+                let absolute = if path.is_absolute() {
+                    path
+                } else {
+                    current.join(path)
+                };
                 (library.documents.clone(), Some(absolute))
             }
             None => (library.documents.clone(), None),
@@ -682,7 +690,8 @@ impl TerminalModel {
         let width = width.max(1);
         let height = height.max(1);
         let scale = scale.max(0.5);
-        if self.width == width && self.height == height && (self.scale - scale).abs() < f32::EPSILON {
+        if self.width == width && self.height == height && (self.scale - scale).abs() < f32::EPSILON
+        {
             return;
         }
 
@@ -695,7 +704,8 @@ impl TerminalModel {
             self.parser.screen_mut().set_size(rows, cols);
             if let Some(editor) = self.editor.as_mut() {
                 if let Err(error) = editor.resize(cols, rows) {
-                    self.launcher.message = Some(format!("No se pudo redimensionar Helix: {error}"));
+                    self.launcher.message =
+                        Some(format!("No se pudo redimensionar Helix: {error}"));
                 }
             } else if self.splash_active {
                 self.render_splash();
@@ -716,24 +726,77 @@ impl TerminalModel {
         let top_blank = (rows as usize).saturating_sub(11) / 3;
 
         let mut out = String::from("\x1b[2J\x1b[H\x1b[?25l");
-        for _ in 0..top_blank { push_line(&mut out, ""); }
+        for _ in 0..top_blank {
+            push_line(&mut out, "");
+        }
 
-        push_line(&mut out, &format!("{}╭{}╮", " ".repeat((width.saturating_sub(frame_width)) / 2), "─".repeat(inner_width)));
-        push_line(&mut out, &centered_frame_line("\x1b[1;38;5;222m██  HELIX SST  ██\x1b[0m", width, frame_width));
-        push_line(&mut out, &centered_frame_line(&format!("\x1b[38;5;109mTERMINAL EDITOR SYSTEM · v{APP_VERSION}\x1b[0m"), width, frame_width));
+        push_line(
+            &mut out,
+            &format!(
+                "{}╭{}╮",
+                " ".repeat((width.saturating_sub(frame_width)) / 2),
+                "─".repeat(inner_width)
+            ),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                "\x1b[1;38;5;222m██  HELIX SST  ██\x1b[0m",
+                width,
+                frame_width,
+            ),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                &format!("\x1b[38;5;109mTERMINAL EDITOR SYSTEM · v{APP_VERSION}\x1b[0m"),
+                width,
+                frame_width,
+            ),
+        );
         push_line(&mut out, &centered_frame_line("", width, frame_width));
-        push_line(&mut out, &centered_frame_line("\x1b[38;5;250mWRITE  ·  EDIT  ·  FOCUS\x1b[0m", width, frame_width));
-        push_line(&mut out, &centered_frame_line("\x1b[38;5;244msemigraphic console subsystem\x1b[0m", width, frame_width));
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                "\x1b[38;5;250mWRITE  ·  EDIT  ·  FOCUS\x1b[0m",
+                width,
+                frame_width,
+            ),
+        );
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                "\x1b[38;5;244msemigraphic console subsystem\x1b[0m",
+                width,
+                frame_width,
+            ),
+        );
         push_line(&mut out, &centered_frame_line("", width, frame_width));
-        push_line(&mut out, &centered_frame_line("\x1b[38;5;244mpresiona cualquier tecla para continuar\x1b[0m", width, frame_width));
-        push_last_line(&mut out, &format!("{}╰{}╯", " ".repeat((width.saturating_sub(frame_width)) / 2), "─".repeat(inner_width)));
+        push_line(
+            &mut out,
+            &centered_frame_line(
+                "\x1b[38;5;244mpresiona cualquier tecla para continuar\x1b[0m",
+                width,
+                frame_width,
+            ),
+        );
+        push_last_line(
+            &mut out,
+            &format!(
+                "{}╰{}╯",
+                " ".repeat((width.saturating_sub(frame_width)) / 2),
+                "─".repeat(inner_width)
+            ),
+        );
 
         self.parser.process(out.as_bytes());
         self.dirty = true;
     }
 
     fn finish_splash(&mut self) {
-        if !self.splash_active { return; }
+        if !self.splash_active {
+            return;
+        }
         self.splash_active = false;
         self.reset_parser();
         self.render_launcher();
@@ -769,7 +832,9 @@ impl TerminalModel {
     }
 
     fn apply_format(&mut self, action: &str, value: &str) {
-        let Some(editor) = self.editor.as_ref() else { return; };
+        let Some(editor) = self.editor.as_ref() else {
+            return;
+        };
         let value = (!value.is_empty()).then_some(value);
         match format::pipe_command(action, value) {
             Ok(command) => {
@@ -784,7 +849,9 @@ impl TerminalModel {
     }
 
     fn insert_symbol(&mut self, symbol: &str) {
-        if symbol.is_empty() { return; }
+        if symbol.is_empty() {
+            return;
+        }
         let ensure_insert = !self.helix_is_insert_mode();
         if let Some(editor) = self.editor.as_ref()
             && let Err(error) = editor.paste(symbol, ensure_insert)
@@ -794,7 +861,9 @@ impl TerminalModel {
     }
 
     fn tick(&mut self) {
-        if self.splash_active { return; }
+        if self.splash_active {
+            return;
+        }
         let mut finished = false;
 
         if let Some(editor) = self.editor.as_mut() {
@@ -817,11 +886,15 @@ impl TerminalModel {
                     }
                 }
             }
-            if editor.exit_status().is_some() { finished = true; }
+            if editor.exit_status().is_some() {
+                finished = true;
+            }
         }
 
         if finished {
-            if let Some(editor) = self.editor.as_mut() { let _ = editor.flush_native(); }
+            if let Some(editor) = self.editor.as_mut() {
+                let _ = editor.flush_native();
+            }
             self.editor = None;
             self.current_file = None;
             self.chapter_switch_until = None;
@@ -836,11 +909,17 @@ impl TerminalModel {
             self.finish_splash();
             return;
         }
-        if self.editor.is_some() { self.editor_key(key); } else { self.launcher_key(key); }
+        if self.editor.is_some() {
+            self.editor_key(key);
+        } else {
+            self.launcher_key(key);
+        }
     }
 
     fn editor_key(&mut self, key: KeyEvent) {
-        if self.try_continue_to_next_chapter(key) { return; }
+        if self.try_continue_to_next_chapter(key) {
+            return;
+        }
 
         let zen_toggle = matches!(key.code, KeyCode::Char('z') | KeyCode::Char('Z'))
             && !key.modifiers.contains(KeyModifiers::CONTROL)
@@ -855,9 +934,18 @@ impl TerminalModel {
             && !key.modifiers.contains(KeyModifiers::ALT)
         {
             match key.code {
-                KeyCode::Char('b') | KeyCode::Char('B') => { self.apply_format("bold", ""); return; }
-                KeyCode::Char('i') | KeyCode::Char('I') => { self.apply_format("italic", ""); return; }
-                KeyCode::Char('u') | KeyCode::Char('U') => { self.apply_format("underline", ""); return; }
+                KeyCode::Char('b') | KeyCode::Char('B') => {
+                    self.apply_format("bold", "");
+                    return;
+                }
+                KeyCode::Char('i') | KeyCode::Char('I') => {
+                    self.apply_format("italic", "");
+                    return;
+                }
+                KeyCode::Char('u') | KeyCode::Char('U') => {
+                    self.apply_format("underline", "");
+                    return;
+                }
                 _ => {}
             }
         }
@@ -890,13 +978,19 @@ impl TerminalModel {
             || !key.modifiers.is_empty()
             || !self.helix_is_normal_mode()
             || self.helix_is_modified()
-            || self.chapter_switch_until.is_some_and(|until| Instant::now() < until)
+            || self
+                .chapter_switch_until
+                .is_some_and(|until| Instant::now() < until)
         {
             return false;
         }
 
-        let Some(current) = self.current_file.clone() else { return false; };
-        let Some(metadata) = document::read_metadata(&current) else { return false; };
+        let Some(current) = self.current_file.clone() else {
+            return false;
+        };
+        let Some(metadata) = document::read_metadata(&current) else {
+            return false;
+        };
         if !metadata.kind.eq_ignore_ascii_case("chapter")
             || metadata.chapter.is_none()
             || metadata.project.trim().is_empty()
@@ -904,17 +998,44 @@ impl TerminalModel {
             return false;
         }
 
-        let Some(line) = self.helix_current_line() else { return false; };
-        if let Some(editor) = self.editor.as_mut() { let _ = editor.flush_native(); }
-        let Ok(current_document) = document::read(&current) else { return false; };
-        let total_lines = current_document.body.bytes().filter(|byte| *byte == b'\n').count() + 1;
-        if line < total_lines { return false; }
+        let Some(line) = self.helix_current_line() else {
+            return false;
+        };
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.flush_native();
+        }
+        let Ok(current_document) = document::read(&current) else {
+            return false;
+        };
+        let total_lines = current_document
+            .body
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
+        if line < total_lines {
+            return false;
+        }
 
-        let Ok(chapters) = document::project_chapters(&self.library.documents, &metadata.project) else { return false; };
-        let Some(index) = chapters.iter().position(|(path, _)| paths_equivalent(path, &current)) else { return false; };
-        let Some((next, next_metadata)) = chapters.get(index + 1) else { return false; };
-        let Some(editor) = self.editor.as_mut() else { return false; };
-        if editor.open_source(next).is_err() || editor.send_command(":goto 1").is_err() { return false; }
+        let Ok(chapters) = document::project_chapters(&self.library.documents, &metadata.project)
+        else {
+            return false;
+        };
+        let Some(index) = chapters
+            .iter()
+            .position(|(path, _)| paths_equivalent(path, &current))
+        else {
+            return false;
+        };
+        let Some((next, next_metadata)) = chapters.get(index + 1) else {
+            return false;
+        };
+        let Some(editor) = self.editor.as_mut() else {
+            return false;
+        };
+        if editor.open_source(next).is_err() || editor.send_command(":goto 1").is_err() {
+            return false;
+        }
 
         self.current_file = Some(next.clone());
         self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));
@@ -929,8 +1050,12 @@ impl TerminalModel {
         let mut output = String::new();
         for row in start_row..rows {
             for col in 0..cols {
-                let Some(cell) = screen.cell(row, col) else { continue; };
-                if cell.is_wide_continuation() { continue; }
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
                 output.push_str(cell.contents());
             }
             output.push('\n');
@@ -938,8 +1063,12 @@ impl TerminalModel {
         output
     }
 
-    fn helix_is_modified(&self) -> bool { self.helix_status_text().contains("[+]") }
-    fn helix_current_line(&self) -> Option<usize> { status_line_number(&self.helix_status_text()) }
+    fn helix_is_modified(&self) -> bool {
+        self.helix_status_text().contains("[+]")
+    }
+    fn helix_current_line(&self) -> Option<usize> {
+        status_line_number(&self.helix_status_text())
+    }
 
     fn helix_is_insert_mode(&self) -> bool {
         let screen = self.parser.screen();
@@ -948,11 +1077,17 @@ impl TerminalModel {
         for row in start_row..rows {
             let mut text = String::new();
             for col in 0..cols.min(32) {
-                let Some(cell) = screen.cell(row, col) else { continue; };
-                if cell.is_wide_continuation() { continue; }
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
                 text.push_str(cell.contents());
             }
-            if text.trim_start().starts_with("INSERTAR") { return true; }
+            if text.trim_start().starts_with("INSERTAR") {
+                return true;
+            }
         }
         false
     }
@@ -964,11 +1099,17 @@ impl TerminalModel {
         for row in start_row..rows {
             let mut text = String::new();
             for col in 0..cols.min(32) {
-                let Some(cell) = screen.cell(row, col) else { continue; };
-                if cell.is_wide_continuation() { continue; }
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
                 text.push_str(cell.contents());
             }
-            if text.trim_start().starts_with("NORMAL") { return true; }
+            if text.trim_start().starts_with("NORMAL") {
+                return true;
+            }
         }
         false
     }
@@ -981,18 +1122,35 @@ impl TerminalModel {
                     self.launcher.export_selected = 0;
                     self.launcher.message = None;
                 }
-                KeyCode::Up => self.launcher.export_selected = self.launcher.export_selected.saturating_sub(1),
-                KeyCode::Down => self.launcher.export_selected = (self.launcher.export_selected + 1).min(5),
+                KeyCode::Up => {
+                    self.launcher.export_selected = self.launcher.export_selected.saturating_sub(1)
+                }
+                KeyCode::Down => {
+                    self.launcher.export_selected = (self.launcher.export_selected + 1).min(5)
+                }
                 KeyCode::Enter => {
                     let export_format = ExportFormat::ALL[self.launcher.export_selected % 3];
-                    let scope = if self.launcher.export_selected < 3 { ExportScope::Document } else { ExportScope::Project };
-                    match export::export(&source, &self.library.documents, &self.library.exports, export_format, scope) {
+                    let scope = if self.launcher.export_selected < 3 {
+                        ExportScope::Document
+                    } else {
+                        ExportScope::Project
+                    };
+                    match export::export(
+                        &source,
+                        &self.library.documents,
+                        &self.library.exports,
+                        export_format,
+                        scope,
+                    ) {
                         Ok(target) => {
-                            self.launcher.message = Some(format!("Exportado: {}", target.display()));
+                            self.launcher.message =
+                                Some(format!("Exportado: {}", target.display()));
                             self.launcher.exporting = None;
                             self.launcher.export_selected = 0;
                         }
-                        Err(error) => self.launcher.message = Some(format!("No se pudo exportar: {error}")),
+                        Err(error) => {
+                            self.launcher.message = Some(format!("No se pudo exportar: {error}"))
+                        }
                     }
                 }
                 _ => {}
@@ -1015,26 +1173,43 @@ impl TerminalModel {
                     } else {
                         let path = document::native_path_for_name(&self.launcher.cwd, &name);
                         if path.is_dir() {
-                            self.launcher.message = Some("Ese nombre corresponde a un directorio.".into());
+                            self.launcher.message =
+                                Some("Ese nombre corresponde a un directorio.".into());
                         } else if path.exists() {
                             self.launcher.message = Some("Ese documento ya existe.".into());
                         } else {
-                            let title = path.file_stem().and_then(|value| value.to_str()).unwrap_or("Documento").to_owned();
+                            let title = path
+                                .file_stem()
+                                .and_then(|value| value.to_str())
+                                .unwrap_or("Documento")
+                                .to_owned();
                             match document::create_native(&path, &title) {
                                 Ok(()) => {
                                     self.launcher.creating = false;
                                     self.launcher.new_name.clear();
                                     self.launcher.message = None;
                                     self.launcher.refresh();
-                                    if let Err(error) = self.open_editor(path) { self.launcher.message = Some(error.to_string()); }
+                                    if let Err(error) = self.open_editor(path) {
+                                        self.launcher.message = Some(error.to_string());
+                                    }
                                 }
-                                Err(error) => self.launcher.message = Some(format!("No se pudo crear el documento: {error}")),
+                                Err(error) => {
+                                    self.launcher.message =
+                                        Some(format!("No se pudo crear el documento: {error}"))
+                                }
                             }
                         }
                     }
                 }
-                KeyCode::Backspace => { self.launcher.new_name.pop(); }
-                KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) && !matches!(ch, '\r' | '\n') => self.launcher.new_name.push(ch),
+                KeyCode::Backspace => {
+                    self.launcher.new_name.pop();
+                }
+                KeyCode::Char(ch)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !matches!(ch, '\r' | '\n') =>
+                {
+                    self.launcher.new_name.push(ch)
+                }
                 _ => {}
             }
             self.render_launcher();
@@ -1043,7 +1218,10 @@ impl TerminalModel {
 
         match key.code {
             KeyCode::Up => self.launcher.selected = self.launcher.selected.saturating_sub(1),
-            KeyCode::Down => self.launcher.selected = (self.launcher.selected + 1).min(self.launcher.entries.len() + 2),
+            KeyCode::Down => {
+                self.launcher.selected =
+                    (self.launcher.selected + 1).min(self.launcher.entries.len() + 2)
+            }
             KeyCode::Char('n') | KeyCode::Char('N') => {
                 self.launcher.selected = 2;
                 self.launcher.creating = true;
@@ -1052,7 +1230,9 @@ impl TerminalModel {
             }
             KeyCode::Char('r') | KeyCode::Char('R') => self.launcher.refresh(),
             KeyCode::Char('e') | KeyCode::Char('E') => {
-                if let Some(entry) = self.launcher.selected_entry().cloned() && !entry.directory {
+                if let Some(entry) = self.launcher.selected_entry().cloned()
+                    && !entry.directory
+                {
                     self.launcher.exporting = Some(entry.path);
                     self.launcher.export_selected = 0;
                     self.launcher.message = None;
@@ -1060,7 +1240,11 @@ impl TerminalModel {
             }
             KeyCode::Char('z') | KeyCode::Char('Z') => {
                 self.zen_requested = !self.zen_requested;
-                self.launcher.message = Some(if self.zen_requested { "Zenmode real seleccionado.".into() } else { "Modo normal seleccionado.".into() });
+                self.launcher.message = Some(if self.zen_requested {
+                    "Zenmode real seleccionado.".into()
+                } else {
+                    "Modo normal seleccionado.".into()
+                });
             }
             KeyCode::Backspace => {
                 if self.launcher.cwd != self.library.documents
@@ -1072,7 +1256,9 @@ impl TerminalModel {
                     self.launcher.refresh();
                 }
             }
-            KeyCode::Esc => { let _ = slint::quit_event_loop(); }
+            KeyCode::Esc => {
+                let _ = slint::quit_event_loop();
+            }
             KeyCode::Enter => match self.launcher.selected {
                 0 => {
                     self.zen_requested = false;
@@ -1103,7 +1289,9 @@ impl TerminalModel {
             _ => {}
         }
 
-        if self.editor.is_none() { self.render_launcher(); }
+        if self.editor.is_none() {
+            self.render_launcher();
+        }
     }
 
     fn render_launcher(&mut self) {
@@ -1113,30 +1301,94 @@ impl TerminalModel {
         let inner_width = frame_width.saturating_sub(2);
         let mut out = String::from("\x1b[2J\x1b[H\x1b[?25l");
 
-        push_line(&mut out, &format!("\x1b[38;5;244m╭{}╮\x1b[0m", "─".repeat(inner_width)));
-        push_line(&mut out, &framed_center(&format!("\x1b[1;38;5;222mHELIX SST\x1b[0m  \x1b[38;5;250mversión {APP_VERSION}\x1b[0m"), inner_width, "38;5;244"));
-        push_line(&mut out, &framed_center("\x1b[38;5;109meditor de texto · terminal zen\x1b[0m", inner_width, "38;5;244"));
-        push_line(&mut out, &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)));
+        push_line(
+            &mut out,
+            &format!("\x1b[38;5;244m╭{}╮\x1b[0m", "─".repeat(inner_width)),
+        );
+        push_line(
+            &mut out,
+            &framed_center(
+                &format!(
+                    "\x1b[1;38;5;222mHELIX SST\x1b[0m  \x1b[38;5;250mversión {APP_VERSION}\x1b[0m"
+                ),
+                inner_width,
+                "38;5;244",
+            ),
+        );
+        push_line(
+            &mut out,
+            &framed_center(
+                "\x1b[38;5;109meditor de texto · terminal zen\x1b[0m",
+                inner_width,
+                "38;5;244",
+            ),
+        );
+        push_line(
+            &mut out,
+            &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
+        );
 
-        let path_text = truncate(&self.launcher.cwd.display().to_string(), inner_width.saturating_sub(13));
-        push_line(&mut out, &framed_left(&format!("\x1b[38;5;244mDIRECTORIO\x1b[0m  \x1b[38;5;250m{path_text}\x1b[0m"), inner_width, "38;5;244"));
+        let path_text = truncate(
+            &self.launcher.cwd.display().to_string(),
+            inner_width.saturating_sub(13),
+        );
+        push_line(
+            &mut out,
+            &framed_left(
+                &format!("\x1b[38;5;244mDIRECTORIO\x1b[0m  \x1b[38;5;250m{path_text}\x1b[0m"),
+                inner_width,
+                "38;5;244",
+            ),
+        );
 
         if self.launcher.cwd == self.library.documents {
             let projects = document::project_counts(&self.library.documents);
             if !projects.is_empty() {
-                let summary = projects.iter().take(4).map(|(name, count)| format!("{name}({count})")).collect::<Vec<_>>().join("  ");
+                let summary = projects
+                    .iter()
+                    .take(4)
+                    .map(|(name, count)| format!("{name}({count})"))
+                    .collect::<Vec<_>>()
+                    .join("  ");
                 let summary = truncate(&summary, inner_width.saturating_sub(12));
-                push_line(&mut out, &framed_left(&format!("\x1b[38;5;244mPROYECTOS\x1b[0m  \x1b[38;5;109m{summary}\x1b[0m"), inner_width, "38;5;244"));
+                push_line(
+                    &mut out,
+                    &framed_left(
+                        &format!("\x1b[38;5;244mPROYECTOS\x1b[0m  \x1b[38;5;109m{summary}\x1b[0m"),
+                        inner_width,
+                        "38;5;244",
+                    ),
+                );
             }
         }
 
-        push_line(&mut out, &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)));
-        push_line(&mut out, &framed_left("\x1b[1;38;5;222mMODO DE APERTURA\x1b[0m", inner_width, "38;5;244"));
+        push_line(
+            &mut out,
+            &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
+        );
+        push_line(
+            &mut out,
+            &framed_left(
+                "\x1b[1;38;5;222mMODO DE APERTURA\x1b[0m",
+                inner_width,
+                "38;5;244",
+            ),
+        );
 
-        for (index, (label, active)) in [("Normal", !self.zen_requested), ("Zenmode real", self.zen_requested)].into_iter().enumerate() {
+        for (index, (label, active)) in [
+            ("Normal", !self.zen_requested),
+            ("Zenmode real", self.zen_requested),
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let selected_now = self.launcher.selected == index;
             let marker = if selected_now { "▶" } else { " " };
-            let state = if active { "\x1b[1;38;5;222m●\x1b[0m" } else { "\x1b[38;5;244m○\x1b[0m" };
+            let state = if active {
+                "\x1b[1;38;5;222m●\x1b[0m"
+            } else {
+                "\x1b[38;5;244m○\x1b[0m"
+            };
             let row = if selected_now {
                 format!("\x1b[1;38;5;117m{marker}\x1b[0m  {state}  \x1b[1;38;5;255m{label}\x1b[0m")
             } else {
@@ -1145,29 +1397,87 @@ impl TerminalModel {
             push_line(&mut out, &framed_left(&row, inner_width, "38;5;244"));
         }
 
-        push_line(&mut out, &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)));
-        push_line(&mut out, &framed_left("\x1b[1;38;5;222mARCHIVOS\x1b[0m", inner_width, "38;5;244"));
+        push_line(
+            &mut out,
+            &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
+        );
+        push_line(
+            &mut out,
+            &framed_left("\x1b[1;38;5;222mARCHIVOS\x1b[0m", inner_width, "38;5;244"),
+        );
 
         if let Some(source) = self.launcher.exporting.as_ref() {
-            let source_name = source.file_name().and_then(|name| name.to_str()).unwrap_or("Documento");
+            let source_name = source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Documento");
             push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
-            push_line(&mut out, &framed_left(&format!("\x1b[1;38;5;222mEXPORTAR\x1b[0m  \x1b[38;5;250m{}\x1b[0m", truncate(source_name, inner_width.saturating_sub(12))), inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    &format!(
+                        "\x1b[1;38;5;222mEXPORTAR\x1b[0m  \x1b[38;5;250m{}\x1b[0m",
+                        truncate(source_name, inner_width.saturating_sub(12))
+                    ),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
             for index in 0..6 {
-                let scope = if index < 3 { ExportScope::Document } else { ExportScope::Project };
+                let scope = if index < 3 {
+                    ExportScope::Document
+                } else {
+                    ExportScope::Project
+                };
                 let export_format = ExportFormat::ALL[index % 3];
                 let selected = self.launcher.export_selected == index;
                 let marker = if selected { "▶" } else { " " };
                 let row = format!("{marker}  {:<9} {}", scope.label(), export_format.label());
-                let row = if selected { format!("\x1b[1;38;5;117m{row}\x1b[0m") } else { format!("\x1b[38;5;250m{row}\x1b[0m") };
+                let row = if selected {
+                    format!("\x1b[1;38;5;117m{row}\x1b[0m")
+                } else {
+                    format!("\x1b[38;5;250m{row}\x1b[0m")
+                };
                 push_line(&mut out, &framed_left(&row, inner_width, "38;5;244"));
             }
-            push_line(&mut out, &framed_left("\x1b[38;5;244m↑↓ seleccionar  ·  Enter exportar  ·  Esc cancelar\x1b[0m", inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[38;5;244m↑↓ seleccionar  ·  Enter exportar  ·  Esc cancelar\x1b[0m",
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
         } else if self.launcher.creating {
             push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
-            push_line(&mut out, &framed_left(&format!("\x1b[1;38;5;222m{ICON_DOCUMENT}\x1b[0m   NUEVO ARCHIVO"), inner_width, "38;5;244"));
-            push_line(&mut out, &framed_left(&format!("\x1b[38;5;250mNombre:\x1b[0m {}\x1b[?25h", self.launcher.new_name), inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    &format!("\x1b[1;38;5;222m{ICON_DOCUMENT}\x1b[0m   NUEVO ARCHIVO"),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+            push_line(
+                &mut out,
+                &framed_left(
+                    &format!(
+                        "\x1b[38;5;250mNombre:\x1b[0m {}\x1b[?25h",
+                        self.launcher.new_name
+                    ),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
             push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
-            push_line(&mut out, &framed_left("\x1b[38;5;244mEnter crear  ·  Esc cancelar\x1b[0m", inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[38;5;244mEnter crear  ·  Esc cancelar\x1b[0m",
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
         } else {
             let chrome_rows = 16usize;
             let available = (rows as usize).saturating_sub(chrome_rows).max(3);
@@ -1181,8 +1491,16 @@ impl TerminalModel {
                 if index == 0 {
                     let selected_now = selected == 2;
                     let marker = if selected_now { "▶" } else { " " };
-                    let line = format!("{}{} \x1b[38;5;222m{ICON_DOCUMENT}\x1b[0m   Nuevo archivo", if selected_now { "\x1b[1;38;5;222m" } else { "" }, marker);
-                    let line = if selected_now { format!("{line}\x1b[0m") } else { line };
+                    let line = format!(
+                        "{}{} \x1b[38;5;222m{ICON_DOCUMENT}\x1b[0m   Nuevo archivo",
+                        if selected_now { "\x1b[1;38;5;222m" } else { "" },
+                        marker
+                    );
+                    let line = if selected_now {
+                        format!("{line}\x1b[0m")
+                    } else {
+                        line
+                    };
                     push_line(&mut out, &framed_left(&line, inner_width, "38;5;244"));
                     continue;
                 }
@@ -1192,32 +1510,71 @@ impl TerminalModel {
                     let marker = if selected_now { "▶" } else { " " };
                     let suffix = if entry.directory { "/" } else { "" };
                     let (icon, icon_color) = file_icon(entry);
-                    let metadata_suffix = entry.metadata.as_ref().map(|metadata| {
-                        let mut parts = Vec::new();
-                        if !metadata.project.trim().is_empty() { parts.push(metadata.project.clone()); }
-                        if let Some(chapter) = metadata.chapter_label() { parts.push(chapter); }
-                        if parts.is_empty() { String::new() } else { format!("  [{}]", parts.join(" · ")) }
-                    }).unwrap_or_default();
+                    let metadata_suffix = entry
+                        .metadata
+                        .as_ref()
+                        .map(|metadata| {
+                            let mut parts = Vec::new();
+                            if !metadata.project.trim().is_empty() {
+                                parts.push(metadata.project.clone());
+                            }
+                            if let Some(chapter) = metadata.chapter_label() {
+                                parts.push(chapter);
+                            }
+                            if parts.is_empty() {
+                                String::new()
+                            } else {
+                                format!("  [{}]", parts.join(" · "))
+                            }
+                        })
+                        .unwrap_or_default();
                     let max_name = inner_width.saturating_sub(8);
-                    let name = truncate(&format!("{}{suffix}{metadata_suffix}", entry.name), max_name);
+                    let name = truncate(
+                        &format!("{}{suffix}{metadata_suffix}", entry.name),
+                        max_name,
+                    );
                     let row = if selected_now {
-                        format!("\x1b[1;38;5;117m{marker}\x1b[0m  \x1b[{icon_color}m{icon}\x1b[0m   \x1b[1;38;5;255m{name}\x1b[0m")
+                        format!(
+                            "\x1b[1;38;5;117m{marker}\x1b[0m  \x1b[{icon_color}m{icon}\x1b[0m   \x1b[1;38;5;255m{name}\x1b[0m"
+                        )
                     } else {
-                        format!("{marker}  \x1b[{icon_color}m{icon}\x1b[0m   \x1b[38;5;250m{name}\x1b[0m")
+                        format!(
+                            "{marker}  \x1b[{icon_color}m{icon}\x1b[0m   \x1b[38;5;250m{name}\x1b[0m"
+                        )
                     };
                     push_line(&mut out, &framed_left(&row, inner_width, "38;5;244"));
                 }
             }
         }
 
-        push_line(&mut out, &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)));
+        push_line(
+            &mut out,
+            &format!("\x1b[38;5;244m├{}┤\x1b[0m", "─".repeat(inner_width)),
+        );
         if let Some(message) = self.launcher.message.as_deref() {
             let message = truncate(message, inner_width.saturating_sub(2));
-            push_line(&mut out, &framed_left(&format!("\x1b[38;5;203m{message}\x1b[0m"), inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    &format!("\x1b[38;5;203m{message}\x1b[0m"),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
         } else if !self.launcher.creating && self.launcher.exporting.is_none() {
-            push_line(&mut out, &framed_left("\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  Backspace subir  R refrescar\x1b[0m", inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  Backspace subir  R refrescar\x1b[0m",
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
         }
-        push_last_line(&mut out, &format!("\x1b[38;5;244m╰{}╯\x1b[0m", "─".repeat(inner_width)));
+        push_last_line(
+            &mut out,
+            &format!("\x1b[38;5;244m╰{}╯\x1b[0m", "─".repeat(inner_width)),
+        );
         self.parser.process(out.as_bytes());
         self.dirty = true;
     }
@@ -1227,7 +1584,12 @@ impl TerminalModel {
         let height = self.height.max(1);
         let mut buffer = SharedPixelBuffer::<Rgba8Pixel>::new(width, height);
         let pixels = buffer.make_mut_slice();
-        pixels.fill(Rgba8Pixel { r: BG.0, g: BG.1, b: BG.2, a: 255 });
+        pixels.fill(Rgba8Pixel {
+            r: BG.0,
+            g: BG.1,
+            b: BG.2,
+            a: 255,
+        });
 
         let screen = self.parser.screen();
         let (rows, cols) = screen.size();
@@ -1240,13 +1602,20 @@ impl TerminalModel {
 
         for row in 0..rows {
             for col in 0..cols {
-                let Some(cell) = screen.cell(row, col) else { continue; };
-                if cell.is_wide_continuation() { continue; }
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
 
                 let mut fg = terminal_color(cell.fgcolor(), FG);
                 let mut bg = terminal_color(cell.bgcolor(), BG);
-                let mut paint_background = !matches!(cell.bgcolor(), vt100::Color::Default) || cell.inverse();
-                if cell.inverse() { std::mem::swap(&mut fg, &mut bg); }
+                let mut paint_background =
+                    !matches!(cell.bgcolor(), vt100::Color::Default) || cell.inverse();
+                if cell.inverse() {
+                    std::mem::swap(&mut fg, &mut bg);
+                }
                 if cursor_on && cursor == (row, col) {
                     fg = BG;
                     bg = CURSOR;
@@ -1258,16 +1627,27 @@ impl TerminalModel {
                 let wide = if cell.is_wide() { 2.0 } else { 1.0 };
                 let w = (cell_width * wide).ceil() as i32;
                 let h = cell_height.ceil() as i32;
-                if paint_background { fill_rect(pixels, (width, height), (x, y, w, h), bg); }
+                if paint_background {
+                    fill_rect(pixels, (width, height), (x, y, w, h), bg);
+                }
 
                 let content = cell.contents();
-                if content.is_empty() { continue; }
+                if content.is_empty() {
+                    continue;
+                }
 
                 let mut pen_x = x;
                 let baseline = y + (cell_height * 0.80).round() as i32;
                 for ch in content.chars() {
                     if let Some(icon) = terminal_icon(ch) {
-                        draw_terminal_icon(pixels, (width, height), (pen_x, y), (cell_width, cell_height), icon, fg);
+                        draw_terminal_icon(
+                            pixels,
+                            (width, height),
+                            (pen_x, y),
+                            (cell_width, cell_height),
+                            icon,
+                            fg,
+                        );
                         pen_x += (cell_width * 2.0).round() as i32;
                         continue;
                     }
@@ -1279,7 +1659,16 @@ impl TerminalModel {
                     }
 
                     if let Some(glyph) = self.glyphs.get(&key) {
-                        draw_glyph(pixels, width, height, pen_x, baseline, glyph, fg, cell.italic());
+                        draw_glyph(
+                            pixels,
+                            width,
+                            height,
+                            pen_x,
+                            baseline,
+                            glyph,
+                            fg,
+                            cell.italic(),
+                        );
                         if cell.bold() {
                             draw_glyph(
                                 pixels,
@@ -1313,7 +1702,9 @@ impl TerminalModel {
 fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
     let handle = ui.window().window_handle();
     let window_handle = handle.window_handle().ok()?;
-    let RawWindowHandle::Win32(win32) = window_handle.as_raw() else { return None; };
+    let RawWindowHandle::Win32(win32) = window_handle.as_raw() else {
+        return None;
+    };
     Some(win32.hwnd.get() as HWND)
 }
 
@@ -1322,7 +1713,11 @@ unsafe fn focus_native_window(hwnd: HWND) {
     unsafe {
         let foreground = GetForegroundWindow();
         let current_thread = GetCurrentThreadId();
-        let foreground_thread = if foreground.is_null() { 0 } else { GetWindowThreadProcessId(foreground, std::ptr::null_mut()) };
+        let foreground_thread = if foreground.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
+        };
         let attached = foreground_thread != 0
             && foreground_thread != current_thread
             && AttachThreadInput(current_thread, foreground_thread, 1) != 0;
@@ -1330,16 +1725,32 @@ unsafe fn focus_native_window(hwnd: HWND) {
         SetForegroundWindow(hwnd);
         SetActiveWindow(hwnd);
         SetFocus(hwnd);
-        if attached { AttachThreadInput(current_thread, foreground_thread, 0); }
+        if attached {
+            AttachThreadInput(current_thread, foreground_thread, 0);
+        }
     }
 }
 
 #[cfg(windows)]
 unsafe fn set_zen_topmost(hwnd: HWND, enabled: bool) {
     unsafe {
-        let insert_after = if enabled { HWND_TOPMOST } else { HWND_NOTOPMOST };
-        SetWindowPos(hwnd, insert_after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        if enabled { focus_native_window(hwnd); }
+        let insert_after = if enabled {
+            HWND_TOPMOST
+        } else {
+            HWND_NOTOPMOST
+        };
+        SetWindowPos(
+            hwnd,
+            insert_after,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+        if enabled {
+            focus_native_window(hwnd);
+        }
     }
 }
 
@@ -1351,7 +1762,10 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         .select()
         .map_err(|error| anyhow::anyhow!("No se pudo inicializar Winit/FemtoVG: {error}"))?;
 
-    let model = std::rc::Rc::new(std::cell::RefCell::new(TerminalModel::new(initial, zen_requested)?));
+    let model = std::rc::Rc::new(std::cell::RefCell::new(TerminalModel::new(
+        initial,
+        zen_requested,
+    )?));
     let ui = ZenWindow::new()?;
     ui.set_version_text(format!("v{APP_VERSION}").into());
 
@@ -1368,7 +1782,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     {
         let model = model.clone();
         ui.on_format_action(move |action, value| {
-            model.borrow_mut().apply_format(action.as_str(), value.as_str());
+            model
+                .borrow_mut()
+                .apply_format(action.as_str(), value.as_str());
         });
     }
     {
@@ -1381,8 +1797,12 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         let weak = ui.as_weak();
         let model = model.clone();
         ui.on_close_window(move || {
-            if model.borrow().zen_engaged() { return; }
-            if let Some(ui) = weak.upgrade() { let _ = ui.hide(); }
+            if model.borrow().zen_engaged() {
+                return;
+            }
+            if let Some(ui) = weak.upgrade() {
+                let _ = ui.hide();
+            }
             let _ = slint::quit_event_loop();
         });
     }
@@ -1404,7 +1824,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         let model = model.clone();
         let last_zen = last_zen.clone();
         timer.start(TimerMode::Repeated, Duration::from_millis(16), move || {
-            let Some(ui) = weak.upgrade() else { return; };
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
             let size = ui.window().size();
             let scale = ui.window().scale_factor();
             let mut model = model.borrow_mut();
@@ -1419,7 +1841,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
                 ui.window().set_fullscreen(zen);
                 #[cfg(windows)]
                 if let Some(hwnd) = slint_hwnd(&ui) {
-                    unsafe { set_zen_topmost(hwnd, zen); }
+                    unsafe {
+                        set_zen_topmost(hwnd, zen);
+                    }
                 }
                 last_zen.set(zen);
                 model.dirty = true;
@@ -1430,10 +1854,14 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
                 && let Some(hwnd) = slint_hwnd(&ui)
                 && unsafe { GetForegroundWindow() != hwnd }
             {
-                unsafe { focus_native_window(hwnd); }
+                unsafe {
+                    focus_native_window(hwnd);
+                }
             }
 
-            if model.dirty { ui.set_terminal_image(model.render()); }
+            if model.dirty {
+                ui.set_terminal_image(model.render());
+            }
         });
     }
 
@@ -1445,7 +1873,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
 fn status_line_number(status: &str) -> Option<usize> {
     status.split_whitespace().rev().find_map(|token| {
         let (line, column) = token.split_once(':')?;
-        if column.parse::<usize>().is_err() { return None; }
+        if column.parse::<usize>().is_err() {
+            return None;
+        }
         line.parse::<usize>().ok()
     })
 }
@@ -1458,7 +1888,9 @@ fn paths_equivalent(left: &Path, right: &Path) -> bool {
 }
 
 fn control_pressed(reported: bool) -> bool {
-    if reported { return true; }
+    if reported {
+        return true;
+    }
     #[cfg(windows)]
     unsafe {
         (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0
@@ -1472,7 +1904,9 @@ fn bridged_editor_shortcut(key: KeyEvent) -> Option<KeyCode> {
         return None;
     }
     match key.code {
-        KeyCode::Char('z') | KeyCode::Char('Z') if key.modifiers.contains(KeyModifiers::SHIFT) => Some(KeyCode::F(18)),
+        KeyCode::Char('z') | KeyCode::Char('Z') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            Some(KeyCode::F(18))
+        }
         KeyCode::Char('z') | KeyCode::Char('Z') => Some(KeyCode::F(17)),
         KeyCode::Char('y') | KeyCode::Char('Y') => Some(KeyCode::F(18)),
         KeyCode::Char('a') | KeyCode::Char('A') => Some(KeyCode::F(19)),
@@ -1492,9 +1926,19 @@ fn handle_key(model: &mut TerminalModel, text: &str, ctrl: bool, alt: bool, shif
         return;
     }
 
-    if [Key::Shift, Key::ShiftR, Key::Control, Key::ControlR, Key::Alt, Key::AltGr, Key::Meta, Key::MetaR, Key::CapsLock]
-        .into_iter()
-        .any(|key| key_is(text, key))
+    if [
+        Key::Shift,
+        Key::ShiftR,
+        Key::Control,
+        Key::ControlR,
+        Key::Alt,
+        Key::AltGr,
+        Key::Meta,
+        Key::MetaR,
+        Key::CapsLock,
+    ]
+    .into_iter()
+    .any(|key| key_is(text, key))
     {
         return;
     }
@@ -1524,9 +1968,15 @@ fn handle_key(model: &mut TerminalModel, text: &str, ctrl: bool, alt: bool, shif
     }
 
     let mut modifiers = KeyModifiers::NONE;
-    if ctrl { modifiers |= KeyModifiers::CONTROL; }
-    if alt { modifiers |= KeyModifiers::ALT; }
-    if shift { modifiers |= KeyModifiers::SHIFT; }
+    if ctrl {
+        modifiers |= KeyModifiers::CONTROL;
+    }
+    if alt {
+        modifiers |= KeyModifiers::ALT;
+    }
+    if shift {
+        modifiers |= KeyModifiers::SHIFT;
+    }
 
     if let Some(code) = raw_key_code(text, shift) {
         model.key_event(KeyEvent::new(code, modifiers));
@@ -1587,11 +2037,19 @@ fn raw_key_code(text: &str, shift: bool) -> Option<KeyCode> {
     ];
 
     if key_is(text, Key::Tab) {
-        return Some(if shift { KeyCode::BackTab } else { KeyCode::Tab });
+        return Some(if shift {
+            KeyCode::BackTab
+        } else {
+            KeyCode::Tab
+        });
     }
-    if key_is(text, Key::Backtab) { return Some(KeyCode::BackTab); }
+    if key_is(text, Key::Backtab) {
+        return Some(KeyCode::BackTab);
+    }
     for (key, code) in special {
-        if key_is(text, key) { return Some(code); }
+        if key_is(text, key) {
+            return Some(code);
+        }
     }
 
     let mut chars = text.chars();
@@ -1600,17 +2058,31 @@ fn raw_key_code(text: &str, shift: bool) -> Option<KeyCode> {
 }
 
 fn file_icon(entry: &Entry) -> (char, &'static str) {
-    if entry.directory { return (ICON_FOLDER, "38;5;109"); }
+    if entry.directory {
+        return (ICON_FOLDER, "38;5;109");
+    }
     let name = entry.name.to_ascii_lowercase();
-    let extension = entry.path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
-    if name == "cargo.toml" || name == "cargo.lock" { return (ICON_RUST, "38;5;208"); }
-    if name.ends_with(".lock") || name.contains("artifact-lock") || name.contains("build-lock") { return (ICON_LOCK, "38;5;244"); }
+    let extension = entry
+        .path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if name == "cargo.toml" || name == "cargo.lock" {
+        return (ICON_RUST, "38;5;208");
+    }
+    if name.ends_with(".lock") || name.contains("artifact-lock") || name.contains("build-lock") {
+        return (ICON_LOCK, "38;5;244");
+    }
     match extension.as_str() {
         "" | "txt" | "text" | "md" | "markdown" | "rst" | "log" => (ICON_DOCUMENT, "38;5;255"),
         "pdf" => (ICON_PDF, "38;5;203"),
-        "doc" | "docx" | "odt" | "rtf" | "xls" | "xlsx" | "ods" | "csv" | "ppt" | "pptx" | "odp" => (ICON_OFFICE, "38;5;75"),
+        "doc" | "docx" | "odt" | "rtf" | "xls" | "xlsx" | "ods" | "csv" | "ppt" | "pptx"
+        | "odp" => (ICON_OFFICE, "38;5;75"),
         "rs" => (ICON_RUST, "38;5;208"),
-        "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts" | "tsx" | "jsx" | "html" | "css" | "scss" | "toml" | "yaml" | "yml" | "json" | "xml" | "sh" | "bash" | "ps1" | "bat" | "cmd" => (ICON_CODE, "38;5;114"),
+        "c" | "h" | "cpp" | "hpp" | "cs" | "go" | "py" | "js" | "ts" | "tsx" | "jsx" | "html"
+        | "css" | "scss" | "toml" | "yaml" | "yml" | "json" | "xml" | "sh" | "bash" | "ps1"
+        | "bat" | "cmd" => (ICON_CODE, "38;5;114"),
         "exe" | "com" | "msi" => (ICON_EXECUTABLE, "38;5;75"),
         "dll" => (ICON_COMPONENT, "38;5;110"),
         "pdb" | "obj" | "lib" | "a" => (ICON_BUILD, "38;5;244"),
@@ -1625,7 +2097,10 @@ fn file_icon(entry: &Entry) -> (char, &'static str) {
 fn framed_left(content: &str, width: usize, border_color: &str) -> String {
     let visible = visible_width(content);
     let padding = width.saturating_sub(visible + 2);
-    format!("\x1b[{border_color}m│\x1b[0m {content}{} \x1b[{border_color}m│\x1b[0m", " ".repeat(padding))
+    format!(
+        "\x1b[{border_color}m│\x1b[0m {content}{} \x1b[{border_color}m│\x1b[0m",
+        " ".repeat(padding)
+    )
 }
 
 fn framed_center(content: &str, width: usize, border_color: &str) -> String {
@@ -1633,7 +2108,12 @@ fn framed_center(content: &str, width: usize, border_color: &str) -> String {
     let free = width.saturating_sub(visible);
     let left = free / 2;
     let right = free.saturating_sub(left);
-    format!("\x1b[{border_color}m│\x1b[0m{}{}{}\x1b[{border_color}m│\x1b[0m", " ".repeat(left), content, " ".repeat(right))
+    format!(
+        "\x1b[{border_color}m│\x1b[0m{}{}{}\x1b[{border_color}m│\x1b[0m",
+        " ".repeat(left),
+        content,
+        " ".repeat(right)
+    )
 }
 
 fn visible_width(text: &str) -> usize {
@@ -1646,14 +2126,18 @@ fn visible_width(text: &str) -> usize {
             while index < bytes.len() {
                 let byte = bytes[index];
                 index += 1;
-                if (0x40..=0x7e).contains(&byte) { break; }
+                if (0x40..=0x7e).contains(&byte) {
+                    break;
+                }
             }
             continue;
         }
         if let Some(ch) = text[index..].chars().next() {
             visible += 1;
             index += ch.len_utf8();
-        } else { break; }
+        } else {
+            break;
+        }
     }
     visible
 }
@@ -1661,35 +2145,62 @@ fn visible_width(text: &str) -> usize {
 fn centered_frame_line(content: &str, terminal_width: usize, frame_width: usize) -> String {
     let inner_width = frame_width.saturating_sub(2);
     let margin = " ".repeat(terminal_width.saturating_sub(frame_width) / 2);
-    format!("{margin}{}", framed_center(content, inner_width, "38;5;244"))
+    format!(
+        "{margin}{}",
+        framed_center(content, inner_width, "38;5;244")
+    )
 }
 
-fn push_last_line(out: &mut String, line: &str) { out.push_str(line); }
-fn push_line(out: &mut String, line: &str) { out.push_str(line); out.push_str("\r\n"); }
+fn push_last_line(out: &mut String, line: &str) {
+    out.push_str(line);
+}
+fn push_line(out: &mut String, line: &str) {
+    out.push_str(line);
+    out.push_str("\r\n");
+}
 
 fn truncate(text: &str, max: usize) -> String {
-    if max == 0 { return String::new(); }
+    if max == 0 {
+        return String::new();
+    }
     let mut chars = text.chars();
     let taken = chars.by_ref().take(max).collect::<String>();
     if chars.next().is_some() && max > 1 {
         let mut shortened = taken.chars().take(max - 1).collect::<String>();
         shortened.push('…');
         shortened
-    } else { taken }
+    } else {
+        taken
+    }
 }
 
 fn terminal_color(value: vt100::Color, default: Rgb) -> Rgb {
     const COLORS: [Rgb; 16] = [
-        Rgb(0x11, 0x16, 0x19), Rgb(0xF2, 0x6B, 0x6B), Rgb(0xA3, 0xC7, 0x86), Rgb(0xE8, 0xCC, 0x83),
-        Rgb(0x82, 0xAD, 0xE0), Rgb(0xC9, 0x9F, 0xCE), Rgb(0xC0, 0xCD, 0xD7), Rgb(0xDF, 0xE8, 0xEF),
-        Rgb(0x67, 0x6E, 0x75), Rgb(0xFF, 0x87, 0x87), Rgb(0xC4, 0xEB, 0xA8), Rgb(0xFF, 0xE8, 0xA6),
-        Rgb(0xA8, 0xD1, 0xFF), Rgb(0xEB, 0xC1, 0xF0), Rgb(0xE2, 0xEF, 0xF9), Rgb(0xFF, 0xFF, 0xFF),
+        Rgb(0x11, 0x16, 0x19),
+        Rgb(0xF2, 0x6B, 0x6B),
+        Rgb(0xA3, 0xC7, 0x86),
+        Rgb(0xE8, 0xCC, 0x83),
+        Rgb(0x82, 0xAD, 0xE0),
+        Rgb(0xC9, 0x9F, 0xCE),
+        Rgb(0xC0, 0xCD, 0xD7),
+        Rgb(0xDF, 0xE8, 0xEF),
+        Rgb(0x67, 0x6E, 0x75),
+        Rgb(0xFF, 0x87, 0x87),
+        Rgb(0xC4, 0xEB, 0xA8),
+        Rgb(0xFF, 0xE8, 0xA6),
+        Rgb(0xA8, 0xD1, 0xFF),
+        Rgb(0xEB, 0xC1, 0xF0),
+        Rgb(0xE2, 0xEF, 0xF9),
+        Rgb(0xFF, 0xFF, 0xFF),
     ];
     match value {
         vt100::Color::Default => default,
         vt100::Color::Rgb(r, g, b) => Rgb(r, g, b),
         vt100::Color::Idx(i) if i < 16 => COLORS[i as usize],
-        vt100::Color::Idx(i) if i >= 232 => { let v = 8 + (i - 232) * 10; Rgb(v, v, v) }
+        vt100::Color::Idx(i) if i >= 232 => {
+            let v = 8 + (i - 232) * 10;
+            Rgb(v, v, v)
+        }
         vt100::Color::Idx(i) => {
             let i = i - 16;
             let component = |n| if n == 0 { 0 } else { 55 + n * 40 };
@@ -1699,7 +2210,22 @@ fn terminal_color(value: vt100::Color, default: Rgb) -> Rgb {
 }
 
 #[derive(Clone, Copy)]
-enum TerminalIcon { Folder, Document, Code, Executable, Component, Build, Image, Audio, Video, Archive, Pdf, Office, Lock, Rust }
+enum TerminalIcon {
+    Folder,
+    Document,
+    Code,
+    Executable,
+    Component,
+    Build,
+    Image,
+    Audio,
+    Video,
+    Archive,
+    Pdf,
+    Office,
+    Lock,
+    Rust,
+}
 
 fn terminal_icon(ch: char) -> Option<TerminalIcon> {
     Some(match ch {
@@ -1746,7 +2272,12 @@ impl IconCanvas<'_> {
         let y0 = origin_y + gy * icon_height / 16;
         let x1 = origin_x + (gx + gw) * icon_width / 16;
         let y1 = origin_y + (gy + gh) * icon_height / 16;
-        fill_rect(self.pixels, self.surface, (x0, y0, (x1 - x0).max(1), (y1 - y0).max(1)), color);
+        fill_rect(
+            self.pixels,
+            self.surface,
+            (x0, y0, (x1 - x0).max(1), (y1 - y0).max(1)),
+            color,
+        );
     }
 }
 
@@ -1761,61 +2292,114 @@ fn draw_terminal_icon(
     let (cell_width, cell_height) = cell_size;
     let iw = (cell_width * 2.0).round().max(12.0) as i32;
     let ih = cell_height.round().max(14.0) as i32;
-    let mut canvas = IconCanvas { pixels, surface, origin, size: (iw, ih) };
+    let mut canvas = IconCanvas {
+        pixels,
+        surface,
+        origin,
+        size: (iw, ih),
+    };
     let dark = icon_shade(color, 2, 5);
     let mid = icon_shade(color, 3, 4);
     let bright = icon_bright(color);
 
     match icon {
         TerminalIcon::Folder => {
-            canvas.rect((2, 3, 6, 2), bright); canvas.rect((1, 5, 14, 9), color);
-            canvas.rect((2, 6, 12, 7), dark); canvas.rect((3, 8, 9, 1), bright); canvas.rect((11, 11, 2, 2), mid);
+            canvas.rect((2, 3, 6, 2), bright);
+            canvas.rect((1, 5, 14, 9), color);
+            canvas.rect((2, 6, 12, 7), dark);
+            canvas.rect((3, 8, 9, 1), bright);
+            canvas.rect((11, 11, 2, 2), mid);
         }
         TerminalIcon::Document | TerminalIcon::Pdf | TerminalIcon::Office => {
-            canvas.rect((3, 1, 10, 14), color); canvas.rect((4, 2, 8, 12), dark); canvas.rect((10, 1, 3, 3), bright);
-            canvas.rect((5, 6, 6, 1), bright); canvas.rect((5, 9, 5, 1), mid); canvas.rect((5, 12, 4, 1), mid);
-            if matches!(icon, TerminalIcon::Pdf) { canvas.rect((4, 13, 8, 1), bright); }
-            else if matches!(icon, TerminalIcon::Office) { canvas.rect((8, 5, 1, 8), bright); }
+            canvas.rect((3, 1, 10, 14), color);
+            canvas.rect((4, 2, 8, 12), dark);
+            canvas.rect((10, 1, 3, 3), bright);
+            canvas.rect((5, 6, 6, 1), bright);
+            canvas.rect((5, 9, 5, 1), mid);
+            canvas.rect((5, 12, 4, 1), mid);
+            if matches!(icon, TerminalIcon::Pdf) {
+                canvas.rect((4, 13, 8, 1), bright);
+            } else if matches!(icon, TerminalIcon::Office) {
+                canvas.rect((8, 5, 1, 8), bright);
+            }
         }
         TerminalIcon::Code => {
-            canvas.rect((1, 2, 14, 12), color); canvas.rect((2, 3, 12, 10), dark); canvas.rect((4, 6, 2, 1), bright);
-            canvas.rect((5, 7, 2, 1), bright); canvas.rect((4, 8, 2, 1), bright); canvas.rect((9, 9, 3, 1), mid);
+            canvas.rect((1, 2, 14, 12), color);
+            canvas.rect((2, 3, 12, 10), dark);
+            canvas.rect((4, 6, 2, 1), bright);
+            canvas.rect((5, 7, 2, 1), bright);
+            canvas.rect((4, 8, 2, 1), bright);
+            canvas.rect((9, 9, 3, 1), mid);
         }
         TerminalIcon::Executable => {
-            canvas.rect((4, 2, 8, 12), color); canvas.rect((2, 5, 12, 6), color); canvas.rect((5, 4, 6, 8), dark);
-            canvas.rect((6, 6, 4, 4), bright); canvas.rect((7, 7, 2, 2), mid);
+            canvas.rect((4, 2, 8, 12), color);
+            canvas.rect((2, 5, 12, 6), color);
+            canvas.rect((5, 4, 6, 8), dark);
+            canvas.rect((6, 6, 4, 4), bright);
+            canvas.rect((7, 7, 2, 2), mid);
         }
         TerminalIcon::Component => {
-            canvas.rect((3, 4, 10, 8), color); canvas.rect((4, 5, 8, 6), dark);
-            for pin_y in [5, 8, 11] { canvas.rect((1, pin_y, 2, 1), bright); canvas.rect((13, pin_y, 2, 1), bright); }
+            canvas.rect((3, 4, 10, 8), color);
+            canvas.rect((4, 5, 8, 6), dark);
+            for pin_y in [5, 8, 11] {
+                canvas.rect((1, pin_y, 2, 1), bright);
+                canvas.rect((13, pin_y, 2, 1), bright);
+            }
             canvas.rect((6, 7, 4, 2), mid);
         }
         TerminalIcon::Build => {
-            canvas.rect((4, 3, 8, 2), bright); canvas.rect((2, 5, 12, 8), color); canvas.rect((3, 6, 10, 6), dark);
-            canvas.rect((7, 5, 2, 8), mid); canvas.rect((3, 8, 10, 1), bright);
+            canvas.rect((4, 3, 8, 2), bright);
+            canvas.rect((2, 5, 12, 8), color);
+            canvas.rect((3, 6, 10, 6), dark);
+            canvas.rect((7, 5, 2, 8), mid);
+            canvas.rect((3, 8, 10, 1), bright);
         }
         TerminalIcon::Image => {
-            canvas.rect((1, 2, 14, 12), color); canvas.rect((2, 3, 12, 10), dark); canvas.rect((10, 5, 2, 2), bright);
-            canvas.rect((3, 10, 10, 1), mid); canvas.rect((4, 9, 3, 1), bright); canvas.rect((7, 8, 3, 2), color);
+            canvas.rect((1, 2, 14, 12), color);
+            canvas.rect((2, 3, 12, 10), dark);
+            canvas.rect((10, 5, 2, 2), bright);
+            canvas.rect((3, 10, 10, 1), mid);
+            canvas.rect((4, 9, 3, 1), bright);
+            canvas.rect((7, 8, 3, 2), color);
         }
         TerminalIcon::Audio => {
             canvas.rect((1, 3, 14, 10), dark);
-            for (gx, gy, gh) in [(3, 7, 3), (5, 5, 6), (7, 3, 10), (9, 5, 6), (11, 7, 3)] { canvas.rect((gx, gy, 1, gh), bright); }
+            for (gx, gy, gh) in [(3, 7, 3), (5, 5, 6), (7, 3, 10), (9, 5, 6), (11, 7, 3)] {
+                canvas.rect((gx, gy, 1, gh), bright);
+            }
         }
         TerminalIcon::Video => {
-            canvas.rect((1, 2, 14, 11), color); canvas.rect((2, 3, 12, 9), dark); canvas.rect((6, 5, 2, 6), bright);
-            canvas.rect((8, 6, 2, 4), bright); canvas.rect((10, 7, 1, 2), bright); canvas.rect((5, 14, 6, 1), mid);
+            canvas.rect((1, 2, 14, 11), color);
+            canvas.rect((2, 3, 12, 9), dark);
+            canvas.rect((6, 5, 2, 6), bright);
+            canvas.rect((8, 6, 2, 4), bright);
+            canvas.rect((10, 7, 1, 2), bright);
+            canvas.rect((5, 14, 6, 1), mid);
         }
         TerminalIcon::Archive => {
-            for gy in [3, 7, 11] { canvas.rect((2, gy, 12, 3), color); canvas.rect((3, gy + 1, 8, 1), dark); canvas.rect((12, gy + 1, 1, 1), bright); }
+            for gy in [3, 7, 11] {
+                canvas.rect((2, gy, 12, 3), color);
+                canvas.rect((3, gy + 1, 8, 1), dark);
+                canvas.rect((12, gy + 1, 1, 1), bright);
+            }
         }
         TerminalIcon::Lock => {
-            canvas.rect((5, 2, 6, 2), color); canvas.rect((4, 4, 2, 4), color); canvas.rect((10, 4, 2, 4), color);
-            canvas.rect((3, 7, 10, 7), color); canvas.rect((4, 8, 8, 5), dark); canvas.rect((7, 9, 2, 3), bright);
+            canvas.rect((5, 2, 6, 2), color);
+            canvas.rect((4, 4, 2, 4), color);
+            canvas.rect((10, 4, 2, 4), color);
+            canvas.rect((3, 7, 10, 7), color);
+            canvas.rect((4, 8, 8, 5), dark);
+            canvas.rect((7, 9, 2, 3), bright);
         }
         TerminalIcon::Rust => {
-            canvas.rect((6, 1, 4, 2), color); canvas.rect((6, 13, 4, 2), color); canvas.rect((1, 6, 2, 4), color); canvas.rect((13, 6, 2, 4), color);
-            canvas.rect((3, 3, 10, 10), color); canvas.rect((4, 4, 8, 8), dark); canvas.rect((6, 6, 4, 4), bright); canvas.rect((7, 7, 2, 2), mid);
+            canvas.rect((6, 1, 4, 2), color);
+            canvas.rect((6, 13, 4, 2), color);
+            canvas.rect((1, 6, 2, 4), color);
+            canvas.rect((13, 6, 2, 4), color);
+            canvas.rect((3, 3, 10, 10), color);
+            canvas.rect((4, 4, 8, 8), dark);
+            canvas.rect((6, 6, 4, 4), bright);
+            canvas.rect((7, 7, 2, 2), mid);
         }
     }
 }
@@ -1836,7 +2420,12 @@ fn fill_rect(
         let start = (py * width + left) as usize;
         let end = (py * width + right) as usize;
         for pixel in &mut pixels[start..end] {
-            *pixel = Rgba8Pixel { r: color.0, g: color.1, b: color.2, a: 255 };
+            *pixel = Rgba8Pixel {
+                r: color.0,
+                g: color.1,
+                b: color.2,
+                a: 255,
+            };
         }
     }
 }
@@ -1851,20 +2440,28 @@ fn draw_glyph(
     color: Rgb,
     italic: bool,
 ) {
-    if glyph.metrics.width == 0 || glyph.metrics.height == 0 { return; }
+    if glyph.metrics.width == 0 || glyph.metrics.height == 0 {
+        return;
+    }
     let start_x = cell_x + glyph.metrics.xmin;
     let start_y = baseline - glyph.metrics.ymin - glyph.metrics.height as i32;
 
     for gy in 0..glyph.metrics.height {
         let shear = if italic {
             ((glyph.metrics.height.saturating_sub(1 + gy)) as f32 * 0.18).round() as i32
-        } else { 0 };
+        } else {
+            0
+        };
         for gx in 0..glyph.metrics.width {
             let x = start_x + gx as i32 + shear;
             let y = start_y + gy as i32;
-            if x < 0 || y < 0 || x >= width as i32 || y >= height as i32 { continue; }
+            if x < 0 || y < 0 || x >= width as i32 || y >= height as i32 {
+                continue;
+            }
             let alpha = glyph.alpha[gy * glyph.metrics.width + gx] as u16;
-            if alpha == 0 { continue; }
+            if alpha == 0 {
+                continue;
+            }
             let index = y as usize * width as usize + x as usize;
             let dst = pixels[index];
             let inv = 255u16 - alpha;
@@ -1888,17 +2485,50 @@ mod app_input_tests {
     #[test]
     fn bridged_editor_shortcut_maps_windows_editing_keys() {
         let ctrl = KeyModifiers::CONTROL;
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Left, ctrl)), Some(KeyCode::F(13)));
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Right, ctrl)), Some(KeyCode::F(14)));
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Backspace, ctrl)), Some(KeyCode::F(15)));
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Delete, ctrl)), Some(KeyCode::F(16)));
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)), None);
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('z'), ctrl)), Some(KeyCode::F(17)));
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('y'), ctrl)), Some(KeyCode::F(18)));
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('a'), ctrl)), Some(KeyCode::F(19)));
-        assert_eq!(bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('Z'), ctrl | KeyModifiers::SHIFT)), Some(KeyCode::F(18)));
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Left, ctrl)),
+            Some(KeyCode::F(13))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Right, ctrl)),
+            Some(KeyCode::F(14))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Backspace, ctrl)),
+            Some(KeyCode::F(15))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Delete, ctrl)),
+            Some(KeyCode::F(16))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('z'), ctrl)),
+            Some(KeyCode::F(17))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('y'), ctrl)),
+            Some(KeyCode::F(18))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('a'), ctrl)),
+            Some(KeyCode::F(19))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(
+                KeyCode::Char('Z'),
+                ctrl | KeyModifiers::SHIFT
+            )),
+            Some(KeyCode::F(18))
+        );
         assert_eq!(raw_key_code("\x08", false), Some(KeyCode::Backspace));
         assert_eq!(raw_key_code("\x7f", false), Some(KeyCode::Delete));
-        assert_eq!(status_line_number("NORMAL  Capítulo 1.hsst      12:4 utf-8 prose"), Some(12));
+        assert_eq!(
+            status_line_number("NORMAL  Capítulo 1.hsst      12:4 utf-8 prose"),
+            Some(12)
+        );
     }
 }
