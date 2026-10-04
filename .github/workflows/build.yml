@@ -43,6 +43,7 @@ jobs:
             python scripts/apply_page_layout.py
             python scripts/fix_page_palette.py
           }
+          python scripts/fix_page_runtime.py
           cargo fmt --all
 
           git config user.name "github-actions[bot]"
@@ -50,7 +51,7 @@ jobs:
           git add src
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m "Corregir e integrar perfil de pagina"
+            git commit -m "Corregir runtime del perfil de pagina"
             git push origin HEAD:page-layout
           }
 
