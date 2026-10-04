@@ -41,6 +41,7 @@ jobs:
           $content = [System.IO.File]::ReadAllText($app).Replace("`r`n", "`n")
           $content = $content.Replace("#8ec07c", "rgb(142, 192, 124)")
           $content = $content.Replace("                            width,`n                            height,`n", "                            (width, height),`n")
+          $content = $content.Replace("                                width,`n                                height,`n", "                                (width, height),`n")
           $content = $content.Replace("    width: u32,`n    height: u32,`n    cell_x: i32,", "    surface: (u32, u32),`n    cell_x: i32,")
           $content = $content.Replace(") {`n    if glyph.metrics.width == 0 || glyph.metrics.height == 0 {", ") {`n    let (width, height) = surface;`n    if glyph.metrics.width == 0 || glyph.metrics.height == 0 {")
           [System.IO.File]::WriteAllText($app, $content, [System.Text.UTF8Encoding]::new($false))
@@ -57,7 +58,7 @@ jobs:
           git add src
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m "Reducir argumentos del rasterizador de glifos"
+            git commit -m "Corregir llamadas del rasterizador de glifos"
             git push origin HEAD:formatting-island
           }
 
