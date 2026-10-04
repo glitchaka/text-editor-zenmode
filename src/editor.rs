@@ -921,10 +921,7 @@ mod tests {
 
     #[test]
     fn native_hsst_shadow_contains_only_body() {
-        let root = std::env::temp_dir().join(format!(
-            "helix-sst-shadow-{}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("helix-sst-shadow-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("debe crear temp");
 
