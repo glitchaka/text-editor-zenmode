@@ -306,8 +306,26 @@ impl EditorSession {
         Ok(changed)
     }
 
-    pub fn paste(&self, text: &str) -> Result<()> {
-        let bytes = encode_paste(text, self.win32_input());
+    pub fn paste(&self, text: &str, ensure_insert: bool) -> Result<()> {
+        let win32 = self.win32_input();
+        let prepared = wrap_pasted_text(text, 88);
+        let mut bytes = Vec::new();
+
+        if ensure_insert {
+            if let Some(encoded) =
+                encode_input(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), win32)
+            {
+                bytes.extend_from_slice(&encoded);
+            }
+            if let Some(encoded) =
+                encode_input(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), win32)
+            {
+                bytes.extend_from_slice(&encoded);
+            }
+        }
+
+        bytes.extend_from_slice(&encode_paste(&prepared, win32));
+
         let mut writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
         writer.write_all(&bytes)?;
         writer.flush()?;
@@ -721,6 +739,59 @@ fn find_named(root: &Path, name: &str, directory: bool) -> Option<PathBuf> {
     None
 }
 
+fn wrap_pasted_text(text: &str, width: usize) -> String {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    if width == 0 {
+        return normalized;
+    }
+
+    let mut output = String::with_capacity(normalized.len());
+    let ends_with_newline = normalized.ends_with('\n');
+
+    for (line_index, line) in normalized.lines().enumerate() {
+        if line_index > 0 {
+            output.push('\n');
+        }
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let leading = line
+            .chars()
+            .take_while(|ch| ch.is_whitespace())
+            .collect::<String>();
+        let available = width.saturating_sub(leading.chars().count()).max(12);
+        let mut current = String::new();
+
+        for word in line.trim_start().split_whitespace() {
+            let separator = usize::from(!current.is_empty());
+            if !current.is_empty()
+                && current.chars().count() + separator + word.chars().count() > available
+            {
+                output.push_str(&leading);
+                output.push_str(&current);
+                output.push('\n');
+                current.clear();
+            }
+
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(word);
+        }
+
+        output.push_str(&leading);
+        output.push_str(&current);
+    }
+
+    if ends_with_newline {
+        output.push('\n');
+    }
+
+    output
+}
+
 fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
 
@@ -985,6 +1056,33 @@ mod tests {
         assert!(!editable.contains("+++"));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pasted_prose_is_hard_wrapped_without_losing_paragraph_breaks() {
+        let input = "Uno dos tres cuatro cinco seis siete ocho nueve diez.\n\nSegundo párrafo.";
+        let wrapped = wrap_pasted_text(input, 20);
+        assert_eq!(
+            wrapped,
+            "Uno dos tres cuatro\ncinco seis siete ocho\nnueve diez.\n\nSegundo párrafo."
+        );
+    }
+
+    #[test]
+    fn paste_can_prefix_insert_mode_before_payload() {
+        let win32 = false;
+        let prepared = wrap_pasted_text("texto", 88);
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(
+            &encode_input(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), win32)
+                .expect("Esc debe codificarse"),
+        );
+        bytes.extend_from_slice(
+            &encode_input(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), win32)
+                .expect("i debe codificarse"),
+        );
+        bytes.extend_from_slice(&encode_paste(&prepared, win32));
+        assert!(bytes.starts_with(b"\x1bi\x1b[200~"));
     }
 
     #[test]

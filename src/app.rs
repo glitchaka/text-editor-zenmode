@@ -713,11 +713,12 @@ impl TerminalModel {
             && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'));
 
         if ctrl_v {
+            let ensure_insert = !self.helix_is_insert_mode();
             if let Ok(mut clipboard) = arboard::Clipboard::new()
                 && let Ok(text) = clipboard.get_text()
                 && let Some(editor) = self.editor.as_ref()
             {
-                let _ = editor.paste(&text);
+                let _ = editor.paste(&text, ensure_insert);
             }
             return;
         }
@@ -832,6 +833,31 @@ impl TerminalModel {
 
     fn helix_current_line(&self) -> Option<usize> {
         status_line_number(&self.helix_status_text())
+    }
+
+    fn helix_is_insert_mode(&self) -> bool {
+        let screen = self.parser.screen();
+        let (rows, cols) = screen.size();
+        let start_row = rows.saturating_sub(3);
+
+        for row in start_row..rows {
+            let mut text = String::new();
+            for col in 0..cols.min(32) {
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
+                text.push_str(cell.contents());
+            }
+
+            if text.trim_start().starts_with("INSERTAR") {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn helix_is_normal_mode(&self) -> bool {
