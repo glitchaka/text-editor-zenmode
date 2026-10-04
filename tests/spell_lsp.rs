@@ -1,6 +1,8 @@
 use std::{
     io::Write,
     process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 
 #[test]
@@ -25,6 +27,19 @@ fn spell_lsp_process_advertises_code_actions() {
     {
         let mut stdin = child.stdin.take().expect("stdin del helper");
         for message in [initialize, shutdown, exit] {\n            write!(stdin, "Content-Length: {}\\r\\n\\r\\n{}", message.len(), message)\n                .expect("debe poder enviarse una trama LSP");\n        }
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
+            Ok(None) => {
+                let _ = child.kill();
+                panic!("el helper ortográfico no finalizó tras shutdown/exit");
+            }
+            Err(error) => panic!("no se pudo consultar el estado del helper: {error}"),
+        }
     }
 
     let output = child
