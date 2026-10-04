@@ -352,9 +352,7 @@ fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
         .map(|index| format!("{} 0 R", first_page_object + index))
         .collect::<Vec<_>>()
         .join(" ");
-    objects.push(
-        format!("<< /Type /Pages /Count {page_count} /Kids [ {kids} ] >>").into_bytes(),
-    );
+    objects.push(format!("<< /Type /Pages /Count {page_count} /Kids [ {kids} ] >>").into_bytes());
     objects.push(
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
             .to_vec(),
