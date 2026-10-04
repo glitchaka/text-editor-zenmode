@@ -550,10 +550,8 @@ mod tests {
 
     #[test]
     fn docx_and_pdf_outputs_have_expected_container_signatures() {
-        let root = std::env::temp_dir().join(format!(
-            "helix-sst-export-smoke-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("helix-sst-export-smoke-{}", std::process::id()));
         let _ = fs::create_dir_all(&root);
         let document = ExportDocument {
             title: "Capítulo 1".into(),
