@@ -159,6 +159,7 @@ slint::slint! {
                 y: 0;
                 width: parent.width;
                 height: parent.height;
+                enabled: !root.zen-active;
 
                 Text {
                     x: 17px;
