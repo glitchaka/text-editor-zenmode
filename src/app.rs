@@ -541,23 +541,123 @@ slint::slint! {
             border-color: #354052;
             background: rgba(10, 13, 20, 0.98);
 
-            Text { x: 10px; y: 5px; width: 54px; height: 24px; text: "PAPEL"; color: #7f8b9b; font-size: 10px; vertical-alignment: center; }
-            Rectangle { x: 64px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "CARTA" ? #29384b : paper-carta.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Carta"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-carta := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "letter"); } } }
-            Rectangle { x: 130px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "OFICIO" ? #29384b : paper-oficio.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Oficio"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-oficio := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "oficio"); } } }
-            Rectangle { x: 196px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "LEGAL" ? #29384b : paper-legal.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Legal"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-legal := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "legal"); } } }
-            Rectangle { x: 262px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "A4" ? #29384b : paper-a4.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "A4"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-a4 := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "a4"); } } }
-            Rectangle { x: 328px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "A5" ? #29384b : paper-a5.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "A5"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-a5 := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "a5"); } } }
+            Text {
+                x: 10px; y: 5px; width: 50px; height: 24px;
+                text: "PAPEL"; color: #7f8b9b; font-size: 10px; vertical-alignment: center;
+            }
+            Rectangle {
+                x: 62px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
+                background: paper-carta.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "Carta"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                paper-carta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("paper", "letter"); }
+                }
+            }
+            Rectangle {
+                x: 128px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
+                background: paper-oficio.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "Oficio"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                paper-oficio := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("paper", "oficio"); }
+                }
+            }
+            Rectangle {
+                x: 194px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
+                background: paper-legal.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "Legal"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                paper-legal := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("paper", "legal"); }
+                }
+            }
+            Rectangle {
+                x: 260px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
+                background: paper-a4.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "A4"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                paper-a4 := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("paper", "a4"); }
+                }
+            }
+            Rectangle {
+                x: 326px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
+                background: paper-a5.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "A5"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                paper-a5 := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("paper", "a5"); }
+                }
+            }
 
-            Text { x: 10px; y: 35px; width: 54px; height: 24px; text: "ORIENT."; color: #7f8b9b; font-size: 10px; vertical-alignment: center; }
-            Rectangle { x: 64px; y: 35px; width: 92px; height: 24px; border-radius: 5px; background: root.page-orientation-text == "VERTICAL" ? #29384b : portrait-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Vertical"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } portrait-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("orientation", "portrait"); } } }
-            Rectangle { x: 160px; y: 35px; width: 100px; height: 24px; border-radius: 5px; background: root.page-orientation-text == "HORIZONTAL" ? #29384b : landscape-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Horizontal"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } landscape-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("orientation", "landscape"); } }
-            Text { x: 270px; y: 35px; width: 135px; height: 24px; text: "márgenes: clic = siguiente"; color: #7f8b9b; font-size: 9px; vertical-alignment: center; }
+            Text {
+                x: 10px; y: 35px; width: 50px; height: 24px;
+                text: "ORIENT."; color: #7f8b9b; font-size: 10px; vertical-alignment: center;
+            }
+            Rectangle {
+                x: 62px; y: 35px; width: 92px; height: 24px; border-radius: 5px;
+                background: portrait-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "Vertical"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                portrait-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("orientation", "portrait"); }
+                }
+            }
+            Rectangle {
+                x: 158px; y: 35px; width: 100px; height: 24px; border-radius: 5px;
+                background: landscape-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "Horizontal"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                landscape-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("orientation", "landscape"); }
+                }
+            }
+            Text {
+                x: 268px; y: 35px; width: 140px; height: 24px;
+                text: root.page-orientation-text; color: #b8bb26; font-size: 9px; vertical-alignment: center;
+            }
 
-            Text { x: 10px; y: 65px; width: 54px; height: 24px; text: "MARGEN"; color: #7f8b9b; font-size: 10px; vertical-alignment: center; }
-            Rectangle { x: 64px; y: 65px; width: 76px; height: 24px; border-radius: 5px; background: margin-left-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "I " + root.margin-left-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } margin-left-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("margin-left", "cycle"); } } }
-            Rectangle { x: 144px; y: 65px; width: 76px; height: 24px; border-radius: 5px; background: margin-right-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "D " + root.margin-right-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } margin-right-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("margin-right", "cycle"); } } }
-            Rectangle { x: 224px; y: 65px; width: 76px; height: 24px; border-radius: 5px; background: margin-top-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "S " + root.margin-top-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } margin-top-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("margin-top", "cycle"); } } }
-            Rectangle { x: 304px; y: 65px; width: 76px; height: 24px; border-radius: 5px; background: margin-bottom-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "B " + root.margin-bottom-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } margin-bottom-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("margin-bottom", "cycle"); } } }
+            Text {
+                x: 10px; y: 65px; width: 50px; height: 24px;
+                text: "MARGEN"; color: #7f8b9b; font-size: 10px; vertical-alignment: center;
+            }
+            Rectangle {
+                x: 62px; y: 65px; width: 76px; height: 24px; border-radius: 5px;
+                background: margin-left-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "I " + root.margin-left-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                margin-left-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("margin-left", "cycle"); }
+                }
+            }
+            Rectangle {
+                x: 142px; y: 65px; width: 76px; height: 24px; border-radius: 5px;
+                background: margin-right-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "D " + root.margin-right-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                margin-right-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("margin-right", "cycle"); }
+                }
+            }
+            Rectangle {
+                x: 222px; y: 65px; width: 76px; height: 24px; border-radius: 5px;
+                background: margin-top-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "S " + root.margin-top-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                margin-top-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("margin-top", "cycle"); }
+                }
+            }
+            Rectangle {
+                x: 302px; y: 65px; width: 76px; height: 24px; border-radius: 5px;
+                background: margin-bottom-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "B " + root.margin-bottom-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                margin-bottom-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.page-action("margin-bottom", "cycle"); }
+                }
+            }
         }
     }
 }
@@ -805,7 +905,8 @@ impl TerminalModel {
     fn terminal_size(&self) -> (u16, u16) {
         let (left_pad, top_pad, cell_width, cell_height) = self.geometry();
         if let Some(page) = self.page_visual() {
-            let printable_width = (page.width - page.margin_left - page.margin_right).max(cell_width * 24.0);
+            let printable_width =
+                (page.width - page.margin_left - page.margin_right).max(cell_width * 24.0);
             let cols = (printable_width / cell_width).floor().clamp(24.0, 220.0) as u16;
             let page_bottom = page.y + page.height - page.margin_bottom;
             let visible_bottom = page_bottom.min(self.height as f32 - PAD_Y * self.scale.max(0.5));
@@ -1019,17 +1120,27 @@ impl TerminalModel {
                 };
                 page.orientation = orientation;
             }
-            "margin-left" => page.margin_left_mm = crate::page::PageProfile::cycle_margin(page.margin_left_mm),
-            "margin-right" => page.margin_right_mm = crate::page::PageProfile::cycle_margin(page.margin_right_mm),
-            "margin-top" => page.margin_top_mm = crate::page::PageProfile::cycle_margin(page.margin_top_mm),
-            "margin-bottom" => page.margin_bottom_mm = crate::page::PageProfile::cycle_margin(page.margin_bottom_mm),
+            "margin-left" => {
+                page.margin_left_mm = crate::page::PageProfile::cycle_margin(page.margin_left_mm)
+            }
+            "margin-right" => {
+                page.margin_right_mm = crate::page::PageProfile::cycle_margin(page.margin_right_mm)
+            }
+            "margin-top" => {
+                page.margin_top_mm = crate::page::PageProfile::cycle_margin(page.margin_top_mm)
+            }
+            "margin-bottom" => {
+                page.margin_bottom_mm =
+                    crate::page::PageProfile::cycle_margin(page.margin_bottom_mm)
+            }
             _ => return,
         }
         if page == self.page_profile {
             return;
         }
         if let Err(error) = document::set_page_profile(&current, page) {
-            self.launcher.message = Some(format!("No se pudo guardar el perfil de página: {error}"));
+            self.launcher.message =
+                Some(format!("No se pudo guardar el perfil de página: {error}"));
             return;
         }
         self.page_profile = page;
@@ -1038,7 +1149,8 @@ impl TerminalModel {
         if let Some(editor) = self.editor.as_mut()
             && let Err(error) = editor.resize(cols, rows)
         {
-            self.launcher.message = Some(format!("No se pudo aplicar el tamaño de página: {error}"));
+            self.launcher.message =
+                Some(format!("No se pudo aplicar el tamaño de página: {error}"));
         }
         self.glyphs.clear();
         self.dirty = true;
@@ -1251,13 +1363,38 @@ impl TerminalModel {
             let page_y = page.y.round() as i32;
             let page_w = page.width.round() as i32;
             let page_h = page.height.round() as i32;
-            fill_rect(pixels, (width, height), (page_x, page_y, page_w, page_h), PAGE_BG);
-            fill_rect(pixels, (width, height), (page_x, page_y, 1, page_h), PAGE_EDGE);
-            fill_rect(pixels, (width, height), (page_x + page_w - 1, page_y, 1, page_h), PAGE_EDGE);
+            fill_rect(
+                pixels,
+                (width, height),
+                (page_x, page_y, page_w, page_h),
+                PAGE_BG,
+            );
+            fill_rect(
+                pixels,
+                (width, height),
+                (page_x, page_y, 1, page_h),
+                PAGE_EDGE,
+            );
+            fill_rect(
+                pixels,
+                (width, height),
+                (page_x + page_w - 1, page_y, 1, page_h),
+                PAGE_EDGE,
+            );
             let left_guide = (page.x + page.margin_left).round() as i32;
             let right_guide = (page.x + page.width - page.margin_right).round() as i32;
-            fill_rect(pixels, (width, height), (left_guide - 1, page_y, 1, page_h), PAGE_MARGIN);
-            fill_rect(pixels, (width, height), (right_guide, page_y, 1, page_h), PAGE_MARGIN);
+            fill_rect(
+                pixels,
+                (width, height),
+                (left_guide - 1, page_y, 1, page_h),
+                PAGE_MARGIN,
+            );
+            fill_rect(
+                pixels,
+                (width, height),
+                (right_guide, page_y, 1, page_h),
+                PAGE_MARGIN,
+            );
         }
 
         let screen = self.parser.screen();
@@ -2011,7 +2148,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     {
         let model = model.clone();
         ui.on_page_action(move |action, value| {
-            model.borrow_mut().update_page(action.as_str(), value.as_str());
+            model
+                .borrow_mut()
+                .update_page(action.as_str(), value.as_str());
         });
     }
     {

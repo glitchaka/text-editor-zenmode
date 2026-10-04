@@ -171,7 +171,10 @@ fn write_txt(target: &Path, documents: &[ExportDocument]) -> Result<()> {
 }
 
 fn write_docx(target: &Path, documents: &[ExportDocument]) -> Result<()> {
-    let page = documents.first().map(|document| document.page).unwrap_or_default();
+    let page = documents
+        .first()
+        .map(|document| document.page)
+        .unwrap_or_default();
     let file = fs::File::create(target)
         .with_context(|| format!("No se pudo crear {}", target.display()))?;
     let mut zip = ZipWriter::new(file);
@@ -305,7 +308,10 @@ fn rich_paragraph_xml(line: &str) -> String {
 }
 
 fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
-    let page = documents.first().map(|document| document.page).unwrap_or_default();
+    let page = documents
+        .first()
+        .map(|document| document.page)
+        .unwrap_or_default();
     let (page_width, page_height) = page.pdf_page_points();
     let (margin_top, margin_right, margin_bottom, margin_left) = page.pdf_margins_points();
     let content_width = (page_width - margin_left - margin_right).max(120.0);

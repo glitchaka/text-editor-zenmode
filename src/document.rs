@@ -166,8 +166,12 @@ pub fn set_page_profile(path: &Path, page: PageProfile) -> Result<()> {
         return Ok(());
     }
     document.metadata.page = page;
-    fs::write(path, serialize(&document))
-        .with_context(|| format!("No se pudo actualizar el perfil de página de {}", path.display()))
+    fs::write(path, serialize(&document)).with_context(|| {
+        format!(
+            "No se pudo actualizar el perfil de página de {}",
+            path.display()
+        )
+    })
 }
 
 pub fn project_documents(root: &Path, project: &str) -> Result<Vec<(PathBuf, DocumentMetadata)>> {
