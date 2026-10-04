@@ -568,7 +568,6 @@ bufferline = "multiple"
 color-modes = true
 auto-completion = true
 text-width = 88
-gutters = ["diagnostics", "spacer"]
 end-of-line-diagnostics = "disable"
 
 [editor.soft-wrap]
@@ -1162,11 +1161,12 @@ mod tests {
                 .and_then(toml::Value::as_bool),
             Some(true)
         );
-        let gutters = editor_table
-            .get("gutters")
-            .and_then(toml::Value::as_array)
-            .expect("debe existir gutters");
-        assert!(!gutters.iter().any(|item| item.as_str() == Some("line-numbers")));
+        assert_eq!(
+            editor_table
+                .get("line-number")
+                .and_then(toml::Value::as_str),
+            Some("absolute")
+        );
 
         let keys = parsed
             .get("keys")
