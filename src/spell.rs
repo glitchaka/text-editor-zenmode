@@ -116,7 +116,8 @@ pub fn run_lsp(user_dictionary: PathBuf, library_root: Option<PathBuf>) -> Resul
             }
             "textDocument/semanticTokens/full" => {
                 if let Some(id) = id {
-                    let data = server.semantic_tokens(message.get("params").unwrap_or(&Value::Null));
+                    let data =
+                        server.semantic_tokens(message.get("params").unwrap_or(&Value::Null));
                     send_response(&mut output, id, json!({ "data": data }))?;
                 }
             }
@@ -426,12 +427,7 @@ impl SpellServer {
                 continue;
             }
             if frontmatter {
-                absolute.push((
-                    line_number,
-                    0,
-                    line.encode_utf16().count() as u32,
-                    0,
-                ));
+                absolute.push((line_number, 0, line.encode_utf16().count() as u32, 0));
                 continue;
             }
             if trimmed.starts_with("# ") {
@@ -539,9 +535,10 @@ fn collect_library_words(
     prefix: &str,
     output: &mut std::collections::BTreeSet<String>,
 ) {
-    let current_project = crate::document::parse(current_text, std::path::Path::new("current.hsst"))
-        .metadata
-        .project;
+    let current_project =
+        crate::document::parse(current_text, std::path::Path::new("current.hsst"))
+            .metadata
+            .project;
 
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
@@ -556,7 +553,10 @@ fn collect_library_words(
             continue;
         };
         if !current_project.trim().is_empty()
-            && !document.metadata.project.eq_ignore_ascii_case(&current_project)
+            && !document
+                .metadata
+                .project
+                .eq_ignore_ascii_case(&current_project)
         {
             continue;
         }
