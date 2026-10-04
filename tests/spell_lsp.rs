@@ -69,6 +69,14 @@ fn spell_lsp_process_advertises_code_actions() {
         stdout.contains("\"name\":\"helix-sst-spell\""),
         "initialize no anunció el servidor esperado: {stdout}"
     );
+    assert!(
+        stdout.contains("\"completionProvider\""),
+        "initialize no anunció completionProvider: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"semanticTokensProvider\""),
+        "initialize no anunció semanticTokensProvider: {stdout}"
+    );
 
     let _ = std::fs::remove_file(dictionary);
 }
