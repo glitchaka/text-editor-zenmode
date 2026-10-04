@@ -6,10 +6,8 @@ use std::{
 #[test]
 fn spell_lsp_process_advertises_code_actions() {
     let exe = env!("CARGO_BIN_EXE_helix-sst-zen");
-    let dictionary = std::env::temp_dir().join(format!(
-        "helix-sst-spell-smoke-{}.dic",
-        std::process::id()
-    ));
+    let dictionary =
+        std::env::temp_dir().join(format!("helix-sst-spell-smoke-{}.dic", std::process::id()));
 
     let mut child = Command::new(exe)
         .arg("--helix-sst-spell")
@@ -23,13 +21,8 @@ fn spell_lsp_process_advertises_code_actions() {
     let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
     {
         let mut stdin = child.stdin.take().expect("stdin del helper");
-        write!(
-            stdin,
-            "Content-Length: {}\r\n\r\n{}",
-            body.len(),
-            body
-        )
-        .expect("debe poder enviarse initialize");
+        write!(stdin, "Content-Length: {}\r\n\r\n{}", body.len(), body)
+            .expect("debe poder enviarse initialize");
     }
 
     let output = child
