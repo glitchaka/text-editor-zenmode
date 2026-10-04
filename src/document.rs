@@ -386,9 +386,6 @@ mod tests {
     #[test]
     fn plain_body_removes_native_rich_markup() {
         let body = "# Título\nUno **dos** *tres* ==cuatro==.\n";
-        assert_eq!(
-            body_without_markup(body),
-            "Título\nUno dos tres cuatro.\n"
-        );
+        assert_eq!(body_without_markup(body), "Título\nUno dos tres cuatro.\n");
     }
 }
