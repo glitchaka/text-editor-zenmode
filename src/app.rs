@@ -1129,7 +1129,7 @@ impl TerminalModel {
         }
         let ensure_insert = !self.helix_is_insert_mode();
         if let Some(editor) = self.editor.as_ref()
-            && let Err(error) = editor.paste(symbol, ensure_insert)
+            && let Err(error) = editor.paste(symbol, ensure_insert, self.page_wrap_columns())
         {
             self.launcher.message = Some(format!("No se pudo insertar símbolo: {error}"));
         }
@@ -1234,8 +1234,12 @@ impl TerminalModel {
                 && let Ok(text) = clipboard.get_text()
                 && let Some(editor) = self.editor.as_ref()
             {
-                let _ = editor.paste(&text, ensure_insert);
+                let _ = editor.paste(&text, ensure_insert, self.page_wrap_columns());
             }
+            return;
+        }
+
+        if self.hard_wrap_typing_if_needed(key) {
             return;
         }
 
@@ -1344,6 +1348,71 @@ impl TerminalModel {
             output.push('\n');
         }
         output
+    }
+
+    fn page_wrap_columns(&self) -> Option<usize> {
+        let current = self.current_file.as_deref()?;
+        document::is_supported_text_path(current).then(|| self.page_profile.text_columns())
+    }
+
+    fn helix_cursor_position(&self) -> Option<(usize, usize)> {
+        status_position(&self.helix_status_text())
+    }
+
+    fn helix_current_line_prefix(&self) -> Option<String> {
+        let (_, logical_column) = self.helix_cursor_position()?;
+        let screen = self.parser.screen();
+        let (row, screen_column) = screen.cursor_position();
+        let before = logical_column.saturating_sub(1) as u16;
+        let start = screen_column.saturating_sub(before);
+        let mut prefix = String::new();
+        for col in start..screen_column {
+            let cell = screen.cell(row, col)?;
+            if !cell.is_wide_continuation() {
+                prefix.push_str(cell.contents());
+            }
+        }
+        Some(prefix)
+    }
+
+    fn hard_wrap_typing_if_needed(&mut self, key: KeyEvent) -> bool {
+        if !self.helix_is_insert_mode()
+            || key.modifiers.contains(KeyModifiers::CONTROL)
+            || key.modifiers.contains(KeyModifiers::ALT)
+        {
+            return false;
+        }
+        let KeyCode::Char(ch) = key.code else {
+            return false;
+        };
+        let Some(limit) = self.page_wrap_columns() else {
+            return false;
+        };
+        let Some((_, column)) = self.helix_cursor_position() else {
+            return false;
+        };
+        if column <= limit {
+            return false;
+        }
+        let Some(editor) = self.editor.as_ref() else {
+            return false;
+        };
+        let win32 = editor.win32_input();
+
+        if ch.is_whitespace() {
+            let _ = editor.send_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), win32);
+            return true;
+        }
+
+        let prefix = self.helix_current_line_prefix().unwrap_or_default();
+        if prefix.chars().any(char::is_whitespace) {
+            let _ = editor.send_key(KeyEvent::new(KeyCode::F(13), KeyModifiers::NONE), win32);
+            let _ = editor.send_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), win32);
+            let _ = editor.send_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE), win32);
+            let _ = editor.send_key(key, win32);
+            return true;
+        }
+        false
     }
 
     fn helix_is_modified(&self) -> bool {
@@ -2211,14 +2280,15 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     Ok(())
 }
 
-fn status_line_number(status: &str) -> Option<usize> {
+fn status_position(status: &str) -> Option<(usize, usize)> {
     status.split_whitespace().rev().find_map(|token| {
         let (line, column) = token.split_once(':')?;
-        if column.parse::<usize>().is_err() {
-            return None;
-        }
-        line.parse::<usize>().ok()
+        Some((line.parse::<usize>().ok()?, column.parse::<usize>().ok()?))
     })
+}
+
+fn status_line_number(status: &str) -> Option<usize> {
+    status_position(status).map(|(line, _)| line)
 }
 
 fn paths_equivalent(left: &Path, right: &Path) -> bool {

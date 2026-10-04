@@ -306,9 +306,12 @@ impl EditorSession {
         Ok(changed)
     }
 
-    pub fn paste(&self, text: &str, ensure_insert: bool) -> Result<()> {
+    pub fn paste(&self, text: &str, ensure_insert: bool, wrap_width: Option<usize>) -> Result<()> {
         let win32 = self.win32_input();
-        let prepared = normalize_pasted_text(text);
+        let prepared = match wrap_width {
+            Some(width) => wrap_pasted_text(text, width),
+            None => normalize_pasted_text(text),
+        };
         let mut bytes = Vec::new();
 
         if ensure_insert {
@@ -772,6 +775,47 @@ fn normalize_pasted_text(text: &str) -> String {
     }
 
     normalized
+}
+
+fn wrap_pasted_text(text: &str, width: usize) -> String {
+    let normalized = normalize_pasted_text(text);
+    if width == 0 {
+        return normalized;
+    }
+
+    let mut output = String::with_capacity(normalized.len());
+    for (line_index, line) in normalized.split('\n').enumerate() {
+        if line_index > 0 {
+            output.push('\n');
+        }
+
+        let mut remaining = line;
+        while remaining.chars().count() > width {
+            let boundary = remaining
+                .char_indices()
+                .nth(width)
+                .map(|(index, _)| index)
+                .unwrap_or(remaining.len());
+            let prefix = &remaining[..boundary];
+            let whitespace = prefix
+                .char_indices()
+                .rev()
+                .find(|(_, ch)| ch.is_whitespace())
+                .map(|(index, _)| index);
+
+            if let Some(split) = whitespace.filter(|split| *split > 0) {
+                output.push_str(prefix[..split].trim_end());
+                output.push('\n');
+                remaining = remaining[split..].trim_start_matches(char::is_whitespace);
+            } else {
+                output.push_str(prefix);
+                output.push('\n');
+                remaining = &remaining[boundary..];
+            }
+        }
+        output.push_str(remaining);
+    }
+    output
 }
 
 fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
