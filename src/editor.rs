@@ -917,6 +917,7 @@ fn function_key(number: u8, shift: bool, alt: bool, ctrl: bool) -> Option<Vec<u8
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn native_hsst_shadow_contains_only_body() {
@@ -956,7 +957,6 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    use super::*;
 
     #[test]
     fn vt_ctrl_word_navigation_preserves_control_modifier() {
@@ -982,8 +982,7 @@ mod tests {
 
     #[test]
     fn zen_theme_is_valid_toml_and_keeps_highlighter_background() {
-        let root =
-            std::env::temp_dir().join(format!("helix-sst-theme-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("helix-sst-theme-{}", std::process::id()));
         let _ = fs::create_dir_all(&root);
         let output = root.join("helix-sst-zen.toml");
 
