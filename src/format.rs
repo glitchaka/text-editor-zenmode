@@ -231,7 +231,10 @@ fn outer_tag(input: &str, tag: &str) -> Option<(PaletteColor, usize, usize)> {
 
 pub fn pipe_command(action: &str, value: Option<&str>) -> Result<String> {
     let executable = std::env::current_exe().context("No se pudo localizar Helix-SST")?;
-    let executable = executable.to_string_lossy().replace('\\', "/").replace('"', "\\\"");
+    let executable = executable
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace('"', "\\\"");
     let mut command = format!(":pipe \"{executable}\" --hsst-format {action}");
     if let Some(value) = value.filter(|value| !value.is_empty()) {
         command.push(' ');
@@ -245,14 +248,18 @@ pub fn ensure_theme() -> Result<PathBuf> {
     let root = executable
         .parent()
         .context("No se pudo localizar el directorio de Helix-SST")?;
-    let themes = root.join("config").join("themes");
+    let themes = root
+        .join("config")
+        .join("appdata")
+        .join("helix")
+        .join("themes");
     fs::create_dir_all(&themes)?;
     let path = themes.join("helix-sst-zen.toml");
     fs::write(&path, ENHANCED_THEME)?;
     Ok(path)
 }
 
-const ENHANCED_THEME: &str = r##"inherits = "gruvbox"
+pub const ENHANCED_THEME: &str = r##"inherits = "gruvbox"
 
 # HSST semantic formatting. These scopes are reserved by the prose LSP.
 "comment" = { fg = "#928374", modifiers = ["dim"] }
@@ -272,7 +279,7 @@ const ENHANCED_THEME: &str = r##"inherits = "gruvbox"
 "namespace" = { fg = "#83a598" }
 "type.enum.variant" = { fg = "#d3869b" }
 
-# Highlighter palette. Text remains readable over each background.
+# Highlighter palette.
 "special" = { fg = "#282828", bg = "#fabd2f" }
 "label" = { fg = "#282828", bg = "#b8bb26" }
 "type.interface" = { fg = "#282828", bg = "#8ec07c" }
@@ -390,12 +397,16 @@ pub fn style_ranges(line: &str) -> Vec<StyleRange> {
     push_single_asterisk_ranges(line, &mut ranges);
     push_tagged_ranges(line, "fg", true, &mut ranges);
     push_tagged_ranges(line, "bg", false, &mut ranges);
-
     ranges.sort_by_key(|range| (range.start, range.end.saturating_sub(range.start)));
     ranges
 }
 
-fn push_delimited_ranges(line: &str, delimiter: &str, kind: MarkKind, output: &mut Vec<StyleRange>) {
+fn push_delimited_ranges(
+    line: &str,
+    delimiter: &str,
+    kind: MarkKind,
+    output: &mut Vec<StyleRange>,
+) {
     let mut offset = 0usize;
     while let Some(open_rel) = line[offset..].find(delimiter) {
         let open = offset + open_rel;
@@ -441,7 +452,12 @@ fn push_single_asterisk_ranges(line: &str, output: &mut Vec<StyleRange>) {
     }
 }
 
-fn push_tagged_ranges(line: &str, tag: &str, foreground: bool, output: &mut Vec<StyleRange>) {
+fn push_tagged_ranges(
+    line: &str,
+    tag: &str,
+    foreground: bool,
+    output: &mut Vec<StyleRange>,
+) {
     let prefix = format!("{{{{{tag}:");
     let close = format!("{{{{/{tag}}}}}");
     let mut offset = 0usize;
@@ -497,7 +513,9 @@ mod tests {
     #[test]
     fn rich_markup_is_removed_without_losing_text() {
         assert_eq!(
-            strip_markup("**uno** *dos* __tres__ {{fg:red}}cuatro{{/fg}} {{bg:yellow}}cinco{{/bg}}"),
+            strip_markup(
+                "**uno** *dos* __tres__ {{fg:red}}cuatro{{/fg}} {{bg:yellow}}cinco{{/bg}}"
+            ),
             "uno dos tres cuatro cinco"
         );
     }
@@ -507,8 +525,10 @@ mod tests {
         let line = "__uno__ {{fg:blue}}dos{{/fg}}";
         let ranges = style_ranges(line);
         assert!(ranges.iter().any(|range| range.kind == MarkKind::Underline));
-        assert!(ranges.iter().any(|range| {
-            range.kind == MarkKind::Foreground(PaletteColor::Blue)
-        }));
+        assert!(
+            ranges
+                .iter()
+                .any(|range| range.kind == MarkKind::Foreground(PaletteColor::Blue))
+        );
     }
 }
