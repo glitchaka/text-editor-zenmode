@@ -308,7 +308,7 @@ impl EditorSession {
 
     pub fn paste(&self, text: &str, ensure_insert: bool) -> Result<()> {
         let win32 = self.win32_input();
-        let prepared = wrap_pasted_text(text, 88);
+        let prepared = normalize_pasted_text(text);
         let mut bytes = Vec::new();
 
         if ensure_insert {
@@ -568,6 +568,7 @@ bufferline = "multiple"
 color-modes = true
 auto-completion = true
 text-width = 88
+gutters = ["diagnostics", "spacer"]
 end-of-line-diagnostics = "disable"
 
 [editor.soft-wrap]
@@ -599,8 +600,15 @@ paste = {{ command = "{exe}", args = ["--clipboard-set"] }}
 F2 = "code_action"
 C-left = "move_prev_word_start"
 C-right = "move_next_word_start"
+C-z = "undo"
+C-y = "redo"
+C-S-z = "redo"
+C-a = ["select_all", "select_mode"]
 F13 = "move_prev_word_start"
 F14 = "move_next_word_start"
+F17 = "undo"
+F18 = "redo"
+F19 = ["select_all", "select_mode"]
 
 [keys.insert]
 F2 = "code_action"
@@ -610,17 +618,31 @@ C-left = "move_prev_word_start"
 C-right = "move_next_word_start"
 C-backspace = "delete_word_backward"
 C-del = "delete_word_forward"
+C-z = ["normal_mode", "undo", "insert_mode"]
+C-y = ["normal_mode", "redo", "insert_mode"]
+C-S-z = ["normal_mode", "redo", "insert_mode"]
+C-a = ["normal_mode", "select_all", "select_mode"]
 F13 = "move_prev_word_start"
 F14 = "move_next_word_start"
 F15 = "delete_word_backward"
 F16 = "delete_word_forward"
+F17 = ["normal_mode", "undo", "insert_mode"]
+F18 = ["normal_mode", "redo", "insert_mode"]
+F19 = ["normal_mode", "select_all", "select_mode"]
 
 [keys.select]
 F2 = "code_action"
 C-left = "extend_prev_word_start"
 C-right = "extend_next_word_start"
+C-z = "undo"
+C-y = "redo"
+C-S-z = "redo"
+C-a = "select_all"
 F13 = "extend_prev_word_start"
 F14 = "extend_next_word_start"
+F17 = "undo"
+F18 = "redo"
+F19 = "select_all"
 "#
     );
     fs::write(path, content)?;
@@ -739,57 +761,8 @@ fn find_named(root: &Path, name: &str, directory: bool) -> Option<PathBuf> {
     None
 }
 
-fn wrap_pasted_text(text: &str, width: usize) -> String {
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    if width == 0 {
-        return normalized;
-    }
-
-    let mut output = String::with_capacity(normalized.len());
-    let ends_with_newline = normalized.ends_with('\n');
-
-    for (line_index, line) in normalized.lines().enumerate() {
-        if line_index > 0 {
-            output.push('\n');
-        }
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let leading = line
-            .chars()
-            .take_while(|ch| ch.is_whitespace())
-            .collect::<String>();
-        let available = width.saturating_sub(leading.chars().count()).max(12);
-        let mut current = String::new();
-
-        for word in line.trim_start().split_whitespace() {
-            let separator = usize::from(!current.is_empty());
-            if !current.is_empty()
-                && current.chars().count() + separator + word.chars().count() > available
-            {
-                output.push_str(&leading);
-                output.push_str(&current);
-                output.push('\n');
-                current.clear();
-            }
-
-            if !current.is_empty() {
-                current.push(' ');
-            }
-            current.push_str(word);
-        }
-
-        output.push_str(&leading);
-        output.push_str(&current);
-    }
-
-    if ends_with_newline {
-        output.push('\n');
-    }
-
-    output
+fn normalize_pasted_text(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
 fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
@@ -1014,6 +987,9 @@ fn function_key(number: u8, shift: bool, alt: bool, ctrl: bool) -> Option<Vec<u8
         14 => "26~",
         15 => "28~",
         16 => "29~",
+        17 => "31~",
+        18 => "32~",
+        19 => "33~",
         _ => return None,
     };
     Some(csi_tilde(base, shift, alt, ctrl))
@@ -1059,19 +1035,18 @@ mod tests {
     }
 
     #[test]
-    fn pasted_prose_is_hard_wrapped_without_losing_paragraph_breaks() {
-        let input = "Uno dos tres cuatro cinco seis siete ocho nueve diez.\n\nSegundo párrafo.";
-        let wrapped = wrap_pasted_text(input, 20);
+    fn pasted_prose_preserves_original_paragraph_structure() {
+        let input = "Uno dos tres cuatro cinco seis siete ocho nueve diez.\r\n\r\nSegundo párrafo.";
         assert_eq!(
-            wrapped,
-            "Uno dos tres cuatro\ncinco seis siete ocho\nnueve diez.\n\nSegundo párrafo."
+            normalize_pasted_text(input),
+            "Uno dos tres cuatro cinco seis siete ocho nueve diez.\n\nSegundo párrafo."
         );
     }
 
     #[test]
     fn paste_can_prefix_insert_mode_before_payload() {
         let win32 = false;
-        let prepared = wrap_pasted_text("texto", 88);
+        let prepared = normalize_pasted_text("texto");
         let mut bytes = Vec::new();
         bytes.extend_from_slice(
             &encode_input(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), win32)
@@ -1187,6 +1162,11 @@ mod tests {
                 .and_then(toml::Value::as_bool),
             Some(true)
         );
+        let gutters = editor_table
+            .get("gutters")
+            .and_then(toml::Value::as_array)
+            .expect("debe existir gutters");
+        assert!(!gutters.iter().any(|item| item.as_str() == Some("line-numbers")));
 
         let keys = parsed
             .get("keys")
@@ -1212,6 +1192,14 @@ mod tests {
         assert_eq!(
             normal.get("F14").and_then(toml::Value::as_str),
             Some("move_next_word_start")
+        );
+        assert_eq!(
+            normal.get("C-z").and_then(toml::Value::as_str),
+            Some("undo")
+        );
+        assert_eq!(
+            normal.get("C-y").and_then(toml::Value::as_str),
+            Some("redo")
         );
 
         let insert = keys

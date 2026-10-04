@@ -724,7 +724,7 @@ impl TerminalModel {
         }
 
         if let Some(editor) = self.editor.as_ref() {
-            if let Some(code) = bridged_word_shortcut(key) {
+            if let Some(code) = bridged_editor_shortcut(key) {
                 let internal = KeyEvent::new(code, KeyModifiers::NONE);
                 let _ = editor.send_key(internal, editor.win32_input());
                 return;
@@ -1676,12 +1676,22 @@ fn control_pressed(reported: bool) -> bool {
     false
 }
 
-fn bridged_word_shortcut(key: KeyEvent) -> Option<KeyCode> {
-    if !key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
+fn bridged_editor_shortcut(key: KeyEvent) -> Option<KeyCode> {
+    if !key.modifiers.contains(KeyModifiers::CONTROL)
+        || key.modifiers.contains(KeyModifiers::ALT)
+    {
         return None;
     }
 
     match key.code {
+        KeyCode::Char('z') | KeyCode::Char('Z')
+            if key.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
+            Some(KeyCode::F(18))
+        }
+        KeyCode::Char('z') | KeyCode::Char('Z') => Some(KeyCode::F(17)),
+        KeyCode::Char('y') | KeyCode::Char('Y') => Some(KeyCode::F(18)),
+        KeyCode::Char('a') | KeyCode::Char('A') => Some(KeyCode::F(19)),
         KeyCode::Left => Some(KeyCode::F(13)),
         KeyCode::Right => Some(KeyCode::F(14)),
         KeyCode::Backspace => Some(KeyCode::F(15)),
@@ -2273,28 +2283,47 @@ mod app_input_tests {
     use super::*;
 
     #[test]
-    fn bridged_word_shortcut_maps_requested_ctrl_keys() {
+    fn bridged_editor_shortcut_maps_windows_editing_keys() {
         let ctrl = KeyModifiers::CONTROL;
 
         assert_eq!(
-            bridged_word_shortcut(KeyEvent::new(KeyCode::Left, ctrl)),
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Left, ctrl)),
             Some(KeyCode::F(13))
         );
         assert_eq!(
-            bridged_word_shortcut(KeyEvent::new(KeyCode::Right, ctrl)),
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Right, ctrl)),
             Some(KeyCode::F(14))
         );
         assert_eq!(
-            bridged_word_shortcut(KeyEvent::new(KeyCode::Backspace, ctrl)),
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Backspace, ctrl)),
             Some(KeyCode::F(15))
         );
         assert_eq!(
-            bridged_word_shortcut(KeyEvent::new(KeyCode::Delete, ctrl)),
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Delete, ctrl)),
             Some(KeyCode::F(16))
         );
         assert_eq!(
-            bridged_word_shortcut(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
             None
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('z'), ctrl)),
+            Some(KeyCode::F(17))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('y'), ctrl)),
+            Some(KeyCode::F(18))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('a'), ctrl)),
+            Some(KeyCode::F(19))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(
+                KeyCode::Char('Z'),
+                ctrl | KeyModifiers::SHIFT,
+            )),
+            Some(KeyCode::F(18))
         );
         assert_eq!(raw_key_code("\x08", false), Some(KeyCode::Backspace));
         assert_eq!(raw_key_code("\x7f", false), Some(KeyCode::Delete));
