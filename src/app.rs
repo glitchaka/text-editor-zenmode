@@ -1677,16 +1677,12 @@ fn control_pressed(reported: bool) -> bool {
 }
 
 fn bridged_editor_shortcut(key: KeyEvent) -> Option<KeyCode> {
-    if !key.modifiers.contains(KeyModifiers::CONTROL)
-        || key.modifiers.contains(KeyModifiers::ALT)
-    {
+    if !key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
         return None;
     }
 
     match key.code {
-        KeyCode::Char('z') | KeyCode::Char('Z')
-            if key.modifiers.contains(KeyModifiers::SHIFT) =>
-        {
+        KeyCode::Char('z') | KeyCode::Char('Z') if key.modifiers.contains(KeyModifiers::SHIFT) => {
             Some(KeyCode::F(18))
         }
         KeyCode::Char('z') | KeyCode::Char('Z') => Some(KeyCode::F(17)),
