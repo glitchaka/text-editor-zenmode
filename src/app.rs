@@ -72,7 +72,6 @@ const CURSOR: Rgb = Rgb(0xE8, 0xCC, 0x83);
 const PAGE_BG: Rgb = Rgb(0x1B, 0x1F, 0x21);
 const PAGE_EDGE: Rgb = Rgb(0x3C, 0x43, 0x46);
 const PAGE_MARGIN: Rgb = Rgb(0x30, 0x36, 0x39);
-const PAGE_PX_PER_MM: f32 = 3.6;
 
 const FONT_BYTES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
@@ -722,17 +721,17 @@ impl Launcher {
         let mut entries = match fs::read_dir(&self.cwd) {
             Ok(read_dir) => read_dir
                 .flatten()
-                .filter_map(|entry| {
+                .map(|entry| {
                     let path = entry.path();
                     let directory = path.is_dir();
                     let name = entry.file_name().to_string_lossy().into_owned();
                     let metadata = document::read_metadata(&path);
-                    Some(Entry {
+                    Entry {
                         path,
                         name,
                         directory,
                         metadata,
-                    })
+                    }
                 })
                 .collect::<Vec<_>>(),
             Err(error) => {
@@ -797,7 +796,7 @@ impl TerminalModel {
                 };
                 (library.documents.clone(), Some(absolute))
             }
-            None => (library.documents.clone(), None),
+            None => (current.clone(), None),
         };
 
         let font = Font::from_bytes(FONT_BYTES, FontSettings::default())
@@ -1599,9 +1598,7 @@ impl TerminalModel {
                 });
             }
             KeyCode::Backspace => {
-                if self.launcher.cwd != self.library.documents
-                    && let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf)
-                {
+                if let Some(parent) = self.launcher.cwd.parent().map(Path::to_path_buf) {
                     self.launcher.cwd = parent;
                     self.launcher.selected = 0;
                     self.launcher.message = None;

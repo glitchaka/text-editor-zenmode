@@ -432,6 +432,7 @@ pub fn parse(raw: &str, source: &Path) -> HsstDocument {
     }
 }
 
+#[cfg(test)]
 pub fn serialize(document: &HsstDocument) -> String {
     let metadata = &document.metadata;
     let chapter = metadata
@@ -681,6 +682,7 @@ fn generate_id() -> String {
     format!("{nanos:032x}-{:08x}", std::process::id())
 }
 
+#[cfg(test)]
 fn toml_escape(value: &str) -> String {
     value
         .replace('\\', "\\\\")
