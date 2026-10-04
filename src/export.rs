@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use zip::{ZipWriter, write::FileOptions};
 
-use crate::document;
+use crate::{document, page::PageProfile};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -98,6 +98,7 @@ pub fn export(
 struct ExportDocument {
     title: String,
     body: String,
+    page: PageProfile,
 }
 
 fn read_export_document(path: &Path) -> Result<ExportDocument> {
@@ -106,6 +107,7 @@ fn read_export_document(path: &Path) -> Result<ExportDocument> {
         return Ok(ExportDocument {
             title: document.metadata.title,
             body: document.body,
+            page: document.metadata.page,
         });
     }
 
@@ -118,7 +120,11 @@ fn read_export_document(path: &Path) -> Result<ExportDocument> {
         .unwrap_or("Documento")
         .to_owned();
 
-    Ok(ExportDocument { title, body })
+    Ok(ExportDocument {
+        title,
+        body,
+        page: PageProfile::default(),
+    })
 }
 
 fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<ExportDocument>> {
@@ -132,6 +138,7 @@ fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<Ex
         return Ok(vec![ExportDocument {
             title: current.metadata.title,
             body: current.body,
+            page: current.metadata.page,
         }]);
     }
 
@@ -142,6 +149,7 @@ fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<Ex
             Ok(ExportDocument {
                 title: metadata.title,
                 body: document.body,
+                page: document.metadata.page,
             })
         })
         .collect()
@@ -163,6 +171,7 @@ fn write_txt(target: &Path, documents: &[ExportDocument]) -> Result<()> {
 }
 
 fn write_docx(target: &Path, documents: &[ExportDocument]) -> Result<()> {
+    let page = documents.first().map(|document| document.page).unwrap_or_default();
     let file = fs::File::create(target)
         .with_context(|| format!("No se pudo crear {}", target.display()))?;
     let mut zip = ZipWriter::new(file);
@@ -225,12 +234,23 @@ fn write_docx(target: &Path, documents: &[ExportDocument]) -> Result<()> {
         }
     }
 
-    xml.push_str(
-        r#"<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>"#,
-    );
+    xml.push_str(&section_properties_xml(page));
     zip.write_all(xml.as_bytes())?;
     zip.finish()?;
     Ok(())
+}
+
+fn section_properties_xml(page: PageProfile) -> String {
+    let (width, height) = page.docx_page_twips();
+    let (top, right, bottom, left) = page.docx_margin_twips();
+    let orientation = if matches!(page.orientation, crate::page::PageOrientation::Landscape) {
+        r#" w:orient="landscape""#
+    } else {
+        ""
+    };
+    format!(
+        r#"<w:sectPr><w:pgSz w:w="{width}" w:h="{height}"{orientation}/><w:pgMar w:top="{top}" w:right="{right}" w:bottom="{bottom}" w:left="{left}"/></w:sectPr></w:body></w:document>"#
+    )
 }
 
 fn paragraph_xml(text: &str, style: Option<&str>) -> String {
@@ -285,6 +305,16 @@ fn rich_paragraph_xml(line: &str) -> String {
 }
 
 fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
+    let page = documents.first().map(|document| document.page).unwrap_or_default();
+    let (page_width, page_height) = page.pdf_page_points();
+    let (margin_top, margin_right, margin_bottom, margin_left) = page.pdf_margins_points();
+    let content_width = (page_width - margin_left - margin_right).max(120.0);
+    let content_height = (page_height - margin_top - margin_bottom).max(120.0);
+    let font_size = 11.0f32;
+    let line_height = 14.0f32;
+    let wrap_columns = ((content_width / (font_size * 0.54)).floor() as usize).max(20);
+    let lines_per_page = ((content_height / line_height).floor() as usize).max(8);
+
     let mut lines = Vec::<String>::new();
     for (index, document) in documents.iter().enumerate() {
         if index > 0 {
@@ -294,11 +324,14 @@ fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
         lines.push(String::new());
 
         for line in document::body_without_markup(&document.body).lines() {
-            wrap_line(line, 88, &mut lines);
+            wrap_line(line, wrap_columns, &mut lines);
         }
     }
 
-    let pages = lines.chunks(48).map(Vec::from).collect::<Vec<_>>();
+    let pages = lines
+        .chunks(lines_per_page)
+        .map(Vec::from)
+        .collect::<Vec<_>>();
     let pages = if pages.is_empty() {
         vec![Vec::new()]
     } else {
@@ -325,16 +358,19 @@ fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
     for index in 0..page_count {
         objects.push(
             format!(
-                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width:.2} {page_height:.2}] /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
                 first_content_object + index
             )
             .into_bytes(),
         );
     }
 
-    for page in &pages {
-        let mut stream = String::from("BT\n/F1 11 Tf\n50 790 Td\n14 TL\n");
-        for line in page {
+    let start_y = page_height - margin_top - font_size;
+    for page_lines in &pages {
+        let mut stream = format!(
+            "BT\n/F1 {font_size:.1} Tf\n{margin_left:.2} {start_y:.2} Td\n{line_height:.1} TL\n"
+        );
+        for line in page_lines {
             stream.push('(');
             stream.push_str(&pdf_escape_text(line));
             stream.push_str(") Tj\nT*\n");

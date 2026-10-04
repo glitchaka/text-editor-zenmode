@@ -6,6 +6,8 @@ use std::{
 
 use anyhow::{Context, Result};
 
+use crate::page::{PageOrientation, PageProfile, PaperSize};
+
 pub const EXTENSION: &str = "hsst";
 pub const FORMAT_VERSION: u32 = 1;
 
@@ -20,6 +22,7 @@ pub struct DocumentMetadata {
     pub order: i64,
     pub language: String,
     pub status: String,
+    pub page: PageProfile,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +43,7 @@ impl DocumentMetadata {
             order: 0,
             language: "es-CL".into(),
             status: "draft".into(),
+            page: PageProfile::default(),
         }
     }
 
@@ -130,9 +134,10 @@ pub fn serialize(document: &HsstDocument) -> String {
         .chapter
         .map(|value| value.to_string())
         .unwrap_or_else(|| "0".into());
+    let page = metadata.page;
 
     format!(
-        "+++\nformat = {}\nid = \"{}\"\ntitle = \"{}\"\nproject = \"{}\"\ntype = \"{}\"\nchapter = {}\norder = {}\nlanguage = \"{}\"\nstatus = \"{}\"\n+++\n\n{}",
+        "+++\nformat = {}\nid = \"{}\"\ntitle = \"{}\"\nproject = \"{}\"\ntype = \"{}\"\nchapter = {}\norder = {}\nlanguage = \"{}\"\nstatus = \"{}\"\npaper = \"{}\"\norientation = \"{}\"\nmargin_top_mm = {}\nmargin_right_mm = {}\nmargin_bottom_mm = {}\nmargin_left_mm = {}\n+++\n\n{}",
         metadata.format.max(1),
         toml_escape(&metadata.id),
         toml_escape(&metadata.title),
@@ -142,8 +147,27 @@ pub fn serialize(document: &HsstDocument) -> String {
         metadata.order,
         toml_escape(&metadata.language),
         toml_escape(&metadata.status),
+        page.paper.name(),
+        page.orientation.name(),
+        page.margin_top_mm,
+        page.margin_right_mm,
+        page.margin_bottom_mm,
+        page.margin_left_mm,
         document.body
     )
+}
+
+pub fn set_page_profile(path: &Path, page: PageProfile) -> Result<()> {
+    if !is_native_path(path) {
+        return Ok(());
+    }
+    let mut document = read(path)?;
+    if document.metadata.page == page {
+        return Ok(());
+    }
+    document.metadata.page = page;
+    fs::write(path, serialize(&document))
+        .with_context(|| format!("No se pudo actualizar el perfil de página de {}", path.display()))
 }
 
 pub fn project_documents(root: &Path, project: &str) -> Result<Vec<(PathBuf, DocumentMetadata)>> {
@@ -254,6 +278,30 @@ fn metadata_from_table(table: &toml::value::Table, source: &Path) -> DocumentMet
         .and_then(toml::Value::as_integer)
         .and_then(|value| u32::try_from(value).ok())
         .filter(|value| *value > 0);
+    let margin = |key: &str, fallback_value: u16| {
+        table
+            .get(key)
+            .and_then(toml::Value::as_integer)
+            .and_then(|value| u16::try_from(value).ok())
+            .filter(|value| (5..=60).contains(value))
+            .unwrap_or(fallback_value)
+    };
+    let page = PageProfile {
+        paper: table
+            .get("paper")
+            .and_then(toml::Value::as_str)
+            .and_then(PaperSize::parse)
+            .unwrap_or(fallback.page.paper),
+        orientation: table
+            .get("orientation")
+            .and_then(toml::Value::as_str)
+            .and_then(PageOrientation::parse)
+            .unwrap_or(fallback.page.orientation),
+        margin_top_mm: margin("margin_top_mm", fallback.page.margin_top_mm),
+        margin_right_mm: margin("margin_right_mm", fallback.page.margin_right_mm),
+        margin_bottom_mm: margin("margin_bottom_mm", fallback.page.margin_bottom_mm),
+        margin_left_mm: margin("margin_left_mm", fallback.page.margin_left_mm),
+    };
 
     DocumentMetadata {
         format: table
@@ -296,6 +344,7 @@ fn metadata_from_table(table: &toml::value::Table, source: &Path) -> DocumentMet
             .and_then(toml::Value::as_str)
             .unwrap_or("draft")
             .to_owned(),
+        page,
     }
 }
 
@@ -349,6 +398,7 @@ mod tests {
                 order: 10,
                 language: "es-CL".into(),
                 status: "draft".into(),
+                page: PageProfile::default(),
             },
             body: "Texto **en negrita**.\n".into(),
         };
@@ -357,6 +407,8 @@ mod tests {
         let decoded = parse(&encoded, Path::new("Capítulo 1.hsst"));
         assert_eq!(decoded.metadata, document.metadata);
         assert_eq!(decoded.body, document.body);
+        assert_eq!(decoded.metadata.page.paper, PaperSize::Letter);
+        assert_eq!(decoded.metadata.page.margin_left_mm, 25);
     }
 
     #[test]

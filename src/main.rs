@@ -6,6 +6,7 @@ mod editor;
 mod export;
 mod format;
 mod library;
+mod page;
 mod pty_protocol;
 mod spell;
 

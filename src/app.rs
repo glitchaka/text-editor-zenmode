@@ -69,6 +69,10 @@ const ICON_RUST: char = '\u{e10d}';
 const BG: Rgb = Rgb(0x11, 0x16, 0x19);
 const FG: Rgb = Rgb(0xDF, 0xE8, 0xEF);
 const CURSOR: Rgb = Rgb(0xE8, 0xCC, 0x83);
+const PAGE_BG: Rgb = Rgb(0x1B, 0x1F, 0x21);
+const PAGE_EDGE: Rgb = Rgb(0x3C, 0x43, 0x46);
+const PAGE_MARGIN: Rgb = Rgb(0x30, 0x36, 0x39);
+const PAGE_PX_PER_MM: f32 = 3.6;
 
 const FONT_BYTES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
@@ -93,11 +97,19 @@ slint::slint! {
         property <bool> font-palette-open: false;
         property <bool> highlight-palette-open: false;
         property <bool> symbols-open: false;
+        property <bool> page-menu-open: false;
+        in property <string> page-label: "CARTA";
+        in property <string> page-orientation-text: "VERTICAL";
+        in property <string> margin-left-text: "25";
+        in property <string> margin-right-text: "25";
+        in property <string> margin-top-text: "25";
+        in property <string> margin-bottom-text: "25";
         callback key-input(string, bool, bool, bool);
         callback toggle-zen();
         callback close-window();
         callback format-action(string, string);
         callback insert-symbol(string);
+        callback page-action(string, string);
 
         Image {
             x: 0;
@@ -144,7 +156,8 @@ slint::slint! {
                     || zen-touch.has-hover
                     || root.font-palette-open
                     || root.highlight-palette-open
-                    || root.symbols-open)
+                    || root.symbols-open
+                    || root.page-menu-open)
                 : true;
             width: min(900px, root.width - 20px);
             height: 34px;
@@ -263,6 +276,7 @@ slint::slint! {
                         root.font-palette-open = !root.font-palette-open;
                         root.highlight-palette-open = false;
                         root.symbols-open = false;
+                        root.page-menu-open = false;
                     }
                 }
             }
@@ -283,6 +297,7 @@ slint::slint! {
                         root.highlight-palette-open = !root.highlight-palette-open;
                         root.font-palette-open = false;
                         root.symbols-open = false;
+                        root.page-menu-open = false;
                     }
                 }
             }
@@ -302,6 +317,27 @@ slint::slint! {
                         root.symbols-open = !root.symbols-open;
                         root.font-palette-open = false;
                         root.highlight-palette-open = false;
+                        root.page-menu-open = false;
+                    }
+                }
+            }
+
+            Rectangle {
+                visible: root.editor-active && island.width >= 840px;
+                x: island.width - 226px; y: 3px; width: 96px; height: 28px; border-radius: 7px;
+                background: page-menu-touch.pressed ? #29384b : page-menu-touch.has-hover ? #172334 : transparent;
+                Text {
+                    width: 100%; height: 100%; text: root.page-label + " ▾"; color: #b8bb26;
+                    font-family: "Segoe UI Variable"; font-size: 11px; font-weight: 650;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                page-menu-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.page-menu-open = !root.page-menu-open;
+                        root.font-palette-open = false;
+                        root.highlight-palette-open = false;
+                        root.symbols-open = false;
                     }
                 }
             }
@@ -493,11 +529,54 @@ slint::slint! {
             Rectangle { x: 127px; y: 33px; width: 26px; height: 23px; border-radius: 5px; background: sym12.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "¶"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } sym12 := TouchArea { mouse-cursor: pointer; clicked => { root.insert-symbol("¶"); root.symbols-open = false; terminal-focus.focus(); } } }
             Rectangle { x: 157px; y: 33px; width: 26px; height: 23px; border-radius: 5px; background: sym13.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "°"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } sym13 := TouchArea { mouse-cursor: pointer; clicked => { root.insert-symbol("°"); root.symbols-open = false; terminal-focus.focus(); } } }
         }
+
+        page-palette := Rectangle {
+            visible: root.editor-active && root.page-menu-open;
+            x: island.x + island.width - 430px;
+            y: island.y + island.height + 5px;
+            width: 420px;
+            height: 100px;
+            border-radius: 9px;
+            border-width: 1px;
+            border-color: #354052;
+            background: rgba(10, 13, 20, 0.98);
+
+            Text { x: 10px; y: 5px; width: 54px; height: 24px; text: "PAPEL"; color: #7f8b9b; font-size: 10px; vertical-alignment: center; }
+            Rectangle { x: 64px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "CARTA" ? #29384b : paper-carta.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Carta"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-carta := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "letter"); } } }
+            Rectangle { x: 130px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "OFICIO" ? #29384b : paper-oficio.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Oficio"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-oficio := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "oficio"); } } }
+            Rectangle { x: 196px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "LEGAL" ? #29384b : paper-legal.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Legal"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-legal := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "legal"); } } }
+            Rectangle { x: 262px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "A4" ? #29384b : paper-a4.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "A4"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-a4 := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "a4"); } } }
+            Rectangle { x: 328px; y: 5px; width: 62px; height: 24px; border-radius: 5px; background: root.page-label == "A5" ? #29384b : paper-a5.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "A5"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } paper-a5 := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("paper", "a5"); } } }
+
+            Text { x: 10px; y: 35px; width: 54px; height: 24px; text: "ORIENT."; color: #7f8b9b; font-size: 10px; vertical-alignment: center; }
+            Rectangle { x: 64px; y: 35px; width: 92px; height: 24px; border-radius: 5px; background: root.page-orientation-text == "VERTICAL" ? #29384b : portrait-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Vertical"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } portrait-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("orientation", "portrait"); } } }
+            Rectangle { x: 160px; y: 35px; width: 100px; height: 24px; border-radius: 5px; background: root.page-orientation-text == "HORIZONTAL" ? #29384b : landscape-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "Horizontal"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } landscape-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("orientation", "landscape"); } }
+            Text { x: 270px; y: 35px; width: 135px; height: 24px; text: "márgenes: clic = siguiente"; color: #7f8b9b; font-size: 9px; vertical-alignment: center; }
+
+            Text { x: 10px; y: 65px; width: 54px; height: 24px; text: "MARGEN"; color: #7f8b9b; font-size: 10px; vertical-alignment: center; }
+            Rectangle { x: 64px; y: 65px; width: 76px; height: 24px; border-radius: 5px; background: margin-left-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "I " + root.margin-left-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } margin-left-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("margin-left", "cycle"); } } }
+            Rectangle { x: 144px; y: 65px; width: 76px; height: 24px; border-radius: 5px; background: margin-right-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "D " + root.margin-right-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } margin-right-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("margin-right", "cycle"); } } }
+            Rectangle { x: 224px; y: 65px; width: 76px; height: 24px; border-radius: 5px; background: margin-top-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "S " + root.margin-top-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } margin-top-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("margin-top", "cycle"); } } }
+            Rectangle { x: 304px; y: 65px; width: 76px; height: 24px; border-radius: 5px; background: margin-bottom-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "B " + root.margin-bottom-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } margin-bottom-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-action("margin-bottom", "cycle"); } } }
+        }
     }
 }
 
 #[derive(Clone, Copy)]
 struct Rgb(u8, u8, u8);
+
+#[derive(Clone, Copy)]
+struct PageVisual {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    margin_left: f32,
+    margin_right: f32,
+    margin_top: f32,
+    margin_bottom: f32,
+    zoom: f32,
+}
 
 struct Glyph {
     metrics: Metrics,
@@ -596,6 +675,7 @@ struct TerminalModel {
     dirty: bool,
     splash_active: bool,
     zen_requested: bool,
+    page_profile: crate::page::PageProfile,
 }
 
 impl TerminalModel {
@@ -641,6 +721,7 @@ impl TerminalModel {
             dirty: true,
             splash_active: file_to_open.is_none(),
             zen_requested,
+            page_profile: crate::page::PageProfile::default(),
         };
 
         if let Some(file) = file_to_open {
@@ -663,8 +744,53 @@ impl TerminalModel {
         }
     }
 
+    fn page_visual(&self) -> Option<PageVisual> {
+        let current = self.current_file.as_ref()?;
+        if !document::is_native_path(current) {
+            return None;
+        }
+        let scale = self.scale.max(0.5);
+        let (page_width_tenth_mm, page_height_tenth_mm) = self.page_profile.page_size_tenth_mm();
+        let page_width_mm = f32::from(page_width_tenth_mm) / 10.0;
+        let page_height_mm = f32::from(page_height_tenth_mm) / 10.0;
+        let nominal_width = page_width_mm * PAGE_PX_PER_MM * scale;
+        let available_width = (self.width as f32 - PAD_X * scale * 2.0).max(240.0);
+        let zoom = (available_width / nominal_width).min(1.0).max(0.45);
+        let px_per_mm = PAGE_PX_PER_MM * scale * zoom;
+        let width = page_width_mm * px_per_mm;
+        let height = page_height_mm * px_per_mm;
+        let x = ((self.width as f32 - width) / 2.0).max(0.0);
+        let y = if self.zen_engaged() {
+            (PAD_Y * scale).round()
+        } else {
+            ((ISLAND_TOP + ISLAND_HEIGHT + CONTENT_TOP_GAP) * scale).round()
+        };
+        Some(PageVisual {
+            x,
+            y,
+            width,
+            height,
+            margin_left: f32::from(self.page_profile.margin_left_mm) * px_per_mm,
+            margin_right: f32::from(self.page_profile.margin_right_mm) * px_per_mm,
+            margin_top: f32::from(self.page_profile.margin_top_mm) * px_per_mm,
+            margin_bottom: f32::from(self.page_profile.margin_bottom_mm) * px_per_mm,
+            zoom,
+        })
+    }
+
     fn geometry(&self) -> (f32, f32, f32, f32) {
         let scale = self.scale.max(0.5);
+        if let Some(page) = self.page_visual() {
+            let cell_width = (CELL_WIDTH * scale * page.zoom).max(1.0);
+            let cell_height = (CELL_HEIGHT * scale * page.zoom).max(1.0);
+            return (
+                (page.x + page.margin_left).round(),
+                (page.y + page.margin_top).round(),
+                cell_width,
+                cell_height,
+            );
+        }
+
         let left_pad = (PAD_X * scale).round();
         let top_pad = if self.zen_engaged() {
             (PAD_Y * scale).round()
@@ -678,6 +804,17 @@ impl TerminalModel {
 
     fn terminal_size(&self) -> (u16, u16) {
         let (left_pad, top_pad, cell_width, cell_height) = self.geometry();
+        if let Some(page) = self.page_visual() {
+            let printable_width = (page.width - page.margin_left - page.margin_right).max(cell_width * 24.0);
+            let cols = (printable_width / cell_width).floor().clamp(24.0, 220.0) as u16;
+            let page_bottom = page.y + page.height - page.margin_bottom;
+            let visible_bottom = page_bottom.min(self.height as f32 - PAD_Y * self.scale.max(0.5));
+            let rows = ((visible_bottom - top_pad).max(cell_height * 8.0) / cell_height)
+                .floor()
+                .clamp(8.0, 160.0) as u16;
+            return (cols, rows);
+        }
+
         let cols = (((self.width as f32 - left_pad * 2.0) / cell_width).floor() as i32)
             .clamp(20, 300) as u16;
         let bottom_pad = (PAD_Y * self.scale.max(0.5)).round();
@@ -808,14 +945,26 @@ impl TerminalModel {
     }
 
     fn open_editor(&mut self, file: PathBuf) -> Result<()> {
+        let previous_file = self.current_file.clone();
+        let previous_page = self.page_profile;
+        self.current_file = Some(file.clone());
+        self.page_profile = document::read_metadata(&file)
+            .map(|metadata| metadata.page)
+            .unwrap_or_default();
         let (cols, rows) = self.terminal_size();
-        let session = EditorSession::start(&file, cols, rows)
-            .with_context(|| format!("No se pudo abrir {}", file.display()))?;
+        let session = match EditorSession::start(&file, cols, rows)
+            .with_context(|| format!("No se pudo abrir {}", file.display()))
+        {
+            Ok(session) => session,
+            Err(error) => {
+                self.current_file = previous_file;
+                self.page_profile = previous_page;
+                return Err(error);
+            }
+        };
 
         match format::ensure_theme() {
             Ok(_) => {
-                // ensure_installed() creates the base theme before Helix starts;
-                // overwrite it with the rich HSST scopes and ask Helix to reload it.
                 let _ = session.send_command(":theme helix-sst-zen");
             }
             Err(error) => {
@@ -824,9 +973,9 @@ impl TerminalModel {
         }
 
         self.reset_parser();
-        self.current_file = Some(file);
         self.chapter_switch_until = None;
         self.editor = Some(session);
+        self.glyphs.clear();
         self.dirty = true;
         Ok(())
     }
@@ -846,6 +995,53 @@ impl TerminalModel {
                 self.launcher.message = Some(format!("No se pudo preparar formato: {error}"));
             }
         }
+    }
+
+    fn update_page(&mut self, action: &str, value: &str) {
+        let Some(current) = self.current_file.clone() else {
+            return;
+        };
+        if !document::is_native_path(&current) {
+            return;
+        }
+
+        let mut page = self.page_profile;
+        match action {
+            "paper" => {
+                let Some(paper) = crate::page::PaperSize::parse(value) else {
+                    return;
+                };
+                page.paper = paper;
+            }
+            "orientation" => {
+                let Some(orientation) = crate::page::PageOrientation::parse(value) else {
+                    return;
+                };
+                page.orientation = orientation;
+            }
+            "margin-left" => page.margin_left_mm = crate::page::PageProfile::cycle_margin(page.margin_left_mm),
+            "margin-right" => page.margin_right_mm = crate::page::PageProfile::cycle_margin(page.margin_right_mm),
+            "margin-top" => page.margin_top_mm = crate::page::PageProfile::cycle_margin(page.margin_top_mm),
+            "margin-bottom" => page.margin_bottom_mm = crate::page::PageProfile::cycle_margin(page.margin_bottom_mm),
+            _ => return,
+        }
+        if page == self.page_profile {
+            return;
+        }
+        if let Err(error) = document::set_page_profile(&current, page) {
+            self.launcher.message = Some(format!("No se pudo guardar el perfil de página: {error}"));
+            return;
+        }
+        self.page_profile = page;
+        let (cols, rows) = self.terminal_size();
+        self.parser.screen_mut().set_size(rows, cols);
+        if let Some(editor) = self.editor.as_mut()
+            && let Err(error) = editor.resize(cols, rows)
+        {
+            self.launcher.message = Some(format!("No se pudo aplicar el tamaño de página: {error}"));
+        }
+        self.glyphs.clear();
+        self.dirty = true;
     }
 
     fn insert_symbol(&mut self, symbol: &str) {
@@ -897,6 +1093,7 @@ impl TerminalModel {
             }
             self.editor = None;
             self.current_file = None;
+            self.page_profile = crate::page::PageProfile::default();
             self.chapter_switch_until = None;
             self.launcher.refresh();
             self.reset_parser();
@@ -1038,12 +1235,31 @@ impl TerminalModel {
         }
 
         self.current_file = Some(next.clone());
+        self.page_profile = next_metadata.page;
+        let (cols, rows) = self.terminal_size();
+        self.parser.screen_mut().set_size(rows, cols);
+        let _ = editor.resize(cols, rows);
+        self.glyphs.clear();
         self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));
         self.launcher.message = Some(format!("{} → {}", metadata.title, next_metadata.title));
         true
     }
 
     fn helix_status_text(&self) -> String {
+        if let Some(page) = self.page_visual() {
+            let page_x = page.x.round() as i32;
+            let page_y = page.y.round() as i32;
+            let page_w = page.width.round() as i32;
+            let page_h = page.height.round() as i32;
+            fill_rect(pixels, (width, height), (page_x, page_y, page_w, page_h), PAGE_BG);
+            fill_rect(pixels, (width, height), (page_x, page_y, 1, page_h), PAGE_EDGE);
+            fill_rect(pixels, (width, height), (page_x + page_w - 1, page_y, 1, page_h), PAGE_EDGE);
+            let left_guide = (page.x + page.margin_left).round() as i32;
+            let right_guide = (page.x + page.width - page.margin_right).round() as i32;
+            fill_rect(pixels, (width, height), (left_guide - 1, page_y, 1, page_h), PAGE_MARGIN);
+            fill_rect(pixels, (width, height), (right_guide, page_y, 1, page_h), PAGE_MARGIN);
+        }
+
         let screen = self.parser.screen();
         let (rows, cols) = screen.size();
         let start_row = rows.saturating_sub(3);
@@ -1597,7 +1813,8 @@ impl TerminalModel {
         let cursor_on = !screen.hide_cursor();
         let scale = self.scale.max(0.5);
         let (left_pad, top_pad, cell_width, cell_height) = self.geometry();
-        let font_px = (FONT_SIZE * scale).round().max(8.0);
+        let page_zoom = self.page_visual().map(|page| page.zoom).unwrap_or(1.0);
+        let font_px = (FONT_SIZE * scale * page_zoom).round().max(7.0);
         let font_key = font_px.round() as u16;
 
         for row in 0..rows {
@@ -1792,6 +2009,12 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         });
     }
     {
+        let model = model.clone();
+        ui.on_page_action(move |action, value| {
+            model.borrow_mut().update_page(action.as_str(), value.as_str());
+        });
+    }
+    {
         let weak = ui.as_weak();
         let model = model.clone();
         ui.on_close_window(move || {
@@ -1810,6 +2033,12 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         let zen = model.zen_engaged();
         ui.set_zen_active(zen);
         ui.set_editor_active(model.editor.is_some());
+        ui.set_page_label(model.page_profile.paper.label().into());
+        ui.set_page_orientation_text(model.page_profile.orientation.label().into());
+        ui.set_margin_left_text(model.page_profile.margin_left_mm.to_string().into());
+        ui.set_margin_right_text(model.page_profile.margin_right_mm.to_string().into());
+        ui.set_margin_top_text(model.page_profile.margin_top_mm.to_string().into());
+        ui.set_margin_bottom_text(model.page_profile.margin_bottom_mm.to_string().into());
         ui.window().set_fullscreen(zen);
     }
 
@@ -1833,6 +2062,12 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
 
             let zen = model.zen_engaged();
             ui.set_editor_active(model.editor.is_some());
+            ui.set_page_label(model.page_profile.paper.label().into());
+            ui.set_page_orientation_text(model.page_profile.orientation.label().into());
+            ui.set_margin_left_text(model.page_profile.margin_left_mm.to_string().into());
+            ui.set_margin_right_text(model.page_profile.margin_right_mm.to_string().into());
+            ui.set_margin_top_text(model.page_profile.margin_top_mm.to_string().into());
+            ui.set_margin_bottom_text(model.page_profile.margin_bottom_mm.to_string().into());
             ui.set_zen_active(zen);
             if zen != last_zen.get() {
                 ui.set_zen_active(zen);

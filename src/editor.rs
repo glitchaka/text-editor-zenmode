@@ -1006,6 +1006,7 @@ mod tests {
                 order: 10,
                 language: "es-CL".into(),
                 status: "draft".into(),
+                page: crate::page::PageProfile::default(),
             },
             body: "Primera línea.\nSegunda línea.\n".into(),
         };
