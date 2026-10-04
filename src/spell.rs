@@ -17,8 +17,12 @@ pub const DICTIONARY_LICENSE: &str =
 const SOURCE: &str = "Helix-SST ortografía";
 const ADD_WORD_COMMAND: &str = "helix-sst.addWord";
 
-pub fn run_lsp(user_dictionary: PathBuf, library_root: Option<PathBuf>) -> Result<i32> {
-    let mut server = SpellServer::new(user_dictionary, library_root)?;
+pub fn run_lsp(
+    user_dictionary: PathBuf,
+    library_root: Option<PathBuf>,
+    source_file: Option<PathBuf>,
+) -> Result<i32> {
+    let mut server = SpellServer::new(user_dictionary, library_root, source_file)?;
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut input = BufReader::new(stdin.lock());
@@ -175,10 +179,15 @@ struct SpellServer {
     user_words: HashSet<String>,
     documents: HashMap<String, String>,
     library_root: Option<PathBuf>,
+    source_file: Option<PathBuf>,
 }
 
 impl SpellServer {
-    fn new(user_dictionary: PathBuf, library_root: Option<PathBuf>) -> Result<Self> {
+    fn new(
+        user_dictionary: PathBuf,
+        library_root: Option<PathBuf>,
+        source_file: Option<PathBuf>,
+    ) -> Result<Self> {
         let mut dictionary = Dictionary::new(ES_CL_AFF, ES_CL_DIC)
             .map_err(|error| anyhow::anyhow!("diccionario es-CL inválido: {error}"))?;
         let mut user_words = HashSet::new();
@@ -201,6 +210,7 @@ impl SpellServer {
             user_words,
             documents: HashMap::new(),
             library_root,
+            source_file,
         })
     }
 
@@ -384,7 +394,13 @@ impl SpellServer {
         }
 
         if let Some(root) = self.library_root.as_ref() {
-            collect_library_words(root, text, &prefix, &mut candidates);
+            collect_library_words(
+                root,
+                self.source_file.as_deref(),
+                text,
+                &prefix,
+                &mut candidates,
+            );
         }
 
         let mut spelling = Vec::new();
@@ -532,14 +548,19 @@ fn starts_with_case_insensitive(word: &str, prefix: &str) -> bool {
 
 fn collect_library_words(
     root: &std::path::Path,
+    source_file: Option<&std::path::Path>,
     current_text: &str,
     prefix: &str,
     output: &mut std::collections::BTreeSet<String>,
 ) {
-    let current_project =
-        crate::document::parse(current_text, std::path::Path::new("current.hsst"))
-            .metadata
-            .project;
+    let current_project = source_file
+        .and_then(crate::document::read_metadata)
+        .map(|metadata| metadata.project)
+        .unwrap_or_else(|| {
+            crate::document::parse(current_text, std::path::Path::new("current.hsst"))
+                .metadata
+                .project
+        });
 
     let Ok(entries) = std::fs::read_dir(root) else {
         return;

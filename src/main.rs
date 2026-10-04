@@ -24,7 +24,8 @@ fn main() -> Result<()> {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(".spell-user"));
         let library_root = args.get(2).map(PathBuf::from);
-        std::process::exit(spell::run_lsp(path, library_root)?);
+        let source_file = args.get(3).map(PathBuf::from);
+        std::process::exit(spell::run_lsp(path, library_root, source_file)?);
     }
 
     if args.first().map(String::as_str) == Some("--clipboard-get") {

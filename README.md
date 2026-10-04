@@ -18,7 +18,7 @@ El launcher solo muestra directorios y documentos de texto relevantes. Los docum
 
 ## Formato .hsst
 
-Los documentos nuevos se crean como `.hsst` e incluyen metadata TOML:
+Los documentos nuevos se crean como `.hsst`. El archivo contiene metadata TOML para identidad, proyecto y orden, pero **esa cabecera es interna**: Helix-SST abre únicamente el cuerpo editable y la mantiene sincronizada al guardar. No debe aparecer dentro del editor:
 
 ```text
 +++
@@ -69,7 +69,7 @@ Los `.hsst` usan el lenguaje `prose` de Helix-SST y cargan automáticamente `hel
 - `F2` para correcciones;
 - diccionario personal;
 - completado LSP con palabras del documento, palabras de otros documentos del mismo proyecto y sugerencias ortográficas;
-- tokens semánticos para metadata, títulos, negrita y destacados.
+- tokens semánticos para títulos, negrita, cursiva y destacados.
 
 ## Arrastrar un archivo sobre el ejecutable
 

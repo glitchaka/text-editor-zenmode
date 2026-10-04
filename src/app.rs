@@ -645,6 +645,9 @@ impl TerminalModel {
 
         if let Some(editor) = self.editor.as_mut() {
             let _ = editor.settle_startup_language();
+            if let Err(error) = editor.sync_native() {
+                self.launcher.message = Some(format!("No se pudo sincronizar HSST: {error}"));
+            }
 
             while let Some(result) = editor.try_output() {
                 match result {
@@ -667,6 +670,9 @@ impl TerminalModel {
         }
 
         if finished {
+            if let Some(editor) = self.editor.as_mut() {
+                let _ = editor.flush_native();
+            }
             self.editor = None;
             self.current_file = None;
             self.chapter_switch_until = None;
@@ -756,10 +762,14 @@ impl TerminalModel {
         let Some(line) = self.helix_current_line() else {
             return false;
         };
-        let Ok(raw) = fs::read_to_string(&current) else {
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.flush_native();
+        }
+        let Ok(current_document) = document::read(&current) else {
             return false;
         };
-        let total_lines = raw.bytes().filter(|byte| *byte == b'\n').count() + 1;
+        let total_lines =
+            current_document.body.bytes().filter(|byte| *byte == b'\n').count() + 1;
         if line < total_lines {
             return false;
         }
@@ -778,11 +788,10 @@ impl TerminalModel {
             return false;
         };
 
-        let command = format!(":open \"{}\"", helix_path(next));
-        let Some(editor) = self.editor.as_ref() else {
+        let Some(editor) = self.editor.as_mut() else {
             return false;
         };
-        if editor.send_command(&command).is_err() || editor.send_command(":goto 1").is_err() {
+        if editor.open_source(next).is_err() || editor.send_command(":goto 1").is_err() {
             return false;
         }
 
@@ -1604,12 +1613,6 @@ fn status_line_number(status: &str) -> Option<usize> {
         }
         line.parse::<usize>().ok()
     })
-}
-
-fn helix_path(path: &Path) -> String {
-    path.to_string_lossy()
-        .replace('\\', "/")
-        .replace('"', "\\\"")
 }
 
 fn paths_equivalent(left: &Path, right: &Path) -> bool {

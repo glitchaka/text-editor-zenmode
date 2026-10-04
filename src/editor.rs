@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::{Context, Result};
@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use zip::ZipArchive;
 
-use crate::pty_protocol::Replies;
+use crate::{document, pty_protocol::Replies};
 
 pub const HELIX_UPSTREAM_VERSION: &str = "25.07.1";
 
@@ -29,6 +29,18 @@ struct Install {
     appdata: PathBuf,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileStamp {
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+struct NativeBuffer {
+    source: PathBuf,
+    edit: PathBuf,
+    last_stamp: Option<FileStamp>,
+}
+
 pub struct EditorSession {
     master: Box<dyn MasterPty + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -38,11 +50,14 @@ pub struct EditorSession {
     previous_was_cr: bool,
     startup_language_at: Option<Instant>,
     startup_language_sent: bool,
+    native: Option<NativeBuffer>,
+    native_temp_root: Option<PathBuf>,
 }
 
 impl EditorSession {
     pub fn start(file: &Path, cols: u16, rows: u16) -> Result<Self> {
         let install = ensure_installed(file)?;
+        let (open_file, native, native_temp_root) = prepare_open_file(file)?;
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows,
@@ -65,7 +80,7 @@ impl EditorSession {
         command.arg(&install.config);
         command.arg("--log");
         command.arg(install.config.with_file_name("helix.log"));
-        command.arg(file);
+        command.arg(&open_file);
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = Arc::new(Mutex::new(pair.master.take_writer()?));
@@ -138,6 +153,8 @@ impl EditorSession {
                 .is_none()
                 .then(|| Instant::now() + Duration::from_millis(350)),
             startup_language_sent: false,
+            native,
+            native_temp_root,
         })
     }
 
@@ -230,6 +247,65 @@ impl EditorSession {
         self.write_reply(&bytes)
     }
 
+    pub fn sync_native(&mut self) -> Result<bool> {
+        self.sync_native_inner(false)
+    }
+
+    pub fn flush_native(&mut self) -> Result<bool> {
+        self.sync_native_inner(true)
+    }
+
+    pub fn open_source(&mut self, source: &Path) -> Result<()> {
+        self.flush_native()?;
+
+        if document::is_native_path(source) {
+            let root = self
+                .native_temp_root
+                .get_or_insert_with(native_temp_root)
+                .clone();
+            let native = prepare_native_buffer(source, &root)?;
+            let command = format!(":open \"{}\"", helix_path(&native.edit));
+            self.send_command(&command)?;
+            self.native = Some(native);
+        } else {
+            let command = format!(":open \"{}\"", helix_path(source));
+            self.send_command(&command)?;
+            self.native = None;
+        }
+
+        Ok(())
+    }
+
+    fn sync_native_inner(&mut self, force: bool) -> Result<bool> {
+        let Some(native) = self.native.as_ref() else {
+            return Ok(false);
+        };
+
+        let stamp = file_stamp(&native.edit);
+        if !force && stamp == native.last_stamp {
+            return Ok(false);
+        }
+
+        let source = native.source.clone();
+        let edit = native.edit.clone();
+        let body = fs::read_to_string(&edit)
+            .with_context(|| format!("No se pudo leer el cuerpo editable {}", edit.display()))?;
+        let mut document = document::read(&source)?;
+        let changed = document.body != body;
+
+        if changed {
+            document.body = body;
+            fs::write(&source, document::serialize(&document))
+                .with_context(|| format!("No se pudo guardar {}", source.display()))?;
+        }
+
+        if let Some(native) = self.native.as_mut() {
+            native.last_stamp = stamp;
+        }
+
+        Ok(changed)
+    }
+
     pub fn paste(&self, text: &str) -> Result<()> {
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
         let mut writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
@@ -251,6 +327,80 @@ impl EditorSession {
             self.previous_was_cr = byte == b'\r';
         }
         normalized
+    }
+}
+
+fn prepare_open_file(file: &Path) -> Result<(PathBuf, Option<NativeBuffer>, Option<PathBuf>)> {
+    if !document::is_native_path(file) {
+        return Ok((file.to_path_buf(), None, None));
+    }
+
+    let root = native_temp_root();
+    let native = prepare_native_buffer(file, &root)?;
+    let edit = native.edit.clone();
+    Ok((edit, Some(native), Some(root)))
+}
+
+fn prepare_native_buffer(source: &Path, root: &Path) -> Result<NativeBuffer> {
+    let document = document::read(source)?;
+    let id = safe_component(&document.metadata.id);
+    let directory = root.join(id);
+    fs::create_dir_all(&directory)?;
+
+    let file_name = source
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| std::ffi::OsStr::new("Documento.hsst"));
+    let edit = directory.join(file_name);
+    fs::write(&edit, document.body.as_bytes())
+        .with_context(|| format!("No se pudo preparar {}", source.display()))?;
+    let last_stamp = file_stamp(&edit);
+
+    Ok(NativeBuffer {
+        source: source.to_path_buf(),
+        edit,
+        last_stamp,
+    })
+}
+
+fn native_temp_root() -> PathBuf {
+    std::env::temp_dir()
+        .join("helix-sst-zen")
+        .join(std::process::id().to_string())
+}
+
+fn safe_component(value: &str) -> String {
+    let filtered = value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+        .collect::<String>();
+    if filtered.is_empty() {
+        "document".into()
+    } else {
+        filtered
+    }
+}
+
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    let metadata = fs::metadata(path).ok()?;
+    Some(FileStamp {
+        modified: metadata.modified().ok(),
+        len: metadata.len(),
+    })
+}
+
+fn helix_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .replace('"', "\\\"")
+}
+
+impl Drop for EditorSession {
+    fn drop(&mut self) {
+        let _ = self.flush_native();
+        if let Some(root) = self.native_temp_root.as_ref() {
+            let _ = fs::remove_dir_all(root);
+        }
     }
 }
 
@@ -408,7 +558,7 @@ cursor-line = "warning"
 other-lines = "disable"
 
 [editor.statusline]
-left = ["mode", "spinner", "file-name", "file-modification-indicator"]
+left = ["mode", "spinner", "file-base-name", "file-modification-indicator"]
 center = []
 right = ["diagnostics", "selections", "position", "file-encoding", "file-type"]
 
@@ -478,6 +628,7 @@ fn write_language_config(
 ) -> Result<()> {
     let launcher = toml_path(launcher);
     let user_dictionary = toml_path(user_dictionary);
+    let source_file = toml_path(current_file);
     let library_root = toml_path(
         current_file
             .parent()
@@ -508,7 +659,7 @@ fn write_language_config(
     let content = format!(
         r#"[language-server.helix-sst-spell]
 command = "{launcher}"
-args = ["--helix-sst-spell", "{user_dictionary}", "{library_root}"]
+args = ["--helix-sst-spell", "{user_dictionary}", "{library_root}", "{source_file}"]
 
 [[language]]
 name = "prose"
