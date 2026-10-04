@@ -398,6 +398,8 @@ paste = {{ command = "{exe}", args = ["--clipboard-set"] }}
 
 [keys.normal]
 F2 = "code_action"
+C-left = "move_prev_word_start"
+C-right = "move_next_word_start"
 
 [keys.insert]
 F2 = "code_action"
@@ -410,6 +412,8 @@ C-del = "delete_word_forward"
 
 [keys.select]
 F2 = "code_action"
+C-left = "extend_prev_word_start"
+C-right = "extend_next_word_start"
 "#
     );
     fs::write(path, content)?;
