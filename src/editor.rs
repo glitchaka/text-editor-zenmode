@@ -742,6 +742,69 @@ mod tests {
         );
     }
 
+    #[test]
+    fn extensionless_language_config_attaches_spell_server() {
+        let root = std::env::temp_dir().join(format!(
+            "helix-sst-language-config-{}",
+            std::process::id()
+        ));
+        let _ = fs::create_dir_all(&root);
+
+        let output = root.join("languages.toml");
+        let launcher = root.join("helix-sst-zen.exe");
+        let dictionary = root.join(".spell-user");
+        let current_file = root.join("Pensamentao");
+
+        write_language_config(&output, &launcher, &dictionary, &current_file)
+            .expect("languages.toml debe generarse");
+
+        let raw = fs::read_to_string(&output).expect("languages.toml debe leerse");
+        let parsed: toml::Value = toml::from_str(&raw).expect("languages.toml debe ser TOML válido");
+        let languages = parsed
+            .get("language")
+            .and_then(toml::Value::as_array)
+            .expect("debe existir [[language]]");
+
+        let text = languages
+            .iter()
+            .find(|language| language.get("name").and_then(toml::Value::as_str) == Some("text"))
+            .expect("debe existir el lenguaje text");
+
+        let servers = text
+            .get("language-servers")
+            .and_then(toml::Value::as_array)
+            .expect("text debe declarar language-servers");
+        assert!(
+            servers
+                .iter()
+                .any(|server| server.as_str() == Some("helix-sst-spell")),
+            "text debe usar helix-sst-spell"
+        );
+
+        let file_types = text
+            .get("file-types")
+            .and_then(toml::Value::as_array)
+            .expect("text debe declarar file-types");
+        assert!(
+            file_types
+                .iter()
+                .any(|entry| entry.as_str() == Some("Pensamentao")),
+            "el archivo sin extensión debe registrarse por nombre"
+        );
+        assert!(
+            file_types.iter().any(|entry| {
+                entry
+                    .get("glob")
+                    .and_then(toml::Value::as_str)
+                    .is_some_and(|glob| glob.ends_with("/Pensamentao"))
+            }),
+            "el archivo sin extensión debe registrarse también por glob absoluto"
+        );
+
+        let _ = fs::remove_file(output);
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[cfg(windows)]
     #[test]
     fn win32_ctrl_special_keys_keep_control_state() {
