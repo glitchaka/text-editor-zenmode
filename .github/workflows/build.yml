@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - "main"
+      - "page-layout"
     tags:
       - "v*"
 
@@ -31,6 +32,22 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
+
+      - name: Apply page layout branch
+        if: github.ref == 'refs/heads/page-layout'
+        shell: pwsh
+        run: |
+          python scripts/apply_page_layout.py
+          cargo fmt --all
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Integrar perfil de pagina en editor y exportacion"
+            git push origin HEAD:page-layout
+          }
 
       - name: Check formatting
         shell: pwsh
