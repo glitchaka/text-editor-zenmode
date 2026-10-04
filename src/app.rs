@@ -149,7 +149,7 @@ slint::slint! {
             zen-title-hover := TouchArea {
                 x: 0;
                 y: 0;
-                width: island.width - 114px;
+                width: island.width;
                 height: island.height;
                 enabled: root.zen-active;
             }
@@ -218,6 +218,7 @@ slint::slint! {
                 }
 
                 Rectangle {
+                    visible: !root.zen-active;
                     x: island.width - 114px;
                     y: 1px;
                     width: 38px;
@@ -246,6 +247,7 @@ slint::slint! {
                 }
 
                 Rectangle {
+                    visible: !root.zen-active;
                     x: island.width - 76px;
                     y: 1px;
                     width: 38px;
@@ -274,6 +276,7 @@ slint::slint! {
                 }
 
                 Rectangle {
+                    visible: !root.zen-active;
                     x: island.width - 38px;
                     y: 1px;
                     width: 38px;
