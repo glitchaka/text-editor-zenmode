@@ -725,9 +725,6 @@ impl Launcher {
                 .filter_map(|entry| {
                     let path = entry.path();
                     let directory = path.is_dir();
-                    if !directory && !document::is_supported_text_path(&path) {
-                        return None;
-                    }
                     let name = entry.file_name().to_string_lossy().into_owned();
                     let metadata = document::read_metadata(&path);
                     Some(Entry {

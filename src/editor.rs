@@ -751,7 +751,27 @@ fn find_named(root: &Path, name: &str, directory: bool) -> Option<PathBuf> {
 }
 
 fn normalize_pasted_text(text: &str) -> String {
-    text.replace("\r\n", "\n").replace('\r', "\n")
+    let mut normalized = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                normalized.push('\n');
+            }
+            // Word can expose manual line/paragraph separators through
+            // plain-text clipboard formats instead of CR/LF.
+            '\u{000B}' | '\u{000C}' | '\u{0085}' | '\u{2028}' | '\u{2029}' => {
+                normalized.push('\n');
+            }
+            other => normalized.push(other),
+        }
+    }
+
+    normalized
 }
 
 fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
@@ -1022,6 +1042,15 @@ mod tests {
         assert!(!editable.contains("+++"));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pasted_word_manual_breaks_become_real_lines() {
+        let input = "Uno\u{000B}Dos\rTres\r\nCuatro\u{0085}Cinco\u{2028}Seis\u{2029}Siete";
+        assert_eq!(
+            normalize_pasted_text(input),
+            "Uno\nDos\nTres\nCuatro\nCinco\nSeis\nSiete"
+        );
     }
 
     #[test]
