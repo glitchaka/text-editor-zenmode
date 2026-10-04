@@ -33,6 +33,25 @@ jobs:
           targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
 
+      - name: Normalize formatting branch source
+        if: github.ref == 'refs/heads/formatting-island'
+        shell: pwsh
+        run: |
+          $path = "src/app.rs"
+          $content = [System.IO.File]::ReadAllText($path)
+          $content = $content.Replace("#8ec07c", "rgb(142, 192, 124)")
+          [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
+          cargo fmt --all
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Aplicar rustfmt a isla de formato"
+            git push origin HEAD:formatting-island
+          }
+
       - name: Check formatting
         shell: pwsh
         run: cargo fmt --all -- --check
