@@ -37,7 +37,12 @@ jobs:
         if: github.ref == 'refs/heads/page-layout'
         shell: pwsh
         run: |
-          python scripts/apply_page_layout.py
+          if (Select-String -Path "src/main.rs" -Pattern '^mod page;' -Quiet) {
+            python scripts/fix_page_palette.py
+          } else {
+            python scripts/apply_page_layout.py
+            python scripts/fix_page_palette.py
+          }
           cargo fmt --all
 
           git config user.name "github-actions[bot]"
@@ -45,7 +50,7 @@ jobs:
           git add src
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m "Integrar perfil de pagina en editor y exportacion"
+            git commit -m "Corregir e integrar perfil de pagina"
             git push origin HEAD:page-layout
           }
 
