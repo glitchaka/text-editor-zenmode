@@ -1,0 +1,241 @@
+name: Fix editor interaction once
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Apply requested fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # Launcher: siempre empieza en Documentos salvo que el usuario abra una ruta explícita.
+          p = Path('src/app.rs')
+          s = p.read_text(encoding='utf-8')
+          old = '            None => (current.clone(), None),'
+          new = '            None => (library.documents.clone(), None),'
+          if old not in s:
+              raise SystemExit('app launcher default target not found')
+          s = s.replace(old, new, 1)
+
+          # Ctrl+Shift+flechas no deben caer en los bridges de Ctrl+flecha sin Shift.
+          old = '''fn bridged_editor_shortcut(key: KeyEvent) -> Option<KeyCode> {
+    if !key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
+        return None;
+    }
+    match key.code {'''
+          new = '''fn bridged_editor_shortcut(key: KeyEvent) -> Option<KeyCode> {
+    if !key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
+        return None;
+    }
+    if key.modifiers.contains(KeyModifiers::SHIFT)
+        && matches!(key.code, KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down)
+    {
+        return None;
+    }
+    match key.code {'''
+          if old not in s:
+              raise SystemExit('bridged shortcut target not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Helix config: comportamiento de selección tipo editor de escritorio.
+          p = Path('src/editor.rs')
+          s = p.read_text(encoding='utf-8')
+
+          old = '''C-left = "move_prev_word_start"
+C-right = "move_next_word_start"
+C-z = "undo"'''
+          new = '''C-left = "move_prev_word_start"
+C-right = "move_next_word_start"
+S-left = ["select_mode", "extend_char_left"]
+S-right = ["select_mode", "extend_char_right"]
+S-up = ["select_mode", "extend_line_up"]
+S-down = ["select_mode", "extend_line_down"]
+C-S-left = ["select_mode", "extend_prev_word_start"]
+C-S-right = ["select_mode", "extend_next_word_start"]
+C-z = "undo"'''
+          if old not in s:
+              raise SystemExit('normal keymap target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''C-left = "move_prev_word_start"
+C-right = "move_next_word_start"
+C-backspace = "delete_word_backward"'''
+          new = '''C-left = "move_prev_word_start"
+C-right = "move_next_word_start"
+S-left = ["normal_mode", "select_mode", "extend_char_left"]
+S-right = ["normal_mode", "select_mode", "extend_char_right"]
+S-up = ["normal_mode", "select_mode", "extend_line_up"]
+S-down = ["normal_mode", "select_mode", "extend_line_down"]
+C-S-left = ["normal_mode", "select_mode", "extend_prev_word_start"]
+C-S-right = ["normal_mode", "select_mode", "extend_next_word_start"]
+C-backspace = "delete_word_backward"'''
+          if old not in s:
+              raise SystemExit('insert keymap target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''[keys.select]
+F2 = "code_action"
+C-left = "extend_prev_word_start"
+C-right = "extend_next_word_start"
+C-z = "undo"
+C-y = "redo"
+C-S-z = "redo"
+C-a = "select_all"
+F13 = "extend_prev_word_start"
+F14 = "extend_next_word_start"'''
+          new = '''[keys.select]
+F2 = "code_action"
+C-left = ["normal_mode", "move_prev_word_start"]
+C-right = ["normal_mode", "move_next_word_start"]
+S-left = "extend_char_left"
+S-right = "extend_char_right"
+S-up = "extend_line_up"
+S-down = "extend_line_down"
+C-S-left = "extend_prev_word_start"
+C-S-right = "extend_next_word_start"
+C-z = "undo"
+C-y = "redo"
+C-S-z = "redo"
+C-a = "select_all"
+F13 = ["normal_mode", "move_prev_word_start"]
+F14 = ["normal_mode", "move_next_word_start"]'''
+          if old not in s:
+              raise SystemExit('select keymap target not found')
+          s = s.replace(old, new, 1)
+
+          # ':' sintético dependiente del layout era incorrecto en teclados no-US.
+          start = s.find('fn encode_command_colon(win32: bool) -> Vec<u8> {')
+          end = s.find('\nfn encode_paste(', start)
+          if start < 0 or end < 0:
+              raise SystemExit('encode_command_colon block not found')
+          replacement = r'''fn encode_command_colon(win32: bool) -> Vec<u8> {
+    if !win32 {
+        return b":".to_vec();
+    }
+
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, VkKeyScanW};
+
+        let mapped = unsafe { VkKeyScanW(':' as u16) };
+        if mapped != -1 {
+            let mapped = mapped as u16;
+            let vk = mapped & 0x00ff;
+            let modifiers = (mapped >> 8) & 0x00ff;
+            let mut state = 0u32;
+            if modifiers & 0x01 != 0 {
+                state |= 0x10;
+            }
+            if modifiers & 0x02 != 0 {
+                state |= 0x08;
+            }
+            if modifiers & 0x04 != 0 {
+                state |= 0x02;
+            }
+            let scan = unsafe { MapVirtualKeyW(vk.into(), 0) };
+            let mut bytes = Vec::new();
+            for down in [1, 0] {
+                bytes.extend_from_slice(
+                    format!("\\x1b[{vk};{scan};58;{down};{state};1_").as_bytes(),
+                );
+            }
+            return bytes;
+        }
+    }
+
+    encode_input(
+        KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE),
+        win32,
+    )
+    .unwrap_or_else(|| b":".to_vec())
+}
+'''
+          s = s[:start] + replacement + s[end:]
+          p.write_text(s, encoding='utf-8')
+
+          # El helper de formato jamás debe hacer fallar :pipe y disparar popups efímeros.
+          p = Path('src/format.rs')
+          s = p.read_text(encoding='utf-8')
+          old = '''    if let Some(source) = source {
+        let _ = crate::document::apply_format_selection(
+            source,
+            &input,
+            cursor_line,
+            cursor_column,
+            action,
+            value.unwrap_or(""),
+        )?;
+    }
+    // Helix recibe exactamente el mismo texto: el formato vive fuera de content.txt.
+    std::io::stdout().write_all(input.as_bytes())?;
+    Ok(())'''
+          new = '''    if let Some(source) = source
+        && let Err(error) = crate::document::apply_format_selection(
+            source,
+            &input,
+            cursor_line,
+            cursor_column,
+            action,
+            value.unwrap_or(""),
+        )
+    {
+        let log = std::env::temp_dir().join("helix-sst-format-error.log");
+        let _ = fs::write(log, format!("{error:#}\\n"));
+    }
+    // Helix recibe exactamente el mismo texto: el formato vive fuera de content.txt.
+    // El helper siempre devuelve éxito para que un fallo de E/S no abra mensajes fugaces en Helix.
+    std::io::stdout().write_all(input.as_bytes())?;
+    Ok(())'''
+          if old not in s:
+              raise SystemExit('format helper target not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Versión visible para distinguir inmediatamente el binario corregido.
+          p = Path('Cargo.toml')
+          s = p.read_text(encoding='utf-8')
+          if 'version = "0.2.6"' not in s:
+              raise SystemExit('Cargo version target not found')
+          p.write_text(s.replace('version = "0.2.6"', 'version = "0.2.7"', 1), encoding='utf-8')
+          PY
+
+      - name: Format
+        run: cargo fmt --all
+
+      - name: Clippy
+        run: cargo clippy --release -- -D warnings
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Commit fixes and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/fix-editor-interaction-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs src/editor.rs src/format.rs Cargo.toml .github/workflows/fix-editor-interaction-once.yml
+          git commit -m "Corregir directorio formato y selección de texto"
+          git push origin HEAD:main
