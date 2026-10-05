@@ -585,10 +585,8 @@ fn append_native_format_tokens(
         lines.push((line_index as u32, offset, content));
         offset += segment.len();
     }
-    if text.is_empty() || !text.ends_with('\n') {
-        if lines.is_empty() {
-            lines.push((0, 0, text));
-        }
+    if (text.is_empty() || !text.ends_with('\n')) && lines.is_empty() {
+        lines.push((0, 0, text));
     }
 
     for (start, end, style) in crate::document::formatting_runs(document) {

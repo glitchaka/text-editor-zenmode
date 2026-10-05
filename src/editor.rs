@@ -849,7 +849,7 @@ fn encode_command_colon(win32: bool) -> Vec<u8> {
                 format!("\x1b[{VK_OEM_1};{scan};58;{down};{SHIFT_PRESSED};1_").as_bytes(),
             );
         }
-        return bytes;
+        bytes
     }
 
     #[cfg(not(windows))]
@@ -1111,6 +1111,7 @@ mod tests {
                 page: crate::page::PageProfile::default(),
             },
             body: "Primera línea.\nSegunda línea.\n".into(),
+            formatting: Vec::new(),
         };
         fs::write(&source, document::serialize(&document)).expect("debe crear HSST");
 

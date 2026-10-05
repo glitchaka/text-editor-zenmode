@@ -186,6 +186,7 @@ pub fn run_filter(
     Ok(())
 }
 
+#[cfg(test)]
 pub fn apply_to_selection(input: &str, action: &str, value: &str) -> String {
     match action {
         "bold" => toggle_delimited(input, "**", "**"),
@@ -198,6 +199,7 @@ pub fn apply_to_selection(input: &str, action: &str, value: &str) -> String {
     }
 }
 
+#[cfg(test)]
 fn toggle_delimited(input: &str, left: &str, right: &str) -> String {
     if input.len() >= left.len() + right.len() && input.starts_with(left) && input.ends_with(right)
     {
@@ -206,6 +208,7 @@ fn toggle_delimited(input: &str, left: &str, right: &str) -> String {
     format!("{left}{input}{right}")
 }
 
+#[cfg(test)]
 fn set_tagged(input: &str, tag: &str, value: &str) -> String {
     let close = format!("{{{{/{tag}}}}}");
     let existing = outer_tag(input, tag);
@@ -231,6 +234,7 @@ fn set_tagged(input: &str, tag: &str, value: &str) -> String {
     format!("{open}{input}{close}")
 }
 
+#[cfg(test)]
 fn outer_tag(input: &str, tag: &str) -> Option<(PaletteColor, usize, usize)> {
     let prefix = format!("{{{{{tag}:");
     let close = format!("{{{{/{tag}}}}}");
