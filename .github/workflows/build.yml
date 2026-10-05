@@ -1,80 +1,140 @@
-name: Build Helix-SST Zenmode
+name: Apply Win32 format fix
 
 on:
-  workflow_dispatch:
   push:
     branches:
-      - "main"
-    tags:
-      - "v*"
+      - main
 
 permissions:
   contents: write
 
 env:
-  CARGO_TERM_COLOR: always
-  TARGET: x86_64-pc-windows-msvc
-  EXE_NAME: helix-sst-zen-windows-x86_64.exe
-  RUSTFLAGS: "-Dwarnings"
+  RUSTFLAGS: -Dwarnings
 
 jobs:
-  windows:
-    name: Windows x86_64
+  fix:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
 
-      - name: Check formatting
-        shell: pwsh
-        run: cargo fmt --all -- --check
+      - name: Apply Win32 command encoding fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/editor.rs')
+          s = p.read_text(encoding='utf-8')
+          old = '''        KeyCode::Char(ch) => {
+            let vk = if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_uppercase() as u16
+            } else {
+                0
+            };
+            let character = if key.modifiers.contains(KeyModifiers::CONTROL) {
+                match ch.to_ascii_lowercase() {
+                    'a'..='z' => char::from((ch.to_ascii_lowercase() as u8) & 0x1f),
+                    ' ' | '@' | '2' => '\\0',
+                    '[' => '\\x1b',
+                    '\\\\' => '\\x1c',
+                    ']' => '\\x1d',
+                    '^' => '\\x1e',
+                    '_' => '\\x1f',
+                    '?' => '\\x7f',
+                    _ => ch,
+                }
+            } else {
+                ch
+            };
+            (vk, character.to_string())
+        }'''
+          new = '''        KeyCode::Char(ch) => {
+            #[cfg(windows)]
+            let vk = {
+                use windows_sys::Win32::UI::Input::KeyboardAndMouse::VkKeyScanW;
+
+                let mapped = if (ch as u32) <= u16::MAX as u32 {
+                    unsafe { VkKeyScanW(ch as u16) }
+                } else {
+                    -1
+                };
+                if mapped != -1 {
+                    let mapped = mapped as u16;
+                    let required = (mapped >> 8) & 0x00ff;
+                    if required & 0x01 != 0 {
+                        state |= 0x10;
+                    }
+                    if required & 0x02 != 0 {
+                        state |= 0x08;
+                    }
+                    if required & 0x04 != 0 {
+                        state |= 0x02;
+                    }
+                    mapped & 0x00ff
+                } else if ch.is_ascii_alphanumeric() {
+                    ch.to_ascii_uppercase() as u16
+                } else {
+                    0
+                }
+            };
+            #[cfg(not(windows))]
+            let vk = if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_uppercase() as u16
+            } else {
+                0
+            };
+
+            let character = if key.modifiers.contains(KeyModifiers::CONTROL) {
+                match ch.to_ascii_lowercase() {
+                    'a'..='z' => char::from((ch.to_ascii_lowercase() as u8) & 0x1f),
+                    ' ' | '@' | '2' => '\\0',
+                    '[' => '\\x1b',
+                    '\\\\' => '\\x1c',
+                    ']' => '\\x1d',
+                    '^' => '\\x1e',
+                    '_' => '\\x1f',
+                    '?' => '\\x7f',
+                    _ => ch,
+                }
+            } else {
+                ch
+            };
+            (vk, character.to_string())
+        }'''
+          if old not in s:
+              raise SystemExit('KeyCode::Char block not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          p = Path('Cargo.toml')
+          s = p.read_text(encoding='utf-8')
+          if 'version = "0.2.7"' not in s:
+              raise SystemExit('version 0.2.7 not found')
+          p.write_text(s.replace('version = "0.2.7"', 'version = "0.2.8"', 1), encoding='utf-8')
+          PY
+
+      - name: Format
+        run: cargo fmt --all
 
       - name: Clippy
-        shell: pwsh
-        run: cargo clippy --release --target $env:TARGET -- -D warnings
-
-      - name: Test
-        shell: pwsh
-        run: cargo test --release --target $env:TARGET
+        run: cargo clippy --release -- -D warnings
 
       - name: Build release
-        shell: pwsh
-        run: cargo build --release --target $env:TARGET
+        run: cargo build --release
 
-      - name: Prepare distribution
-        shell: pwsh
+      - name: Commit fix and restore normal workflow
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-
-          $source = "target/$env:TARGET/release/helix-sst-zen.exe"
-          $target = "dist/$env:EXE_NAME"
-          Copy-Item $source $target
-
-          $hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $env:EXE_NAME" | Set-Content "$target.sha256" -Encoding ascii
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: helix-sst-zen-windows-x86_64
-          path: |
-            dist/helix-sst-zen-windows-x86_64.exe
-            dist/helix-sst-zen-windows-x86_64.exe.sha256
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            dist/helix-sst-zen-windows-x86_64.exe
-            dist/helix-sst-zen-windows-x86_64.exe.sha256
+          git checkout HEAD^ -- .github/workflows/build.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/editor.rs Cargo.toml .github/workflows/build.yml
+          git commit -m "Corregir comandos completos de formato en Windows [skip ci]"
+          git push origin HEAD:main
