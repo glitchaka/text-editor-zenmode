@@ -627,6 +627,73 @@ pub fn apply_format_selection(
     Ok(true)
 }
 
+fn utf16_position_to_byte(body: &str, line: usize, character: usize) -> usize {
+    let mut line_start = 0usize;
+    for (index, segment) in body.split_inclusive('\n').enumerate() {
+        if index == line {
+            let line_body = segment.strip_suffix('\n').unwrap_or(segment);
+            let mut utf16 = 0usize;
+            for (offset, ch) in line_body.char_indices() {
+                if utf16 >= character {
+                    return line_start + offset;
+                }
+                let next = utf16 + ch.len_utf16();
+                if next > character {
+                    return line_start + offset;
+                }
+                utf16 = next;
+            }
+            return line_start + line_body.len();
+        }
+        line_start += segment.len();
+    }
+    body.len()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn apply_format_lsp_range(
+    path: &Path,
+    current_body: &str,
+    start_line: usize,
+    start_character: usize,
+    end_line: usize,
+    end_character: usize,
+    action: &str,
+    value: &str,
+) -> Result<bool> {
+    if !is_native_path(path) {
+        return Ok(false);
+    }
+    let mut document = read(path)?;
+    if document.body != current_body {
+        document.formatting = remap_formatting(&document.formatting, &document.body, current_body);
+        document.body = current_body.to_owned();
+    }
+    let start = utf16_position_to_byte(&document.body, start_line, start_character);
+    let end = utf16_position_to_byte(&document.body, end_line, end_character);
+    if start >= end
+        || end > document.body.len()
+        || !document.body.is_char_boundary(start)
+        || !document.body.is_char_boundary(end)
+    {
+        return Ok(false);
+    }
+    let runs = normalized_runs_for_selection(
+        &document.body,
+        &document.formatting,
+        start,
+        end,
+        action,
+        value,
+    );
+    let next = encode_formatting_runs(&runs);
+    if next == document.formatting {
+        return Ok(false);
+    }
+    document.formatting = next;
+    write(path, &document)?;
+    Ok(true)
+}
 pub fn remap_formatting(formatting: &Value, old: &str, new: &str) -> Value {
     if old == new {
         return sanitize_formatting(formatting, new.len());

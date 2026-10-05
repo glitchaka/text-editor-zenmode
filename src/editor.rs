@@ -531,6 +531,7 @@ fn ensure_installed(current_file: &Path) -> Result<Install> {
     let themes_dir = helix_config.join("themes");
     fs::create_dir_all(&themes_dir)?;
     write_zen_theme(&themes_dir.join("helix-sst-zen.toml"))?;
+    write_break_theme(&themes_dir.join("helix-sst-break.toml"))?;
     write_language_config(
         &helix_config.join("languages.toml"),
         &launcher,
@@ -620,8 +621,8 @@ center = []
 right = ["diagnostics", "selections", "position", "file-encoding", "file-type"]
 
 [editor.statusline.mode]
-normal = "NORMAL · i: escribir · F2: ortografía"
-insert = "INSERTAR · Alt+d: — · F2: ortografía · Esc: comandos"
+normal = "NORMAL · i: escribir · F2: acciones · F4: Pomodoro"
+insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · Esc: comandos"
 select = "SELECCIÓN · Esc: normal"
 
 [editor.clipboard-provider.custom]
@@ -720,6 +721,29 @@ fn write_zen_theme(path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn write_break_theme(path: &Path) -> Result<()> {
+    fs::write(
+        path,
+        r##"inherits = "helix-sst-zen"
+
+"ui.background" = { bg = "#2b2027" }
+"ui.text" = "#f5d0c5"
+"ui.text.focus" = "#ffe5dc"
+"ui.cursor" = { fg = "#2b2027", bg = "#ffb4a2" }
+"ui.cursor.primary" = { fg = "#2b2027", bg = "#ffb4a2" }
+"ui.cursorline.primary" = { bg = "#35262d" }
+"ui.selection" = { bg = "#5a3a46" }
+"ui.linenr" = "#b9878d"
+"ui.linenr.selected" = "#ffb4a2"
+"ui.statusline" = { fg = "#ffd6c9", bg = "#3b2932" }
+"ui.statusline.inactive" = { fg = "#c9939c", bg = "#32242b" }
+"ui.popup" = { fg = "#ffe0d7", bg = "#3b2932" }
+"ui.menu" = { fg = "#ffe0d7", bg = "#3b2932" }
+"ui.menu.selected" = { fg = "#2b2027", bg = "#ffb4a2" }
+"##,
+    )?;
+    Ok(())
+}
 fn write_language_config(
     path: &Path,
     launcher: &Path,
@@ -1200,7 +1224,7 @@ mod tests {
                 page: crate::page::PageProfile::default(),
             },
             body: "Primera línea.\nSegunda línea.\n".into(),
-            formatting: Vec::new(),
+            formatting: serde_json::Value::Array(Vec::new()),
         };
         fs::write(&source, document::serialize(&document)).expect("debe crear HSST");
 

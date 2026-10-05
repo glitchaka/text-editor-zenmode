@@ -47,6 +47,8 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const ISLAND_TOP: f32 = 6.0;
 const ISLAND_HEIGHT: f32 = 34.0;
 const CONTENT_TOP_GAP: f32 = 8.0;
+const POMODORO_WRITE_SECS: u64 = 25 * 60;
+const POMODORO_BREAK_SECS: u64 = 5 * 60;
 
 // Retrofuturistic semigraphic icons for the TUI launcher.
 // These private-use cells are intercepted by our terminal renderer and painted
@@ -93,6 +95,9 @@ slint::slint! {
         in property <string> version-text: "v0.0.0";
         in property <bool> zen-active: false;
         in property <bool> editor-active: false;
+        in property <bool> pomodoro-prompt: false;
+        in property <bool> pomodoro-break: false;
+        in property <string> pomodoro-text: "";
         property <bool> font-palette-open: false;
         property <bool> highlight-palette-open: false;
         property <bool> symbols-open: false;
@@ -160,7 +165,8 @@ slint::slint! {
                 || root.font-palette-open
                 || root.highlight-palette-open
                 || root.symbols-open
-                || root.page-menu-open;
+                || root.page-menu-open
+                || root.pomodoro-text != "";
             width: min(900px, root.width - 20px);
             height: 34px;
             x: (root.width - self.width) / 2;
@@ -210,6 +216,21 @@ slint::slint! {
                 font-size: 12px;
                 vertical-alignment: center;
             }
+  Rectangle {
+      visible: root.editor-active && root.pomodoro-text != "";
+      x: island.width - 350px;
+      y: 4px;
+      width: 116px;
+      height: 26px;
+      border-radius: 8px;
+      background: root.pomodoro-break ? #5a3a46 : #172334;
+      Text {
+          width: 100%; height: 100%; text: root.pomodoro-text;
+          color: root.pomodoro-break ? #ffb4a2 : #e8cc83;
+          font-family: "Segoe UI Variable"; font-size: 10px; font-weight: 650;
+          horizontal-alignment: center; vertical-alignment: center;
+      }
+  }
 
             Rectangle {
                 visible: root.editor-active && island.width >= 840px;
@@ -661,6 +682,38 @@ slint::slint! {
                 }
             }
         }
+Rectangle {
+  visible: root.pomodoro-prompt;
+  x: 0; y: 0; width: 100%; height: 100%;
+  background: rgba(8, 10, 14, 0.72);
+  Rectangle {
+      width: 430px; height: 150px;
+      x: (parent.width - self.width) / 2;
+      y: (parent.height - self.height) / 2;
+      border-radius: 12px;
+      background: #171b20;
+      border-width: 1px;
+      border-color: #5a6570;
+      Text {
+          x: 20px; y: 18px; width: parent.width - 40px; height: 28px;
+          text: "¿INICIAR POMODORO?"; color: #e8cc83;
+          font-family: "Segoe UI Variable"; font-size: 16px; font-weight: 700;
+          horizontal-alignment: center; vertical-alignment: center;
+      }
+      Text {
+          x: 20px; y: 54px; width: parent.width - 40px; height: 28px;
+          text: "25 min escritura · 5 min descanso"; color: #dfe8ef;
+          font-family: "Segoe UI Variable"; font-size: 13px;
+          horizontal-alignment: center; vertical-alignment: center;
+      }
+      Text {
+          x: 20px; y: 98px; width: parent.width - 40px; height: 28px;
+          text: "Enter / F4 iniciar     ·     Esc continuar sin temporizador";
+          color: #8db9bb; font-family: "Segoe UI Variable"; font-size: 11px;
+          horizontal-alignment: center; vertical-alignment: center;
+      }
+  }
+}
     }
 }
 
@@ -774,6 +827,11 @@ struct TerminalModel {
     dirty: bool,
     splash_active: bool,
     zen_requested: bool,
+    pomodoro_offer: bool,
+    pomodoro_active: bool,
+    pomodoro_break: bool,
+    pomodoro_deadline: Option<Instant>,
+    command_capture: Option<String>,
     page_profile: crate::page::PageProfile,
 }
 
@@ -820,6 +878,11 @@ impl TerminalModel {
             dirty: true,
             splash_active: file_to_open.is_none(),
             zen_requested,
+            pomodoro_offer: false,
+            pomodoro_active: false,
+            pomodoro_break: false,
+            pomodoro_deadline: None,
+            command_capture: None,
             page_profile: crate::page::PageProfile::default(),
         };
 
@@ -843,6 +906,127 @@ impl TerminalModel {
         }
     }
 
+    fn start_pomodoro(&mut self) {
+        if self.editor.is_none() || self.pomodoro_active {
+            self.pomodoro_offer = false;
+            return;
+        }
+        self.pomodoro_offer = false;
+        self.pomodoro_active = true;
+        self.pomodoro_break = false;
+        self.pomodoro_deadline = Some(Instant::now() + Duration::from_secs(POMODORO_WRITE_SECS));
+        if let Some(editor) = self.editor.as_ref() {
+            let _ = editor.send_command(":theme helix-sst-zen");
+        }
+        self.dirty = true;
+    }
+
+    fn dismiss_pomodoro_offer(&mut self) {
+        self.pomodoro_offer = false;
+    }
+
+    fn pomodoro_label(&self) -> String {
+        if !self.pomodoro_active {
+            return String::new();
+        }
+        let remaining = self
+            .pomodoro_deadline
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()).as_secs())
+            .unwrap_or(0);
+        let minutes = remaining / 60;
+        let seconds = remaining % 60;
+        let phase = if self.pomodoro_break {
+            "DESCANSO"
+        } else {
+            "ESCRITURA"
+        };
+        format!("{phase} {minutes:02}:{seconds:02}")
+    }
+
+    fn begin_pomodoro_break(&mut self) {
+        self.pomodoro_break = true;
+        self.pomodoro_deadline = Some(Instant::now() + Duration::from_secs(POMODORO_BREAK_SECS));
+        self.command_capture = None;
+        if let Some(editor) = self.editor.as_ref() {
+            let win32 = editor.win32_input();
+            let _ = editor.send_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), win32);
+            let _ = editor.send_command(":theme helix-sst-break");
+        }
+        self.dirty = true;
+    }
+
+    fn begin_pomodoro_writing(&mut self) {
+        self.pomodoro_break = false;
+        self.pomodoro_deadline = Some(Instant::now() + Duration::from_secs(POMODORO_WRITE_SECS));
+        if let Some(editor) = self.editor.as_ref() {
+            let _ = editor.send_command(":theme helix-sst-zen");
+        }
+        self.dirty = true;
+    }
+
+    fn update_pomodoro(&mut self) {
+        if !self.pomodoro_active {
+            return;
+        }
+        let Some(deadline) = self.pomodoro_deadline else {
+            return;
+        };
+        if Instant::now() < deadline {
+            return;
+        }
+        if self.pomodoro_break {
+            self.begin_pomodoro_writing();
+        } else {
+            self.begin_pomodoro_break();
+        }
+    }
+
+    fn capture_pd_command(&mut self, key: KeyEvent) -> bool {
+        if self.command_capture.is_none() {
+            if key.code == KeyCode::Char(':')
+                && key.modifiers.is_empty()
+                && self.helix_is_normal_mode()
+            {
+                self.command_capture = Some(String::new());
+            }
+            return false;
+        }
+        match key.code {
+            KeyCode::Enter => {
+                let is_pd = self
+                    .command_capture
+                    .as_deref()
+                    .is_some_and(|command| command.trim().eq_ignore_ascii_case("pd"));
+                self.command_capture = None;
+                if is_pd {
+                    if let Some(editor) = self.editor.as_ref() {
+                        let _ = editor.send_key(
+                            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                            editor.win32_input(),
+                        );
+                    }
+                    self.start_pomodoro();
+                    return true;
+                }
+            }
+            KeyCode::Esc => self.command_capture = None,
+            KeyCode::Backspace => {
+                if let Some(command) = self.command_capture.as_mut() {
+                    command.pop();
+                }
+            }
+            KeyCode::Char(ch)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                if let Some(command) = self.command_capture.as_mut() {
+                    command.push(ch);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
     fn page_visual(&self) -> Option<PageVisual> {
         None
     }
@@ -1045,12 +1229,20 @@ impl TerminalModel {
         self.reset_parser();
         self.chapter_switch_until = None;
         self.editor = Some(session);
+        self.pomodoro_offer = true;
+        self.pomodoro_active = false;
+        self.pomodoro_break = false;
+        self.pomodoro_deadline = None;
+        self.command_capture = None;
         self.glyphs.clear();
         self.dirty = true;
         Ok(())
     }
 
     fn apply_format(&mut self, action: &str, value: &str) {
+        if self.pomodoro_break {
+            return;
+        }
         let Some(current) = self.current_file.clone() else {
             return;
         };
@@ -1198,7 +1390,7 @@ impl TerminalModel {
     }
 
     fn insert_symbol(&mut self, symbol: &str) {
-        if symbol.is_empty() {
+        if self.pomodoro_break || symbol.is_empty() {
             return;
         }
         let ensure_insert = !self.helix_is_insert_mode();
@@ -1213,6 +1405,7 @@ impl TerminalModel {
         if self.splash_active {
             return;
         }
+        self.update_pomodoro();
         let mut finished = false;
 
         if let Some(editor) = self.editor.as_mut() {
@@ -1249,6 +1442,11 @@ impl TerminalModel {
             self.current_file = None;
             self.page_profile = crate::page::PageProfile::default();
             self.chapter_switch_until = None;
+            self.pomodoro_offer = false;
+            self.pomodoro_active = false;
+            self.pomodoro_break = false;
+            self.pomodoro_deadline = None;
+            self.command_capture = None;
             self.launcher.refresh();
             self.reset_parser();
             self.render_launcher();
@@ -1268,10 +1466,51 @@ impl TerminalModel {
     }
 
     fn editor_key(&mut self, key: KeyEvent) {
+        if self.pomodoro_offer {
+            match key.code {
+                KeyCode::Enter
+                | KeyCode::F(4)
+                | KeyCode::Char('s')
+                | KeyCode::Char('S')
+                | KeyCode::Char('y')
+                | KeyCode::Char('Y') => self.start_pomodoro(),
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                    self.dismiss_pomodoro_offer()
+                }
+                _ => {}
+            }
+            return;
+        }
+        if key.code == KeyCode::F(4) && key.modifiers.is_empty() {
+            self.start_pomodoro();
+            return;
+        }
+        if self.capture_pd_command(key) {
+            return;
+        }
+        if self.pomodoro_break {
+            if key.modifiers.is_empty()
+                && matches!(
+                    key.code,
+                    KeyCode::Left
+                        | KeyCode::Right
+                        | KeyCode::Up
+                        | KeyCode::Down
+                        | KeyCode::PageUp
+                        | KeyCode::PageDown
+                        | KeyCode::Home
+                        | KeyCode::End
+                        | KeyCode::Esc
+                )
+                && let Some(editor) = self.editor.as_ref()
+            {
+                let _ = editor.send_key(key, editor.win32_input());
+            }
+            return;
+        }
         if self.try_continue_to_next_chapter(key) {
             return;
         }
-
         let zen_toggle = matches!(key.code, KeyCode::Char('z') | KeyCode::Char('Z'))
             && !key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
@@ -2244,6 +2483,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
                 let model = model.borrow();
                 ui.set_zen_active(model.zen_engaged());
                 ui.set_editor_active(model.editor.is_some());
+                ui.set_pomodoro_prompt(model.pomodoro_offer);
+                ui.set_pomodoro_break(model.pomodoro_break);
+                ui.set_pomodoro_text(model.pomodoro_label().into());
             }
         });
     }
@@ -2302,6 +2544,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         let zen = model.zen_engaged();
         ui.set_zen_active(zen);
         ui.set_editor_active(model.editor.is_some());
+        ui.set_pomodoro_prompt(model.pomodoro_offer);
+        ui.set_pomodoro_break(model.pomodoro_break);
+        ui.set_pomodoro_text(model.pomodoro_label().into());
         ui.set_page_label(model.page_profile.paper.label().into());
         ui.set_page_orientation_text(model.page_profile.orientation.label().into());
         ui.set_margin_left_text(model.page_profile.margin_left_mm.to_string().into());

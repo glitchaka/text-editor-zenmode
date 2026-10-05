@@ -16,6 +16,7 @@ pub const DICTIONARY_LICENSE: &str =
 
 const SOURCE: &str = "Helix-SST ortografía";
 const ADD_WORD_COMMAND: &str = "helix-sst.addWord";
+const FORMAT_COMMAND: &str = "helix-sst.formatSelection";
 
 pub fn run_lsp(
     user_dictionary: PathBuf,
@@ -31,6 +32,10 @@ pub fn run_lsp(
     while let Some(message) = read_message(&mut input)? {
         let method = message.get("method").and_then(Value::as_str).unwrap_or("");
         let id = message.get("id").cloned();
+        if method.is_empty() && (message.get("result").is_some() || message.get("error").is_some())
+        {
+            continue;
+        }
 
         match method {
             "initialize" => {
@@ -54,7 +59,7 @@ pub fn run_lsp(
                                     "full": true
                                 },
                                 "executeCommandProvider": {
-                                    "commands": [ADD_WORD_COMMAND]
+                                    "commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]
                                 }
                             },
                             "serverInfo": {
@@ -133,19 +138,28 @@ pub fn run_lsp(
                 }
             }
             "workspace/executeCommand" => {
-                let mut added = false;
-                if message.pointer("/params/command").and_then(Value::as_str)
-                    == Some(ADD_WORD_COMMAND)
-                    && let Some(word) = message
-                        .pointer("/params/arguments/0")
-                        .and_then(Value::as_str)
-                {
-                    added = server.add_user_word(word)?;
+                let command = message.pointer("/params/command").and_then(Value::as_str);
+                let mut changed = false;
+                match command {
+                    Some(ADD_WORD_COMMAND) => {
+                        if let Some(word) = message
+                            .pointer("/params/arguments/0")
+                            .and_then(Value::as_str)
+                        {
+                            changed = server.add_user_word(word)?;
+                        }
+                    }
+                    Some(FORMAT_COMMAND) => {
+                        changed = server.apply_format_command(
+                            message.pointer("/params/arguments").unwrap_or(&Value::Null),
+                        )?;
+                    }
+                    _ => {}
                 }
                 if let Some(id) = id {
-                    send_response(&mut output, id, json!(added))?;
+                    send_response(&mut output, id, json!(changed))?;
                 }
-                if added {
+                if changed && command == Some(ADD_WORD_COMMAND) {
                     let documents = server
                         .documents
                         .iter()
@@ -154,6 +168,15 @@ pub fn run_lsp(
                     for (uri, text) in documents {
                         server.publish(&uri, &text, &mut output)?;
                     }
+                } else if changed && command == Some(FORMAT_COMMAND) {
+                    let request_id = server.next_request_id;
+                    server.next_request_id = server.next_request_id.saturating_add(1);
+                    send_request(
+                        &mut output,
+                        json!(request_id),
+                        "workspace/semanticTokens/refresh",
+                        Value::Null,
+                    )?;
                 }
             }
             "shutdown" => {
@@ -180,6 +203,7 @@ struct SpellServer {
     documents: HashMap<String, String>,
     library_root: Option<PathBuf>,
     source_file: Option<PathBuf>,
+    next_request_id: u64,
 }
 
 impl SpellServer {
@@ -211,6 +235,7 @@ impl SpellServer {
             documents: HashMap::new(),
             library_root,
             source_file,
+            next_request_id: 1,
         })
     }
 
@@ -361,7 +386,97 @@ impl SpellServer {
                 }
             }));
         }
+        if let Some(source) = self.source_file.as_ref()
+            && crate::document::is_native_path(source)
+            && let Some(range) = params.get("range").cloned()
+            && range.pointer("/start") != range.pointer("/end")
+        {
+            let mut push_format = |title: &str, action: &str, value: &str| {
+                actions.push(json!({
+                    "title": title,
+                    "kind": "refactor.rewrite",
+                    "command": {
+                        "title": title,
+                        "command": FORMAT_COMMAND,
+                        "arguments": [uri, range.clone(), action, value]
+                    }
+                }));
+            };
+            push_format("Formato · Negrita", "bold", "");
+            push_format("Formato · Cursiva", "italic", "");
+            push_format("Formato · Subrayado", "underline", "");
+            for (label, value) in [
+                ("Blanco", "white"),
+                ("Rojo", "red"),
+                ("Naranjo", "orange"),
+                ("Amarillo", "yellow"),
+                ("Verde", "green"),
+                ("Cian", "cyan"),
+                ("Azul", "blue"),
+                ("Púrpura", "purple"),
+                ("Gris", "gray"),
+            ] {
+                push_format(&format!("Color de texto · {label}"), "font-color", value);
+            }
+            push_format("Color de texto · Quitar", "font-color", "none");
+            for (label, value) in [
+                ("Amarillo", "yellow"),
+                ("Naranjo", "orange"),
+                ("Verde", "green"),
+                ("Cian", "cyan"),
+                ("Azul", "blue"),
+                ("Púrpura", "purple"),
+                ("Rojo", "red"),
+                ("Gris", "gray"),
+            ] {
+                push_format(&format!("Resaltado · {label}"), "highlight-color", value);
+            }
+            push_format("Resaltado · Quitar", "highlight-color", "none");
+        }
         actions
+    }
+
+    fn apply_format_command(&self, arguments: &Value) -> Result<bool> {
+        let Some(source) = self.source_file.as_deref() else {
+            return Ok(false);
+        };
+        let Some(uri) = arguments.get(0).and_then(Value::as_str) else {
+            return Ok(false);
+        };
+        let Some(current_text) = self.documents.get(uri) else {
+            return Ok(false);
+        };
+        let Some(range) = arguments.get(1) else {
+            return Ok(false);
+        };
+        let action = arguments.get(2).and_then(Value::as_str).unwrap_or("");
+        let value = arguments.get(3).and_then(Value::as_str).unwrap_or("");
+        let start_line = range
+            .pointer("/start/line")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize;
+        let start_character = range
+            .pointer("/start/character")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize;
+        let end_line = range
+            .pointer("/end/line")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize;
+        let end_character = range
+            .pointer("/end/character")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize;
+        crate::document::apply_format_lsp_range(
+            source,
+            current_text,
+            start_line,
+            start_character,
+            end_line,
+            end_character,
+            action,
+            value,
+        )
     }
 
     fn completions(&self, params: &Value) -> Vec<Value> {
@@ -789,81 +904,6 @@ fn ignored_spans(line: &str) -> Vec<(usize, usize)> {
     spans
 }
 
-fn text_style_token(style: crate::format::TextStyle) -> Option<u32> {
-    if let Some(color) = style.background {
-        return Some(
-            crate::format::StyleRange {
-                start: 0,
-                end: 1,
-                kind: crate::format::MarkKind::Background(color),
-            }
-            .semantic_token(),
-        );
-    }
-    if let Some(color) = style.foreground {
-        return Some(
-            crate::format::StyleRange {
-                start: 0,
-                end: 1,
-                kind: crate::format::MarkKind::Foreground(color),
-            }
-            .semantic_token(),
-        );
-    }
-    if style.underline {
-        return Some(5);
-    }
-    if style.bold {
-        return Some(2);
-    }
-    if style.italic {
-        return Some(4);
-    }
-    None
-}
-
-fn append_native_format_tokens(
-    document: &crate::document::HsstDocument,
-    absolute: &mut Vec<(u32, u32, u32, u32)>,
-) {
-    let body = &document.body;
-    let mut line_starts = vec![0usize];
-    for (index, byte) in body.bytes().enumerate() {
-        if byte == b'\n' {
-            line_starts.push(index + 1);
-        }
-    }
-
-    for (start, end, style) in crate::document::formatting_runs(document) {
-        let Some(token) = text_style_token(style) else {
-            continue;
-        };
-        for (line_index, &line_start) in line_starts.iter().enumerate() {
-            let line_end = line_starts
-                .get(line_index + 1)
-                .copied()
-                .unwrap_or(body.len());
-            let content_end =
-                if line_end > line_start && body.as_bytes().get(line_end - 1) == Some(&b'\n') {
-                    line_end - 1
-                } else {
-                    line_end
-                };
-            let seg_start = start.max(line_start);
-            let seg_end = end.min(content_end);
-            if seg_start >= seg_end
-                || !body.is_char_boundary(seg_start)
-                || !body.is_char_boundary(seg_end)
-            {
-                continue;
-            }
-            let column = body[line_start..seg_start].encode_utf16().count() as u32;
-            let length = body[seg_start..seg_end].encode_utf16().count() as u32;
-            absolute.push((line_index as u32, column, length, token));
-        }
-    }
-}
-
 fn read_message(reader: &mut impl BufRead) -> Result<Option<Value>> {
     let mut content_length = None;
     loop {
@@ -902,6 +942,17 @@ fn send_response(output: &mut impl Write, id: Value, result: Value) -> Result<()
     )
 }
 
+fn send_request(output: &mut impl Write, id: Value, method: &str, params: Value) -> Result<()> {
+    send_json(
+        output,
+        &json!({
+          "jsonrpc": "2.0",
+          "id": id,
+          "method": method,
+          "params": params
+        }),
+    )
+}
 fn send_notification(output: &mut impl Write, method: &str, params: Value) -> Result<()> {
     send_json(
         output,
