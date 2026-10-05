@@ -1,53 +1,80 @@
-name: Apply Win32 format fix
+name: Build Helix-SST Zenmode
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - main
+      - "main"
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-pc-windows-msvc
+  EXE_NAME: helix-sst-zen-windows-x86_64.exe
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
-  fix:
+  windows:
+    name: Windows x86_64
     runs-on: windows-latest
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
 
-      - name: Apply source fix
+      - name: Check formatting
         shell: pwsh
-        run: python scripts/fix_win32_format.py
-
-      - name: Format
-        shell: pwsh
-        run: cargo fmt --all
+        run: cargo fmt --all -- --check
 
       - name: Clippy
         shell: pwsh
-        run: cargo clippy --release -- -D warnings
+        run: cargo clippy --release --target $env:TARGET -- -D warnings
+
+      - name: Test
+        shell: pwsh
+        run: cargo test --release --target $env:TARGET
 
       - name: Build release
         shell: pwsh
-        run: cargo build --release
+        run: cargo build --release --target $env:TARGET
 
-      - name: Commit fix and restore workflow
-        shell: bash
+      - name: Prepare distribution
+        shell: pwsh
         run: |
-          git checkout 35558cc1f04a60693b79172e5688f3988e103313 -- .github/workflows/build.yml
-          rm scripts/fix_win32_format.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/editor.rs Cargo.toml .github/workflows/build.yml scripts/fix_win32_format.py
-          git commit -m "Corregir comandos completos de formato en Windows [skip ci]"
-          git push origin HEAD:main
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          $source = "target/$env:TARGET/release/helix-sst-zen.exe"
+          $target = "dist/$env:EXE_NAME"
+          Copy-Item $source $target
+
+          $hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:EXE_NAME" | Set-Content "$target.sha256" -Encoding ascii
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: helix-sst-zen-windows-x86_64
+          path: |
+            dist/helix-sst-zen-windows-x86_64.exe
+            dist/helix-sst-zen-windows-x86_64.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/helix-sst-zen-windows-x86_64.exe
+            dist/helix-sst-zen-windows-x86_64.exe.sha256

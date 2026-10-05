@@ -933,6 +933,35 @@ fn encode_input(key: KeyEvent, win32: bool) -> Option<Vec<u8>> {
 
     let (vk, text): (u16, String) = match key.code {
         KeyCode::Char(ch) => {
+            #[cfg(windows)]
+            let vk = {
+                use windows_sys::Win32::UI::Input::KeyboardAndMouse::VkKeyScanW;
+
+                let mapped = if (ch as u32) <= u16::MAX as u32 {
+                    unsafe { VkKeyScanW(ch as u16) }
+                } else {
+                    -1
+                };
+                if mapped != -1 {
+                    let mapped = mapped as u16;
+                    let required = (mapped >> 8) & 0x00ff;
+                    if required & 0x01 != 0 {
+                        state |= 0x10;
+                    }
+                    if required & 0x02 != 0 {
+                        state |= 0x08;
+                    }
+                    if required & 0x04 != 0 {
+                        state |= 0x02;
+                    }
+                    mapped & 0x00ff
+                } else if ch.is_ascii_alphanumeric() {
+                    ch.to_ascii_uppercase() as u16
+                } else {
+                    0
+                }
+            };
+            #[cfg(not(windows))]
             let vk = if ch.is_ascii_alphanumeric() {
                 ch.to_ascii_uppercase() as u16
             } else {
