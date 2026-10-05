@@ -430,6 +430,13 @@ impl SpellServer {
         };
 
         let mut absolute = Vec::<(u32, u32, u32, u32)>::new();
+        if let Some(source) = self.source_file.as_deref()
+            && crate::document::is_native_path(source)
+            && let Ok(document) = crate::document::read(source)
+            && document.body == *text
+        {
+            append_native_format_tokens(&document, &mut absolute);
+        }
         let mut frontmatter = false;
 
         for (line_index, line) in text.lines().enumerate() {
@@ -456,35 +463,38 @@ impl SpellServer {
                 continue;
             }
 
-            let mut ranges = crate::format::style_ranges(line);
-            ranges.sort_by_key(|range| {
-                (
-                    range.start,
-                    range.end.saturating_sub(range.start),
-                    range.semantic_token(),
-                )
-            });
-            let mut occupied_until = 0usize;
-            for range in ranges {
-                if range.start < occupied_until
-                    || range.start >= range.end
-                    || !line.is_char_boundary(range.start)
-                    || !line.is_char_boundary(range.end)
-                {
-                    continue;
+            if self
+                .source_file
+                .as_deref()
+                .is_none_or(|source| !crate::document::is_native_path(source))
+            {
+                let mut ranges = crate::format::style_ranges(line);
+                ranges.sort_by_key(|range| {
+                    (
+                        range.start,
+                        range.end.saturating_sub(range.start),
+                        range.semantic_token(),
+                    )
+                });
+                let mut occupied_until = 0usize;
+                for range in ranges {
+                    if range.start < occupied_until
+                        || range.start >= range.end
+                        || !line.is_char_boundary(range.start)
+                        || !line.is_char_boundary(range.end)
+                    {
+                        continue;
+                    }
+                    let start_utf16 = line[..range.start].encode_utf16().count() as u32;
+                    let length_utf16 = line[range.start..range.end].encode_utf16().count() as u32;
+                    absolute.push((
+                        line_number,
+                        start_utf16,
+                        length_utf16,
+                        range.semantic_token(),
+                    ));
+                    occupied_until = range.end;
                 }
-                let start_utf16 = line[..range.start].encode_utf16().count() as u32;
-                let length_utf16 = line[range.start..range.end].encode_utf16().count() as u32;
-                if length_utf16 == 0 {
-                    continue;
-                }
-                absolute.push((
-                    line_number,
-                    start_utf16,
-                    length_utf16,
-                    range.semantic_token(),
-                ));
-                occupied_until = range.end;
             }
         }
 
@@ -784,6 +794,81 @@ fn ignored_spans(line: &str) -> Vec<(usize, usize)> {
     }
 
     spans
+}
+
+fn text_style_token(style: crate::format::TextStyle) -> Option<u32> {
+    if let Some(color) = style.background {
+        return Some(
+            crate::format::StyleRange {
+                start: 0,
+                end: 1,
+                kind: crate::format::MarkKind::Background(color),
+            }
+            .semantic_token(),
+        );
+    }
+    if let Some(color) = style.foreground {
+        return Some(
+            crate::format::StyleRange {
+                start: 0,
+                end: 1,
+                kind: crate::format::MarkKind::Foreground(color),
+            }
+            .semantic_token(),
+        );
+    }
+    if style.underline {
+        return Some(5);
+    }
+    if style.bold {
+        return Some(2);
+    }
+    if style.italic {
+        return Some(4);
+    }
+    None
+}
+
+fn append_native_format_tokens(
+    document: &crate::document::HsstDocument,
+    absolute: &mut Vec<(u32, u32, u32, u32)>,
+) {
+    let body = &document.body;
+    let mut line_starts = vec![0usize];
+    for (index, byte) in body.bytes().enumerate() {
+        if byte == b'\n' {
+            line_starts.push(index + 1);
+        }
+    }
+
+    for (start, end, style) in crate::document::formatting_runs(document) {
+        let Some(token) = text_style_token(style) else {
+            continue;
+        };
+        for (line_index, &line_start) in line_starts.iter().enumerate() {
+            let line_end = line_starts
+                .get(line_index + 1)
+                .copied()
+                .unwrap_or(body.len());
+            let content_end =
+                if line_end > line_start && body.as_bytes().get(line_end - 1) == Some(&b'\n') {
+                    line_end - 1
+                } else {
+                    line_end
+                };
+            let seg_start = start.max(line_start);
+            let seg_end = end.min(content_end);
+            if seg_start >= seg_end
+                || !body.is_char_boundary(seg_start)
+                || !body.is_char_boundary(seg_end)
+            {
+                continue;
+            }
+            let column = body[line_start..seg_start].encode_utf16().count() as u32;
+            let length = body[seg_start..seg_end].encode_utf16().count() as u32;
+            absolute.push((line_index as u32, column, length, token));
+        }
+    }
 }
 
 fn read_message(reader: &mut impl BufRead) -> Result<Option<Value>> {

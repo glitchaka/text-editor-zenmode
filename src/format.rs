@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    io::{Read, Write},
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -162,34 +158,6 @@ pub struct StyledRun {
     pub style: TextStyle,
 }
 
-pub fn run_filter(
-    action: &str,
-    value: Option<&str>,
-    source: Option<&std::path::Path>,
-    cursor_line: usize,
-    cursor_column: usize,
-) -> Result<()> {
-    let mut input = String::new();
-    std::io::stdin().read_to_string(&mut input)?;
-    if let Some(source) = source
-        && let Err(error) = crate::document::apply_format_selection(
-            source,
-            &input,
-            cursor_line,
-            cursor_column,
-            action,
-            value.unwrap_or(""),
-        )
-    {
-        let log = std::env::temp_dir().join("helix-sst-format-error.log");
-        let _ = fs::write(log, format!("{error:#}\n"));
-    }
-    // Helix recibe exactamente el mismo texto: el formato vive fuera de content.txt.
-    // El helper siempre devuelve éxito para evitar popups transitorios de Helix.
-    std::io::stdout().write_all(input.as_bytes())?;
-    Ok(())
-}
-
 #[cfg(test)]
 pub fn apply_to_selection(input: &str, action: &str, value: &str) -> String {
     match action {
@@ -249,28 +217,6 @@ fn outer_tag(input: &str, tag: &str) -> Option<(PaletteColor, usize, usize)> {
     let color_name = &input[prefix.len()..open_end - 2];
     let color = PaletteColor::parse(color_name)?;
     Some((color, open_end, input.len() - close.len()))
-}
-
-pub fn pipe_command(
-    action: &str,
-    value: Option<&str>,
-    source: &std::path::Path,
-    cursor_line: usize,
-    cursor_column: usize,
-) -> Result<String> {
-    let executable = std::env::current_exe().context("No se pudo localizar Helix-SST")?;
-    let executable = executable
-        .to_string_lossy()
-        .replace('\\', "/")
-        .replace('"', "\\\"");
-    let source = source
-        .to_string_lossy()
-        .replace('\\', "/")
-        .replace('"', "\\\"");
-    let value = value.filter(|value| !value.is_empty()).unwrap_or("-");
-    Ok(format!(
-        ":pipe \"{executable}\" --hsst-format {action} {value} \"{source}\" {cursor_line} {cursor_column}"
-    ))
 }
 
 pub fn ensure_theme() -> Result<PathBuf> {

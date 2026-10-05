@@ -30,25 +30,6 @@ fn main() -> Result<()> {
         std::process::exit(spell::run_lsp(path, library_root, source_file)?);
     }
 
-    if args.first().map(String::as_str) == Some("--hsst-format") {
-        let action = args.get(1).map(String::as_str).unwrap_or("");
-        let value = args
-            .get(2)
-            .map(String::as_str)
-            .filter(|value| *value != "-");
-        let source = args.get(3).map(PathBuf::from);
-        let cursor_line = args
-            .get(4)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(1);
-        let cursor_column = args
-            .get(5)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(1);
-        format::run_filter(action, value, source.as_deref(), cursor_line, cursor_column)?;
-        return Ok(());
-    }
-
     if args.first().map(String::as_str) == Some("--clipboard-get") {
         let mut clipboard = arboard::Clipboard::new()?;
         if let Ok(text) = clipboard.get_text() {

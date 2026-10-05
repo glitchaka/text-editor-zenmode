@@ -254,6 +254,31 @@ impl EditorSession {
         self.write_reply(&bytes)
     }
 
+    pub fn yank_selection_to_clipboard(&self) -> Result<()> {
+        let win32 = self.win32_input();
+        let mut bytes = Vec::new();
+        for code in [KeyCode::Char(' '), KeyCode::Char('y')] {
+            if let Some(encoded) = encode_input(KeyEvent::new(code, KeyModifiers::NONE), win32) {
+                bytes.extend_from_slice(&encoded);
+            }
+        }
+        self.write_reply(&bytes)
+    }
+
+    pub fn save_buffer_for_formatting(&self) -> Result<()> {
+        self.send_key(
+            KeyEvent::new(KeyCode::F(20), KeyModifiers::NONE),
+            self.win32_input(),
+        )
+    }
+
+    pub fn refresh_after_formatting(&self) -> Result<()> {
+        self.send_key(
+            KeyEvent::new(KeyCode::F(21), KeyModifiers::NONE),
+            self.win32_input(),
+        )
+    }
+
     pub fn sync_native(&mut self) -> Result<bool> {
         self.sync_native_inner(false)
     }
@@ -604,6 +629,8 @@ yank = {{ command = "{exe}", args = ["--clipboard-get"] }}
 paste = {{ command = "{exe}", args = ["--clipboard-set"] }}
 
 [keys.normal]
+F20 = ":write"
+F21 = ":reload"
 F2 = "code_action"
 C-left = "move_prev_word_start"
 C-right = "move_next_word_start"
@@ -650,6 +677,8 @@ F18 = ["normal_mode", "redo", "insert_mode"]
 F19 = ["normal_mode", "select_all", "select_mode"]
 
 [keys.select]
+F20 = ":write"
+F21 = ":reload"
 F2 = "code_action"
 C-left = ["normal_mode", "move_prev_word_start"]
 C-right = ["normal_mode", "move_next_word_start"]

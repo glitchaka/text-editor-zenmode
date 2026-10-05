@@ -1059,24 +1059,75 @@ impl TerminalModel {
         }
         let (cursor_line, cursor_column) = self.helix_cursor_position().unwrap_or((1, 1));
         let leave_insert = self.helix_is_insert_mode();
-        let Some(editor) = self.editor.as_ref() else {
+        let Some(editor) = self.editor.as_mut() else {
             return;
         };
+
         if leave_insert {
             let _ = editor.send_key(
                 KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
                 editor.win32_input(),
             );
         }
-        let value = (!value.is_empty()).then_some(value);
-        match format::pipe_command(action, value, &current, cursor_line, cursor_column) {
-            Ok(command) => {
-                if let Err(error) = editor.send_command(&command) {
-                    self.launcher.message = Some(format!("No se pudo aplicar formato: {error}"));
-                }
+
+        if let Err(error) = editor.save_buffer_for_formatting() {
+            self.launcher.message = Some(format!("No se pudo guardar antes de formatear: {error}"));
+            return;
+        }
+        for _ in 0..12 {
+            std::thread::sleep(Duration::from_millis(15));
+            if editor.sync_native().unwrap_or(false) {
+                break;
+            }
+        }
+
+        let sentinel = format!("__HSST_SELECTION_{}_{}__", std::process::id(), cursor_line);
+        let mut clipboard = match arboard::Clipboard::new() {
+            Ok(clipboard) => clipboard,
+            Err(error) => {
+                self.launcher.message = Some(format!("No se pudo abrir el portapapeles: {error}"));
+                return;
+            }
+        };
+        let _ = clipboard.set_text(sentinel.clone());
+        if let Err(error) = editor.yank_selection_to_clipboard() {
+            self.launcher.message = Some(format!("No se pudo leer la selección: {error}"));
+            return;
+        }
+
+        let mut selected = None;
+        for _ in 0..20 {
+            std::thread::sleep(Duration::from_millis(10));
+            if let Ok(text) = clipboard.get_text()
+                && text != sentinel
+            {
+                selected = Some(text);
+                break;
+            }
+        }
+        let Some(selected) = selected.filter(|text| !text.is_empty()) else {
+            self.launcher.message = Some("Selecciona texto antes de aplicar formato.".into());
+            return;
+        };
+
+        match document::apply_format_selection(
+            &current,
+            &selected,
+            cursor_line,
+            cursor_column,
+            action,
+            value,
+        ) {
+            Ok(true) => {
+                let _ = editor.refresh_after_formatting();
+                self.dirty = true;
+            }
+            Ok(false) => {
+                self.launcher.message =
+                    Some("No se pudo localizar la selección en el documento.".into());
             }
             Err(error) => {
-                self.launcher.message = Some(format!("No se pudo preparar formato: {error}"));
+                self.launcher.message = Some(format!("No se pudo aplicar formato: {error}"));
             }
         }
     }
