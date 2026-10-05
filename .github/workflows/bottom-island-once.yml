@@ -2,9 +2,10 @@ name: Bottom island once
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "main"
     paths:
-      - .github/workflows/bottom-island-once.yml
+      - ".github/workflows/bottom-island-once.yml"
 
 permissions:
   contents: write
@@ -13,210 +14,21 @@ jobs:
   apply:
     runs-on: windows-latest
     env:
-      RUSTFLAGS: -Dwarnings
+      RUSTFLAGS: "-Dwarnings"
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Apply bottom compact island
+      - name: Apply patch
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-
-          function Read-Lf([string]$Path) {
-            (Get-Content -Raw $Path).Replace("`r`n", "`n")
-          }
-          function Write-Utf8([string]$Path, [string]$Text) {
-            [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
-          }
-          function Replace-Once([string]$Text, [string]$Old, [string]$New, [string]$Label) {
-            $index = $Text.IndexOf($Old)
-            if ($index -lt 0) { throw "No se encontró bloque: $Label" }
-            $Text.Substring(0, $index) + $New + $Text.Substring($index + $Old.Length)
-          }
-
-          $app = Read-Lf 'src/app.rs'
-
-          $app = $app.Replace('const ISLAND_TOP: f32 = 6.0;`n', '')
-
-          if (-not $app.Contains('callback start-pomodoro();')) {
-            $app = Replace-Once $app "        callback close-window();`n" "        callback close-window();`n        callback start-pomodoro();`n" 'callback Pomodoro'
-          }
-
-          $start = $app.IndexOf('        zen-reveal := TouchArea {')
-          $end = $app.IndexOf('        font-palette := Rectangle {', $start)
-          if ($start -lt 0 -or $end -lt 0) { throw 'No se encontró bloque de isla' }
-
-          $island = @'
-        bottom-reveal := TouchArea {
-            x: root.width - 224px;
-            y: root.height - 10px;
-            width: 224px;
-            height: 10px;
-            enabled: root.zen-active;
-        }
-
-        island := Rectangle {
-            visible: root.editor-active
-                && (!root.zen-active
-                    || bottom-reveal.has-hover
-                    || island-hover.has-hover
-                    || root.symbols-open
-                    || root.pomodoro-text != "");
-            width: 196px;
-            height: 34px;
-            x: root.width - self.width - 14px;
-            y: root.height - self.height - 7px;
-            border-radius: 13px;
-            background: rgba(10, 13, 20, 0.96);
-            border-width: 1px;
-            border-color: #2b3547;
-
-            island-hover := TouchArea {
-                x: 0; y: 0; width: parent.width; height: parent.height;
-            }
-
-            island-move := WindowMoveArea {
-                x: 0; y: 0; width: parent.width; height: parent.height;
-                enabled: !root.zen-active;
-            }
-
-            Rectangle {
-                x: 5px; y: 3px; width: 112px; height: 28px;
-                border-radius: 9px;
-                background: pomodoro-touch.pressed
-                    ? #29384b
-                    : pomodoro-touch.has-hover ? #172334 : transparent;
-                Text {
-                    width: 100%; height: 100%;
-                    text: root.pomodoro-text != "" ? root.pomodoro-text : "POMODORO";
-                    color: root.pomodoro-break ? #ffb4a2 : #e8cc83;
-                    font-family: "Segoe UI Variable";
-                    font-size: root.pomodoro-text != "" ? 10px : 11px;
-                    font-weight: 650;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                pomodoro-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.start-pomodoro(); terminal-focus.focus(); }
-                }
-            }
-
-            Rectangle {
-                x: 121px; y: 3px; width: 32px; height: 28px;
-                border-radius: 9px;
-                background: symbol-menu.pressed
-                    ? #29384b
-                    : symbol-menu.has-hover ? #172334 : transparent;
-                Text {
-                    width: 100%; height: 100%; text: "Ω"; color: #8db9bb;
-                    font-family: "Segoe UI Variable"; font-size: 15px;
-                    horizontal-alignment: center; vertical-alignment: center;
-                }
-                symbol-menu := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.symbols-open = !root.symbols-open;
-                        root.font-palette-open = false;
-                        root.highlight-palette-open = false;
-                        root.page-menu-open = false;
-                    }
-                }
-            }
-
-            Rectangle {
-                x: 157px; y: 1px; width: 38px; height: 32px;
-                border-radius: 10px;
-                background: close-touch.pressed
-                    ? rgb(62, 23, 36)
-                    : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
-                Path {
-                    x: 10px; y: 8px; width: 18px; height: 18px;
-                    commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
-                    stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
-                    stroke-width: 2px; stroke-line-cap: round;
-                }
-                close-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.close-window(); }
-                }
-            }
-        }
-
-'@
-          $app = $app.Substring(0, $start) + $island + $app.Substring($end)
-
-          $app = $app.Replace('            x: island.x + 344px;`n            y: island.y + island.height + 5px;', '            x: island.x + island.width - self.width;`n            y: island.y - self.height - 5px;')
-
-          $oldGeometry = @'
-        let top_pad = if self.zen_engaged() {
-            (PAD_Y * scale).round()
-        } else {
-            ((ISLAND_TOP + ISLAND_HEIGHT + CONTENT_TOP_GAP + PAD_Y) * scale).round()
-        };
-'@
-          $newGeometry = @'
-        let top_pad = (PAD_Y * scale).round();
-'@
-          $app = Replace-Once $app $oldGeometry $newGeometry 'geometría superior'
-
-          $oldBottom = '        let bottom_pad = (PAD_Y * self.scale.max(0.5)).round();'
-          $newBottom = @'
-        let scale = self.scale.max(0.5);
-        let bottom_pad = if self.zen_engaged() && !self.pomodoro_active {
-            (PAD_Y * scale).round()
-        } else {
-            ((PAD_Y + ISLAND_HEIGHT + CONTENT_TOP_GAP) * scale).round()
-        };
-'@
-          $app = Replace-Once $app $oldBottom $newBottom 'reserva inferior'
-
-          $anchor = @'
-    {
-        let model = model.clone();
-        ui.on_format_action(move |action, value| {
-'@
-          if (-not $app.Contains('ui.on_start_pomodoro')) {
-            $pomodoroHandler = @'
-    {
-        let model = model.clone();
-        let weak = ui.as_weak();
-        ui.on_start_pomodoro(move || {
-            {
-                model.borrow_mut().start_pomodoro();
-            }
-            if let Some(ui) = weak.upgrade() {
-                let model = model.borrow();
-                ui.set_pomodoro_break(model.pomodoro_break);
-                ui.set_pomodoro_text(model.pomodoro_label().into());
-            }
-        });
-    }
-'@
-            $app = Replace-Once $app $anchor ($pomodoroHandler + $anchor) 'handler Pomodoro'
-          }
-
-          $oldClose = @'
-        ui.on_close_window(move || {
-            if model.borrow().zen_engaged() {
-                return;
-            }
-            if let Some(ui) = weak.upgrade() {
-'@
-          $newClose = @'
-        ui.on_close_window(move || {
-            if let Some(ui) = weak.upgrade() {
-'@
-          $app = Replace-Once $app $oldClose $newClose 'botón apagar'
-
-          Write-Utf8 'src/app.rs' $app
-
-          $cargo = Read-Lf 'Cargo.toml'
-          $cargo = $cargo.Replace('version = "0.2.12"', 'version = "0.2.13"')
-          Write-Utf8 'Cargo.toml' $cargo
+          $script = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('CiRFcnJvckFjdGlvblByZWZlcmVuY2UgPSAnU3RvcCcKCmZ1bmN0aW9uIFJlYWQtTGYoW3N0cmluZ10kUGF0aCkgewogICAgKEdldC1Db250ZW50IC1SYXcgJFBhdGgpLlJlcGxhY2UoImByYG4iLCAiYG4iKQp9CmZ1bmN0aW9uIFdyaXRlLVV0ZjgoW3N0cmluZ10kUGF0aCwgW3N0cmluZ10kVGV4dCkgewogICAgW1N5c3RlbS5JTy5GaWxlXTo6V3JpdGVBbGxUZXh0KCRQYXRoLCAkVGV4dCwgW1N5c3RlbS5UZXh0LlVURjhFbmNvZGluZ106Om5ldygkZmFsc2UpKQp9CmZ1bmN0aW9uIFJlcGxhY2UtT25jZShbc3RyaW5nXSRUZXh0LCBbc3RyaW5nXSRPbGQsIFtzdHJpbmddJE5ldywgW3N0cmluZ10kTGFiZWwpIHsKICAgICRpbmRleCA9ICRUZXh0LkluZGV4T2YoJE9sZCkKICAgIGlmICgkaW5kZXggLWx0IDApIHsgdGhyb3cgIk5vIHNlIGVuY29udHLDsyBibG9xdWU6ICRMYWJlbCIgfQogICAgJFRleHQuU3Vic3RyaW5nKDAsICRpbmRleCkgKyAkTmV3ICsgJFRleHQuU3Vic3RyaW5nKCRpbmRleCArICRPbGQuTGVuZ3RoKQp9CgokYXBwID0gUmVhZC1MZiAnc3JjL2FwcC5ycycKJGFwcCA9ICRhcHAuUmVwbGFjZSgiY29uc3QgSVNMQU5EX1RPUDogZjMyID0gNi4wO2BuIiwgJycpCgppZiAoLW5vdCAkYXBwLkNvbnRhaW5zKCdjYWxsYmFjayBzdGFydC1wb21vZG9ybygpOycpKSB7CiAgICAkYXBwID0gUmVwbGFjZS1PbmNlICRhcHAgIiAgICAgICAgY2FsbGJhY2sgY2xvc2Utd2luZG93KCk7YG4iICIgICAgICAgIGNhbGxiYWNrIGNsb3NlLXdpbmRvdygpO2BuICAgICAgICBjYWxsYmFjayBzdGFydC1wb21vZG9ybygpO2BuIiAnY2FsbGJhY2sgUG9tb2Rvcm8nCn0KCiRzdGFydCA9ICRhcHAuSW5kZXhPZignICAgICAgICB6ZW4tcmV2ZWFsIDo9IFRvdWNoQXJlYSB7JykKJGVuZCA9ICRhcHAuSW5kZXhPZignICAgICAgICBmb250LXBhbGV0dGUgOj0gUmVjdGFuZ2xlIHsnLCAkc3RhcnQpCmlmICgkc3RhcnQgLWx0IDAgLW9yICRlbmQgLWx0IDApIHsgdGhyb3cgJ05vIHNlIGVuY29udHLDsyBibG9xdWUgZGUgaXNsYScgfQoKJGlzbGFuZCA9IEAnCiAgICAgICAgYm90dG9tLXJldmVhbCA6PSBUb3VjaEFyZWEgewogICAgICAgICAgICB4OiByb290LndpZHRoIC0gMjI0cHg7CiAgICAgICAgICAgIHk6IHJvb3QuaGVpZ2h0IC0gMTBweDsKICAgICAgICAgICAgd2lkdGg6IDIyNHB4OwogICAgICAgICAgICBoZWlnaHQ6IDEwcHg7CiAgICAgICAgICAgIGVuYWJsZWQ6IHJvb3QuemVuLWFjdGl2ZTsKICAgICAgICB9CgogICAgICAgIGlzbGFuZCA6PSBSZWN0YW5nbGUgewogICAgICAgICAgICB2aXNpYmxlOiByb290LmVkaXRvci1hY3RpdmUKICAgICAgICAgICAgICAgICYmICghcm9vdC56ZW4tYWN0aXZlCiAgICAgICAgICAgICAgICAgICAgfHwgYm90dG9tLXJldmVhbC5oYXMtaG92ZXIKICAgICAgICAgICAgICAgICAgICB8fCBpc2xhbmQtaG92ZXIuaGFzLWhvdmVyCiAgICAgICAgICAgICAgICAgICAgfHwgcm9vdC5zeW1ib2xzLW9wZW4KICAgICAgICAgICAgICAgICAgICB8fCByb290LnBvbW9kb3JvLXRleHQgIT0gIiIpOwogICAgICAgICAgICB3aWR0aDogMTk2cHg7CiAgICAgICAgICAgIGhlaWdodDogMzRweDsKICAgICAgICAgICAgeDogcm9vdC53aWR0aCAtIHNlbGYud2lkdGggLSAxNHB4OwogICAgICAgICAgICB5OiByb290LmhlaWdodCAtIHNlbGYuaGVpZ2h0IC0gN3B4OwogICAgICAgICAgICBib3JkZXItcmFkaXVzOiAxM3B4OwogICAgICAgICAgICBiYWNrZ3JvdW5kOiByZ2JhKDEwLCAxMywgMjAsIDAuOTYpOwogICAgICAgICAgICBib3JkZXItd2lkdGg6IDFweDsKICAgICAgICAgICAgYm9yZGVyLWNvbG9yOiAjMmIzNTQ3OwoKICAgICAgICAgICAgaXNsYW5kLWhvdmVyIDo9IFRvdWNoQXJlYSB7CiAgICAgICAgICAgICAgICB4OiAwOyB5OiAwOyB3aWR0aDogcGFyZW50LndpZHRoOyBoZWlnaHQ6IHBhcmVudC5oZWlnaHQ7CiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIGlzbGFuZC1tb3ZlIDo9IFdpbmRvd01vdmVBcmVhIHsKICAgICAgICAgICAgICAgIHg6IDA7IHk6IDA7IHdpZHRoOiBwYXJlbnQud2lkdGg7IGhlaWdodDogcGFyZW50LmhlaWdodDsKICAgICAgICAgICAgICAgIGVuYWJsZWQ6ICFyb290Lnplbi1hY3RpdmU7CiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIFJlY3RhbmdsZSB7CiAgICAgICAgICAgICAgICB4OiA1cHg7IHk6IDNweDsgd2lkdGg6IDExMnB4OyBoZWlnaHQ6IDI4cHg7CiAgICAgICAgICAgICAgICBib3JkZXItcmFkaXVzOiA5cHg7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kOiBwb21vZG9yby10b3VjaC5wcmVzc2VkCiAgICAgICAgICAgICAgICAgICAgPyAjMjkzODRiCiAgICAgICAgICAgICAgICAgICAgOiBwb21vZG9yby10b3VjaC5oYXMtaG92ZXIgPyAjMTcyMzM0IDogdHJhbnNwYXJlbnQ7CiAgICAgICAgICAgICAgICBUZXh0IHsKICAgICAgICAgICAgICAgICAgICB3aWR0aDogMTAwJTsgaGVpZ2h0OiAxMDAlOwogICAgICAgICAgICAgICAgICAgIHRleHQ6IHJvb3QucG9tb2Rvcm8tdGV4dCAhPSAiIiA/IHJvb3QucG9tb2Rvcm8tdGV4dCA6ICJQT01PRE9STyI7CiAgICAgICAgICAgICAgICAgICAgY29sb3I6IHJvb3QucG9tb2Rvcm8tYnJlYWsgPyAjZmZiNGEyIDogI2U4Y2M4MzsKICAgICAgICAgICAgICAgICAgICBmb250LWZhbWlseTogIlNlZ29lIFVJIFZhcmlhYmxlIjsKICAgICAgICAgICAgICAgICAgICBmb250LXNpemU6IHJvb3QucG9tb2Rvcm8tdGV4dCAhPSAiIiA/IDEwcHggOiAxMXB4OwogICAgICAgICAgICAgICAgICAgIGZvbnQtd2VpZ2h0OiA2NTA7CiAgICAgICAgICAgICAgICAgICAgaG9yaXpvbnRhbC1hbGlnbm1lbnQ6IGNlbnRlcjsKICAgICAgICAgICAgICAgICAgICB2ZXJ0aWNhbC1hbGlnbm1lbnQ6IGNlbnRlcjsKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIHBvbW9kb3JvLXRvdWNoIDo9IFRvdWNoQXJlYSB7CiAgICAgICAgICAgICAgICAgICAgbW91c2UtY3Vyc29yOiBwb2ludGVyOwogICAgICAgICAgICAgICAgICAgIGNsaWNrZWQgPT4geyByb290LnN0YXJ0LXBvbW9kb3JvKCk7IHRlcm1pbmFsLWZvY3VzLmZvY3VzKCk7IH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQoKICAgICAgICAgICAgUmVjdGFuZ2xlIHsKICAgICAgICAgICAgICAgIHg6IDEyMXB4OyB5OiAzcHg7IHdpZHRoOiAzMnB4OyBoZWlnaHQ6IDI4cHg7CiAgICAgICAgICAgICAgICBib3JkZXItcmFkaXVzOiA5cHg7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kOiBzeW1ib2wtbWVudS5wcmVzc2VkCiAgICAgICAgICAgICAgICAgICAgPyAjMjkzODRiCiAgICAgICAgICAgICAgICAgICAgOiBzeW1ib2wtbWVudS5oYXMtaG92ZXIgPyAjMTcyMzM0IDogdHJhbnNwYXJlbnQ7CiAgICAgICAgICAgICAgICBUZXh0IHsKICAgICAgICAgICAgICAgICAgICB3aWR0aDogMTAwJTsgaGVpZ2h0OiAxMDAlOyB0ZXh0OiAizqkiOyBjb2xvcjogIzhkYjliYjsKICAgICAgICAgICAgICAgICAgICBmb250LWZhbWlseTogIlNlZ29lIFVJIFZhcmlhYmxlIjsgZm9udC1zaXplOiAxNXB4OwogICAgICAgICAgICAgICAgICAgIGhvcml6b250YWwtYWxpZ25tZW50OiBjZW50ZXI7IHZlcnRpY2FsLWFsaWdubWVudDogY2VudGVyOwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgc3ltYm9sLW1lbnUgOj0gVG91Y2hBcmVhIHsKICAgICAgICAgICAgICAgICAgICBtb3VzZS1jdXJzb3I6IHBvaW50ZXI7CiAgICAgICAgICAgICAgICAgICAgY2xpY2tlZCA9PiB7CiAgICAgICAgICAgICAgICAgICAgICAgIHJvb3Quc3ltYm9scy1vcGVuID0gIXJvb3Quc3ltYm9scy1vcGVuOwogICAgICAgICAgICAgICAgICAgICAgICByb290LmZvbnQtcGFsZXR0ZS1vcGVuID0gZmFsc2U7CiAgICAgICAgICAgICAgICAgICAgICAgIHJvb3QuaGlnaGxpZ2h0LXBhbGV0dGUtb3BlbiA9IGZhbHNlOwogICAgICAgICAgICAgICAgICAgICAgICByb290LnBhZ2UtbWVudS1vcGVuID0gZmFsc2U7CiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CgogICAgICAgICAgICBSZWN0YW5nbGUgewogICAgICAgICAgICAgICAgeDogMTU3cHg7IHk6IDFweDsgd2lkdGg6IDM4cHg7IGhlaWdodDogMzJweDsKICAgICAgICAgICAgICAgIGJvcmRlci1yYWRpdXM6IDEwcHg7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kOiBjbG9zZS10b3VjaC5wcmVzc2VkCiAgICAgICAgICAgICAgICAgICAgPyByZ2IoNjIsIDIzLCAzNikKICAgICAgICAgICAgICAgICAgICA6IGNsb3NlLXRvdWNoLmhhcy1ob3ZlciA/IHJnYig0OCwgMTgsIDI4KSA6IHRyYW5zcGFyZW50OwogICAgICAgICAgICAgICAgUGF0aCB7CiAgICAgICAgICAgICAgICAgICAgeDogMTBweDsgeTogOHB4OyB3aWR0aDogMThweDsgaGVpZ2h0OiAxOHB4OwogICAgICAgICAgICAgICAgICAgIGNvbW1hbmRzOiAiTSA5IDEgTCA5IDggTSAzLjMgMy43IEEgNyA3IDAgMSAwIDE0LjcgMy43IjsKICAgICAgICAgICAgICAgICAgICBzdHJva2U6IGNsb3NlLXRvdWNoLmhhcy1ob3ZlciA/ICNmZjVkNzggOiAjZmY5ZmJkOwogICAgICAgICAgICAgICAgICAgIHN0cm9rZS13aWR0aDogMnB4OyBzdHJva2UtbGluZS1jYXA6IHJvdW5kOwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgY2xvc2UtdG91Y2ggOj0gVG91Y2hBcmVhIHsKICAgICAgICAgICAgICAgICAgICBtb3VzZS1jdXJzb3I6IHBvaW50ZXI7CiAgICAgICAgICAgICAgICAgICAgY2xpY2tlZCA9PiB7IHJvb3QuY2xvc2Utd2luZG93KCk7IH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgICAgIH0KCidACiRhcHAgPSAkYXBwLlN1YnN0cmluZygwLCAkc3RhcnQpICsgJGlzbGFuZCArICRhcHAuU3Vic3RyaW5nKCRlbmQpCgokYXBwID0gJGFwcC5SZXBsYWNlKCIgICAgICAgICAgICB4OiBpc2xhbmQueCArIDM0NHB4O2BuICAgICAgICAgICAgeTogaXNsYW5kLnkgKyBpc2xhbmQuaGVpZ2h0ICsgNXB4OyIsICIgICAgICAgICAgICB4OiBpc2xhbmQueCArIGlzbGFuZC53aWR0aCAtIHNlbGYud2lkdGg7YG4gICAgICAgICAgICB5OiBpc2xhbmQueSAtIHNlbGYuaGVpZ2h0IC0gNXB4OyIpCgokb2xkR2VvbWV0cnkgPSBAJwogICAgICAgIGxldCB0b3BfcGFkID0gaWYgc2VsZi56ZW5fZW5nYWdlZCgpIHsKICAgICAgICAgICAgKFBBRF9ZICogc2NhbGUpLnJvdW5kKCkKICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAoKElTTEFORF9UT1AgKyBJU0xBTkRfSEVJR0hUICsgQ09OVEVOVF9UT1BfR0FQICsgUEFEX1kpICogc2NhbGUpLnJvdW5kKCkKICAgICAgICB9OwonQAokbmV3R2VvbWV0cnkgPSBAJwogICAgICAgIGxldCB0b3BfcGFkID0gKFBBRF9ZICogc2NhbGUpLnJvdW5kKCk7CidACiRhcHAgPSBSZXBsYWNlLU9uY2UgJGFwcCAkb2xkR2VvbWV0cnkgJG5ld0dlb21ldHJ5ICdnZW9tZXRyw61hIHN1cGVyaW9yJwoKJG9sZEJvdHRvbSA9ICcgICAgICAgIGxldCBib3R0b21fcGFkID0gKFBBRF9ZICogc2VsZi5zY2FsZS5tYXgoMC41KSkucm91bmQoKTsnCiRuZXdCb3R0b20gPSBAJwogICAgICAgIGxldCBzY2FsZSA9IHNlbGYuc2NhbGUubWF4KDAuNSk7CiAgICAgICAgbGV0IGJvdHRvbV9wYWQgPSBpZiBzZWxmLnplbl9lbmdhZ2VkKCkgJiYgIXNlbGYucG9tb2Rvcm9fYWN0aXZlIHsKICAgICAgICAgICAgKFBBRF9ZICogc2NhbGUpLnJvdW5kKCkKICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAoKFBBRF9ZICsgSVNMQU5EX0hFSUdIVCArIENPTlRFTlRfVE9QX0dBUCkgKiBzY2FsZSkucm91bmQoKQogICAgICAgIH07CidACiRhcHAgPSBSZXBsYWNlLU9uY2UgJGFwcCAkb2xkQm90dG9tICRuZXdCb3R0b20gJ3Jlc2VydmEgaW5mZXJpb3InCgokYW5jaG9yID0gQCcKICAgIHsKICAgICAgICBsZXQgbW9kZWwgPSBtb2RlbC5jbG9uZSgpOwogICAgICAgIHVpLm9uX2Zvcm1hdF9hY3Rpb24obW92ZSB8YWN0aW9uLCB2YWx1ZXwgewonQAppZiAoLW5vdCAkYXBwLkNvbnRhaW5zKCd1aS5vbl9zdGFydF9wb21vZG9ybycpKSB7CiAgICAkcG9tb2Rvcm9IYW5kbGVyID0gQCcKICAgIHsKICAgICAgICBsZXQgbW9kZWwgPSBtb2RlbC5jbG9uZSgpOwogICAgICAgIGxldCB3ZWFrID0gdWkuYXNfd2VhaygpOwogICAgICAgIHVpLm9uX3N0YXJ0X3BvbW9kb3JvKG1vdmUgfHwgewogICAgICAgICAgICB7CiAgICAgICAgICAgICAgICBtb2RlbC5ib3Jyb3dfbXV0KCkuc3RhcnRfcG9tb2Rvcm8oKTsKICAgICAgICAgICAgfQogICAgICAgICAgICBpZiBsZXQgU29tZSh1aSkgPSB3ZWFrLnVwZ3JhZGUoKSB7CiAgICAgICAgICAgICAgICBsZXQgbW9kZWwgPSBtb2RlbC5ib3Jyb3coKTsKICAgICAgICAgICAgICAgIHVpLnNldF9wb21vZG9yb19icmVhayhtb2RlbC5wb21vZG9yb19icmVhayk7CiAgICAgICAgICAgICAgICB1aS5zZXRfcG9tb2Rvcm9fdGV4dChtb2RlbC5wb21vZG9yb19sYWJlbCgpLmludG8oKSk7CiAgICAgICAgICAgIH0KICAgICAgICB9KTsKICAgIH0KJ0AKICAgICRhcHAgPSBSZXBsYWNlLU9uY2UgJGFwcCAkYW5jaG9yICgkcG9tb2Rvcm9IYW5kbGVyICsgJGFuY2hvcikgJ2hhbmRsZXIgUG9tb2Rvcm8nCn0KCiRvbGRDbG9zZSA9IEAnCiAgICAgICAgdWkub25fY2xvc2Vfd2luZG93KG1vdmUgfHwgewogICAgICAgICAgICBpZiBtb2RlbC5ib3Jyb3coKS56ZW5fZW5nYWdlZCgpIHsKICAgICAgICAgICAgICAgIHJldHVybjsKICAgICAgICAgICAgfQogICAgICAgICAgICBpZiBsZXQgU29tZSh1aSkgPSB3ZWFrLnVwZ3JhZGUoKSB7CidACiRuZXdDbG9zZSA9IEAnCiAgICAgICAgdWkub25fY2xvc2Vfd2luZG93KG1vdmUgfHwgewogICAgICAgICAgICBpZiBsZXQgU29tZSh1aSkgPSB3ZWFrLnVwZ3JhZGUoKSB7CidACiRhcHAgPSBSZXBsYWNlLU9uY2UgJGFwcCAkb2xkQ2xvc2UgJG5ld0Nsb3NlICdib3TDs24gYXBhZ2FyJwoKV3JpdGUtVXRmOCAnc3JjL2FwcC5ycycgJGFwcAoKJGNhcmdvID0gUmVhZC1MZiAnQ2FyZ28udG9tbCcKJGNhcmdvID0gJGNhcmdvLlJlcGxhY2UoJ3ZlcnNpb24gPSAiMC4yLjEyIicsICd2ZXJzaW9uID0gIjAuMi4xMyInKQpXcml0ZS1VdGY4ICdDYXJnby50b21sJyAkY2FyZ28K'))
+          Invoke-Expression $script
 
       - name: Format
         shell: pwsh
@@ -230,13 +42,12 @@ jobs:
         shell: pwsh
         run: cargo build --release
 
-      - name: Commit and remove workflow
+      - name: Commit and cleanup
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          Remove-Item '.github/workflows/bottom-island-once.yml' -Force
+          Remove-Item ".github/workflows/bottom-island-once.yml" -Force
           git add Cargo.toml src/app.rs .github/workflows/bottom-island-once.yml
           git commit -m "Mover isla al pie y reducir controles [skip ci]"
           git push origin HEAD:main
