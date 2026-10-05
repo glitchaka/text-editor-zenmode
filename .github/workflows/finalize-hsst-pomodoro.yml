@@ -52,6 +52,12 @@ jobs:
             )
           }
           [System.IO.File]::WriteAllText('src/document.rs', $doc, [System.Text.UTF8Encoding]::new($false))
+          $editor = Get-Content -Raw 'src/editor.rs'
+          $editor = $editor.Replace(
+            'formatting: Vec::new(),',
+            'formatting: serde_json::Value::Array(Vec::new()),'
+          )
+          [System.IO.File]::WriteAllText('src/editor.rs', $editor, [System.Text.UTF8Encoding]::new($false))
       - name: Format
         shell: pwsh
         run: cargo fmt --all
