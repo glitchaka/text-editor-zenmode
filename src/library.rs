@@ -11,7 +11,7 @@ pub struct LibraryPaths {
 impl LibraryPaths {
     pub fn ensure() -> Result<Self> {
         let root = default_root();
-        let documents = root.join("documents");
+        let documents = root.join("Documentos");
         let exports = root.join("exports");
 
         fs::create_dir_all(&documents)
@@ -31,13 +31,13 @@ pub fn default_root() -> PathBuf {
         return path;
     }
 
-    if let Some(profile) = std::env::var_os("USERPROFILE").map(PathBuf::from) {
-        return profile.join("Documents").join("Helix SST");
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(parent) = executable.parent()
+    {
+        return parent.to_path_buf();
     }
 
-    std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("Helix SST")
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 #[cfg(test)]
@@ -48,10 +48,10 @@ mod tests {
     fn library_has_stable_subdirectories() {
         let root = PathBuf::from("X:/example/Helix SST");
         let paths = LibraryPaths {
-            documents: root.join("documents"),
+            documents: root.join("Documentos"),
             exports: root.join("exports"),
         };
-        assert!(paths.documents.ends_with("documents"));
+        assert!(paths.documents.ends_with("Documentos"));
         assert!(paths.exports.ends_with("exports"));
     }
 }
