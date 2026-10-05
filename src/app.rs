@@ -233,7 +233,7 @@ slint::slint! {
   }
 
             Rectangle {
-                visible: root.editor-active && island.width >= 840px;
+                visible: false;
                 x: 178px;
                 y: 3px;
                 width: 28px;
@@ -252,7 +252,7 @@ slint::slint! {
             }
 
             Rectangle {
-                visible: root.editor-active && island.width >= 840px;
+                visible: false;
                 x: 210px; y: 3px; width: 28px; height: 28px; border-radius: 7px;
                 background: fmt-italic.pressed ? #29384b : fmt-italic.has-hover ? #172334 : transparent;
                 Text {
@@ -267,7 +267,7 @@ slint::slint! {
             }
 
             Rectangle {
-                visible: root.editor-active && island.width >= 840px;
+                visible: false;
                 x: 242px; y: 3px; width: 28px; height: 28px; border-radius: 7px;
                 background: fmt-underline.pressed ? #29384b : fmt-underline.has-hover ? #172334 : transparent;
                 Text {
@@ -283,7 +283,7 @@ slint::slint! {
             }
 
             Rectangle {
-                visible: root.editor-active && island.width >= 840px;
+                visible: false;
                 x: 276px; y: 3px; width: 34px; height: 28px; border-radius: 7px;
                 background: font-menu.pressed ? #29384b : font-menu.has-hover ? #172334 : transparent;
                 Text {
@@ -305,7 +305,7 @@ slint::slint! {
             }
 
             Rectangle {
-                visible: root.editor-active && island.width >= 840px;
+                visible: false;
                 x: 314px; y: 3px; width: 34px; height: 28px; border-radius: 7px;
                 background: highlight-menu.pressed ? #29384b : highlight-menu.has-hover ? #172334 : transparent;
                 Text {
@@ -326,7 +326,7 @@ slint::slint! {
             }
 
             Rectangle {
-                visible: root.editor-active && island.width >= 840px;
+                visible: false;
                 x: 352px; y: 3px; width: 34px; height: 28px; border-radius: 7px;
                 background: symbol-menu.pressed ? #29384b : symbol-menu.has-hover ? #172334 : transparent;
                 Text {
@@ -802,12 +802,12 @@ impl Launcher {
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
         self.entries = entries;
-        self.selected = self.selected.min(self.entries.len() + 2);
+        self.selected = self.selected.min(self.entries.len() + 3);
     }
 
     fn selected_entry(&self) -> Option<&Entry> {
         self.selected
-            .checked_sub(3)
+            .checked_sub(4)
             .and_then(|index| self.entries.get(index))
     }
 }
@@ -827,6 +827,7 @@ struct TerminalModel {
     dirty: bool,
     splash_active: bool,
     zen_requested: bool,
+    pomodoro_requested: bool,
     pomodoro_offer: bool,
     pomodoro_active: bool,
     pomodoro_break: bool,
@@ -878,6 +879,7 @@ impl TerminalModel {
             dirty: true,
             splash_active: file_to_open.is_none(),
             zen_requested,
+            pomodoro_requested: false,
             pomodoro_offer: false,
             pomodoro_active: false,
             pomodoro_break: false,
@@ -1229,11 +1231,14 @@ impl TerminalModel {
         self.reset_parser();
         self.chapter_switch_until = None;
         self.editor = Some(session);
-        self.pomodoro_offer = true;
+        self.pomodoro_offer = false;
         self.pomodoro_active = false;
         self.pomodoro_break = false;
         self.pomodoro_deadline = None;
         self.command_capture = None;
+        if self.pomodoro_requested {
+            self.start_pomodoro();
+        }
         self.glyphs.clear();
         self.dirty = true;
         Ok(())
@@ -1886,15 +1891,23 @@ impl TerminalModel {
             KeyCode::Up => self.launcher.selected = self.launcher.selected.saturating_sub(1),
             KeyCode::Down => {
                 self.launcher.selected =
-                    (self.launcher.selected + 1).min(self.launcher.entries.len() + 2)
+                    (self.launcher.selected + 1).min(self.launcher.entries.len() + 3)
             }
             KeyCode::Char('n') | KeyCode::Char('N') => {
-                self.launcher.selected = 2;
+                self.launcher.selected = 3;
                 self.launcher.creating = true;
                 self.launcher.new_name.clear();
                 self.launcher.message = None;
             }
             KeyCode::Char('r') | KeyCode::Char('R') => self.launcher.refresh(),
+            KeyCode::Char('p') | KeyCode::Char('P') | KeyCode::F(4) => {
+                self.pomodoro_requested = !self.pomodoro_requested;
+                self.launcher.message = Some(if self.pomodoro_requested {
+                    "Pomodoro 25/5 activado para el próximo archivo.".into()
+                } else {
+                    "Pomodoro desactivado.".into()
+                });
+            }
             KeyCode::Char('e') | KeyCode::Char('E') => {
                 if let Some(entry) = self.launcher.selected_entry().cloned()
                     && !entry.directory
@@ -1933,6 +1946,14 @@ impl TerminalModel {
                     self.launcher.message = Some("Zenmode real seleccionado.".into());
                 }
                 2 => {
+                    self.pomodoro_requested = !self.pomodoro_requested;
+                    self.launcher.message = Some(if self.pomodoro_requested {
+                        "Pomodoro 25/5 activado para el próximo archivo.".into()
+                    } else {
+                        "Pomodoro desactivado.".into()
+                    });
+                }
+                3 => {
                     self.launcher.creating = true;
                     self.launcher.new_name.clear();
                     self.launcher.message = None;
@@ -2042,6 +2063,7 @@ impl TerminalModel {
         for (index, (label, active)) in [
             ("Normal", !self.zen_requested),
             ("Zenmode real", self.zen_requested),
+            ("Pomodoro 25/5", self.pomodoro_requested),
         ]
         .into_iter()
         .enumerate()
@@ -2143,17 +2165,17 @@ impl TerminalModel {
                 ),
             );
         } else {
-            let chrome_rows = 16usize;
+            let chrome_rows = 17usize;
             let available = (rows as usize).saturating_sub(chrome_rows).max(3);
             let selected = self.launcher.selected;
             let total = self.launcher.entries.len() + 1;
-            let file_selected = selected.saturating_sub(2);
+            let file_selected = selected.saturating_sub(3);
             let start = file_selected.saturating_sub(available.saturating_sub(1) / 2);
             let end = (start + available).min(total);
 
             for index in start..end {
                 if index == 0 {
-                    let selected_now = selected == 2;
+                    let selected_now = selected == 3;
                     let marker = if selected_now { "▶" } else { " " };
                     let line = format!(
                         "{}{} \x1b[38;5;222m{ICON_DOCUMENT}\x1b[0m   Nuevo archivo",
@@ -2170,7 +2192,7 @@ impl TerminalModel {
                 }
 
                 if let Some(entry) = self.launcher.entries.get(index - 1) {
-                    let selected_now = selected == index + 2;
+                    let selected_now = selected == index + 3;
                     let marker = if selected_now { "▶" } else { " " };
                     let suffix = if entry.directory { "/" } else { "" };
                     let (icon, icon_color) = file_icon(entry);
@@ -2229,7 +2251,7 @@ impl TerminalModel {
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  Backspace subir  R refrescar\x1b[0m",
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  P/F4 Pomodoro  Backspace subir  R refrescar\x1b[0m",
                     inner_width,
                     "38;5;244",
                 ),
