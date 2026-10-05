@@ -1,0 +1,43 @@
+name: Implement Pomodoro and HSST actions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/implement-pomodoro.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Apply implementation
+        shell: pwsh
+        run: python .github/scripts/implement_pomodoro.py
+      - name: Format
+        shell: pwsh
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        shell: pwsh
+        run: cargo clippy --release -- -D warnings
+      - name: Build
+        shell: pwsh
+        run: cargo build --release
+      - name: Commit final implementation
+        shell: bash
+        run: |
+          rm .github/workflows/implement-pomodoro.yml
+          rm .github/scripts/implement_pomodoro.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Añadir Pomodoro y acciones de formato HSST [skip ci]"
+          git push origin HEAD:main
