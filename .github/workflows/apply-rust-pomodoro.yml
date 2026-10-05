@@ -37,125 +37,110 @@ jobs:
             $Text.Substring(0, $index) + $New + $Text.Substring($index + $Old.Length)
           }
 
-          # ---- src/editor.rs: el tema que Helix carga al arrancar debe contener
-          # TODA la paleta semántica, no la versión mínima que dejaba invisibles
-          # colores, subrayado y resaltados.
           $editor = Read-Lf 'src/editor.rs'
           $themeStart = $editor.IndexOf("fn write_zen_theme(path: &Path) -> Result<()> {")
           $themeEnd = $editor.IndexOf("fn write_break_theme(path: &Path) -> Result<()> {", $themeStart)
           if ($themeStart -lt 0 -or $themeEnd -lt 0) { throw 'No se encontró write_zen_theme' }
-          $theme = @'
-fn write_zen_theme(path: &Path) -> Result<()> {
-    fs::write(path, crate::format::ENHANCED_THEME)?;
-    Ok(())
-}
-
-'@
+          $theme = @(
+            'fn write_zen_theme(path: &Path) -> Result<()> {',
+            '    fs::write(path, crate::format::ENHANCED_THEME)?;',
+            '    Ok(())',
+            '}',
+            '',
+            ''
+          ) -join "`n"
           $editor = $editor.Substring(0, $themeStart) + $theme + $editor.Substring($themeEnd)
           Write-Utf8 'src/editor.rs' $editor
 
-          # ---- src/app.rs: Pomodoro seleccionable desde el launcher y barra
-          # superior sin controles de formato duplicados.
           $app = Read-Lf 'src/app.rs'
-
-          $app = Replace-Once $app `
-"    zen_requested: bool,`n    pomodoro_offer: bool," `
-"    zen_requested: bool,`n    pomodoro_requested: bool,`n    pomodoro_offer: bool," `
-'campo pomodoro_requested'
-
-          $app = Replace-Once $app `
-"            zen_requested,`n            pomodoro_offer: false," `
-"            zen_requested,`n            pomodoro_requested: false,`n            pomodoro_offer: false," `
-'inicialización pomodoro_requested'
-
+          $app = Replace-Once $app "    zen_requested: bool,`n    pomodoro_offer: bool," "    zen_requested: bool,`n    pomodoro_requested: bool,`n    pomodoro_offer: bool," 'campo pomodoro_requested'
+          $app = Replace-Once $app "            zen_requested,`n            pomodoro_offer: false," "            zen_requested,`n            pomodoro_requested: false,`n            pomodoro_offer: false," 'inicialización pomodoro_requested'
           $app = $app.Replace('self.selected = self.selected.min(self.entries.len() + 2);', 'self.selected = self.selected.min(self.entries.len() + 3);')
           $app = $app.Replace('.checked_sub(3)', '.checked_sub(4)')
 
-          $oldOpen = @'
-        self.editor = Some(session);
-        self.pomodoro_offer = true;
-        self.pomodoro_active = false;
-        self.pomodoro_break = false;
-        self.pomodoro_deadline = None;
-        self.command_capture = None;
-        self.glyphs.clear();
-        self.dirty = true;
-        Ok(())
-'@
-          $newOpen = @'
-        self.editor = Some(session);
-        self.pomodoro_offer = false;
-        self.pomodoro_active = false;
-        self.pomodoro_break = false;
-        self.pomodoro_deadline = None;
-        self.command_capture = None;
-        if self.pomodoro_requested {
-            self.start_pomodoro();
-        }
-        self.glyphs.clear();
-        self.dirty = true;
-        Ok(())
-'@
+          $oldOpen = @(
+            '        self.editor = Some(session);',
+            '        self.pomodoro_offer = true;',
+            '        self.pomodoro_active = false;',
+            '        self.pomodoro_break = false;',
+            '        self.pomodoro_deadline = None;',
+            '        self.command_capture = None;',
+            '        self.glyphs.clear();',
+            '        self.dirty = true;',
+            '        Ok(())'
+          ) -join "`n"
+          $newOpen = @(
+            '        self.editor = Some(session);',
+            '        self.pomodoro_offer = false;',
+            '        self.pomodoro_active = false;',
+            '        self.pomodoro_break = false;',
+            '        self.pomodoro_deadline = None;',
+            '        self.command_capture = None;',
+            '        if self.pomodoro_requested {',
+            '            self.start_pomodoro();',
+            '        }',
+            '        self.glyphs.clear();',
+            '        self.dirty = true;',
+            '        Ok(())'
+          ) -join "`n"
           $app = Replace-Once $app $oldOpen $newOpen 'inicio de Pomodoro al abrir'
 
-          $oldModes = @'
-        for (index, (label, active)) in [
-            ("Normal", !self.zen_requested),
-            ("Zenmode real", self.zen_requested),
-        ]
-'@
-          $newModes = @'
-        for (index, (label, active)) in [
-            ("Normal", !self.zen_requested),
-            ("Zenmode real", self.zen_requested),
-            ("Pomodoro 25/5", self.pomodoro_requested),
-        ]
-'@
+          $oldModes = @(
+            '        for (index, (label, active)) in [',
+            '            ("Normal", !self.zen_requested),',
+            '            ("Zenmode real", self.zen_requested),',
+            '        ]'
+          ) -join "`n"
+          $newModes = @(
+            '        for (index, (label, active)) in [',
+            '            ("Normal", !self.zen_requested),',
+            '            ("Zenmode real", self.zen_requested),',
+            '            ("Pomodoro 25/5", self.pomodoro_requested),',
+            '        ]'
+          ) -join "`n"
           $app = Replace-Once $app $oldModes $newModes 'fila Pomodoro del launcher'
 
           $app = $app.Replace('(self.launcher.selected + 1).min(self.launcher.entries.len() + 2)', '(self.launcher.selected + 1).min(self.launcher.entries.len() + 3)')
-          $app = $app.Replace('self.launcher.selected = 2;`n                self.launcher.creating = true;', 'self.launcher.selected = 3;`n                self.launcher.creating = true;')
+          $app = $app.Replace("self.launcher.selected = 2;`n                self.launcher.creating = true;", "self.launcher.selected = 3;`n                self.launcher.creating = true;")
 
-          $oldR = @'
-            KeyCode::Char('r') | KeyCode::Char('R') => self.launcher.refresh(),
-'@
-          $newR = @'
-            KeyCode::Char('r') | KeyCode::Char('R') => self.launcher.refresh(),
-            KeyCode::Char('p') | KeyCode::Char('P') | KeyCode::F(4) => {
-                self.pomodoro_requested = !self.pomodoro_requested;
-                self.launcher.message = Some(if self.pomodoro_requested {
-                    "Pomodoro 25/5 activado para el próximo archivo.".into()
-                } else {
-                    "Pomodoro desactivado.".into()
-                });
-            }
-'@
+          $oldR = "            KeyCode::Char('r') | KeyCode::Char('R') => self.launcher.refresh(),"
+          $newR = @(
+            "            KeyCode::Char('r') | KeyCode::Char('R') => self.launcher.refresh(),",
+            "            KeyCode::Char('p') | KeyCode::Char('P') | KeyCode::F(4) => {",
+            '                self.pomodoro_requested = !self.pomodoro_requested;',
+            '                self.launcher.message = Some(if self.pomodoro_requested {',
+            '                    "Pomodoro 25/5 activado para el próximo archivo.".into()',
+            '                } else {',
+            '                    "Pomodoro desactivado.".into()',
+            '                });',
+            '            }'
+          ) -join "`n"
           $app = Replace-Once $app $oldR $newR 'atajo Pomodoro launcher'
 
-          $oldEnter = @'
-                2 => {
-                    self.launcher.creating = true;
-                    self.launcher.new_name.clear();
-                    self.launcher.message = None;
-                }
-                _ => {
-'@
-          $newEnter = @'
-                2 => {
-                    self.pomodoro_requested = !self.pomodoro_requested;
-                    self.launcher.message = Some(if self.pomodoro_requested {
-                        "Pomodoro 25/5 activado para el próximo archivo.".into()
-                    } else {
-                        "Pomodoro desactivado.".into()
-                    });
-                }
-                3 => {
-                    self.launcher.creating = true;
-                    self.launcher.new_name.clear();
-                    self.launcher.message = None;
-                }
-                _ => {
-'@
+          $oldEnter = @(
+            '                2 => {',
+            '                    self.launcher.creating = true;',
+            '                    self.launcher.new_name.clear();',
+            '                    self.launcher.message = None;',
+            '                }',
+            '                _ => {'
+          ) -join "`n"
+          $newEnter = @(
+            '                2 => {',
+            '                    self.pomodoro_requested = !self.pomodoro_requested;',
+            '                    self.launcher.message = Some(if self.pomodoro_requested {',
+            '                        "Pomodoro 25/5 activado para el próximo archivo.".into()',
+            '                    } else {',
+            '                        "Pomodoro desactivado.".into()',
+            '                    });',
+            '                }',
+            '                3 => {',
+            '                    self.launcher.creating = true;',
+            '                    self.launcher.new_name.clear();',
+            '                    self.launcher.message = None;',
+            '                }',
+            '                _ => {'
+          ) -join "`n"
           $app = Replace-Once $app $oldEnter $newEnter 'Enter Pomodoro launcher'
 
           $app = $app.Replace('let chrome_rows = 16usize;', 'let chrome_rows = 17usize;')
@@ -164,15 +149,10 @@ fn write_zen_theme(path: &Path) -> Result<()> {
           $app = $app.Replace('let selected_now = selected == index + 2;', 'let selected_now = selected == index + 3;')
           $app = $app.Replace('↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  Backspace subir  R refrescar', '↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  P/F4 Pomodoro  Backspace subir  R refrescar')
 
-          # Ocultar B/I/U/color/resaltado/símbolos de la isla. El formato queda
-          # únicamente en F2 / Space+a; la barra superior conserva ventana,
-          # Zen, página y temporizador.
           $rx = [regex]::new('visible: root\.editor-active && island\.width >= 840px;')
           $app = $rx.Replace($app, 'visible: false;', 6)
-
           Write-Utf8 'src/app.rs' $app
 
-          # ---- versión
           $cargo = Read-Lf 'Cargo.toml'
           $cargo = $cargo.Replace('version = "0.2.11"', 'version = "0.2.12"')
           Write-Utf8 'Cargo.toml' $cargo
