@@ -796,7 +796,7 @@ impl TerminalModel {
                 };
                 (library.documents.clone(), Some(absolute))
             }
-            None => (current.clone(), None),
+            None => (library.documents.clone(), None),
         };
 
         let font = Font::from_bytes(FONT_BYTES, FontSettings::default())
@@ -2323,6 +2323,14 @@ fn control_pressed(reported: bool) -> bool {
 
 fn bridged_editor_shortcut(key: KeyEvent) -> Option<KeyCode> {
     if !key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
+        return None;
+    }
+    if key.modifiers.contains(KeyModifiers::SHIFT)
+        && matches!(
+            key.code,
+            KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down
+        )
+    {
         return None;
     }
     match key.code {

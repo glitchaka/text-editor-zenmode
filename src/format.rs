@@ -171,17 +171,21 @@ pub fn run_filter(
 ) -> Result<()> {
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input)?;
-    if let Some(source) = source {
-        let _ = crate::document::apply_format_selection(
+    if let Some(source) = source
+        && let Err(error) = crate::document::apply_format_selection(
             source,
             &input,
             cursor_line,
             cursor_column,
             action,
             value.unwrap_or(""),
-        )?;
+        )
+    {
+        let log = std::env::temp_dir().join("helix-sst-format-error.log");
+        let _ = fs::write(log, format!("{error:#}\n"));
     }
     // Helix recibe exactamente el mismo texto: el formato vive fuera de content.txt.
+    // El helper siempre devuelve éxito para evitar popups transitorios de Helix.
     std::io::stdout().write_all(input.as_bytes())?;
     Ok(())
 }

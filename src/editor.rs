@@ -607,6 +607,12 @@ paste = {{ command = "{exe}", args = ["--clipboard-set"] }}
 F2 = "code_action"
 C-left = "move_prev_word_start"
 C-right = "move_next_word_start"
+S-left = ["select_mode", "extend_char_left"]
+S-right = ["select_mode", "extend_char_right"]
+S-up = ["select_mode", "extend_line_up"]
+S-down = ["select_mode", "extend_line_down"]
+C-S-left = ["select_mode", "extend_prev_word_start"]
+C-S-right = ["select_mode", "extend_next_word_start"]
 C-z = "undo"
 C-y = "redo"
 C-S-z = "redo"
@@ -623,6 +629,12 @@ A-d = "@—"
 C-g = "@—"
 C-left = "move_prev_word_start"
 C-right = "move_next_word_start"
+S-left = ["normal_mode", "select_mode", "extend_char_left"]
+S-right = ["normal_mode", "select_mode", "extend_char_right"]
+S-up = ["normal_mode", "select_mode", "extend_line_up"]
+S-down = ["normal_mode", "select_mode", "extend_line_down"]
+C-S-left = ["normal_mode", "select_mode", "extend_prev_word_start"]
+C-S-right = ["normal_mode", "select_mode", "extend_next_word_start"]
 C-backspace = "delete_word_backward"
 C-del = "delete_word_forward"
 C-z = ["normal_mode", "undo", "insert_mode"]
@@ -639,14 +651,20 @@ F19 = ["normal_mode", "select_all", "select_mode"]
 
 [keys.select]
 F2 = "code_action"
-C-left = "extend_prev_word_start"
-C-right = "extend_next_word_start"
+C-left = ["normal_mode", "move_prev_word_start"]
+C-right = ["normal_mode", "move_next_word_start"]
+S-left = "extend_char_left"
+S-right = "extend_char_right"
+S-up = "extend_line_up"
+S-down = "extend_line_down"
+C-S-left = "extend_prev_word_start"
+C-S-right = "extend_next_word_start"
 C-z = "undo"
 C-y = "redo"
 C-S-z = "redo"
 C-a = "select_all"
-F13 = "extend_prev_word_start"
-F14 = "extend_next_word_start"
+F13 = ["normal_mode", "move_prev_word_start"]
+F14 = ["normal_mode", "move_next_word_start"]
 F17 = "undo"
 F18 = "redo"
 F19 = "select_all"
@@ -838,22 +856,35 @@ fn encode_command_colon(win32: bool) -> Vec<u8> {
 
     #[cfg(windows)]
     {
-        const VK_OEM_1: u16 = 0xBA;
-        const SHIFT_PRESSED: u32 = 0x10;
-        let scan = unsafe {
-            windows_sys::Win32::UI::Input::KeyboardAndMouse::MapVirtualKeyW(VK_OEM_1.into(), 0)
-        };
-        let mut bytes = Vec::new();
-        for down in [1, 0] {
-            bytes.extend_from_slice(
-                format!("\x1b[{VK_OEM_1};{scan};58;{down};{SHIFT_PRESSED};1_").as_bytes(),
-            );
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, VkKeyScanW};
+
+        let mapped = unsafe { VkKeyScanW(':' as u16) };
+        if mapped != -1 {
+            let mapped = mapped as u16;
+            let vk = mapped & 0x00ff;
+            let modifiers = (mapped >> 8) & 0x00ff;
+            let mut state = 0u32;
+            if modifiers & 0x01 != 0 {
+                state |= 0x10;
+            }
+            if modifiers & 0x02 != 0 {
+                state |= 0x08;
+            }
+            if modifiers & 0x04 != 0 {
+                state |= 0x02;
+            }
+            let scan = unsafe { MapVirtualKeyW(vk.into(), 0) };
+            let mut bytes = Vec::new();
+            for down in [1, 0] {
+                bytes
+                    .extend_from_slice(format!("\x1b[{vk};{scan};58;{down};{state};1_").as_bytes());
+            }
+            return bytes;
         }
-        bytes
     }
 
-    #[cfg(not(windows))]
-    b":".to_vec()
+    encode_input(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE), win32)
+        .unwrap_or_else(|| b":".to_vec())
 }
 
 fn encode_paste(text: &str, win32: bool) -> Vec<u8> {
