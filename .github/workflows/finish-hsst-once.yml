@@ -46,7 +46,13 @@ jobs:
           new = '        bytes\n    }\n\n    #[cfg(not(windows))]'
           if old not in s:
               raise SystemExit('missing editor target')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          s = s.replace(old, new, 1)
+          old = '            body: "Primera línea.\\nSegunda línea.\\n".into(),\n        };'
+          new = '            body: "Primera línea.\\nSegunda línea.\\n".into(),\n            formatting: Vec::new(),\n        };'
+          if old not in s:
+              raise SystemExit('missing HSST test initializer target')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
 
           p = Path('src/spell.rs')
           s = p.read_text(encoding='utf-8')
