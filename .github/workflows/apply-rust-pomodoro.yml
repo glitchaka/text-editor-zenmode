@@ -25,12 +25,16 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
+          function Write-Utf8([string]$Path, [string]$Text) {
+            [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
+          }
+
           function Replace-Once([string]$Path, [string]$Old, [string]$New, [string]$Label) {
-            $s = Get-Content -Raw -Encoding UTF8 $Path
+            $s = Get-Content -Raw $Path
             $i = $s.IndexOf($Old)
             if ($i -lt 0) { throw "No se encontró bloque: $Label" }
             $s = $s.Substring(0, $i) + $New + $s.Substring($i + $Old.Length)
-            Set-Content -Encoding UTF8 -NoNewline $Path $s
+            Write-Utf8 $Path $s
           }
 
           # document.rs: aplicar formato directamente por rango LSP sobre formatting.json
@@ -264,10 +268,10 @@ jobs:
 
           # editor.rs: tema de descanso y etiquetas F2/F4
           Replace-Once 'src/editor.rs' '    write_zen_theme(&themes_dir.join("helix-sst-zen.toml"))?;' "    write_zen_theme(&themes_dir.join(`"helix-sst-zen.toml`"))?;`n    write_break_theme(&themes_dir.join(`"helix-sst-break.toml`"))?;" 'install break theme'
-          $e = Get-Content -Raw -Encoding UTF8 'src/editor.rs'
+          $e = Get-Content -Raw 'src/editor.rs'
           $e = $e.Replace('normal = "NORMAL · i: escribir · F2: ortografía"', 'normal = "NORMAL · i: escribir · F2: acciones · F4: Pomodoro"')
           $e = $e.Replace('insert = "INSERTAR · Alt+d: — · F2: ortografía · Esc: comandos"', 'insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · Esc: comandos"')
-          Set-Content -Encoding UTF8 -NoNewline 'src/editor.rs' $e
+          Write-Utf8 'src/editor.rs' $e
 
           $breakTheme = @'
           fn write_break_theme(path: &Path) -> Result<()> {
@@ -550,19 +554,19 @@ jobs:
 
           $uiSet = "        ui.set_editor_active(model.editor.is_some());`n        ui.set_page_label(model.page_profile.paper.label().into());"
           $uiSetNew = "        ui.set_editor_active(model.editor.is_some());`n        ui.set_pomodoro_prompt(model.pomodoro_offer);`n        ui.set_pomodoro_break(model.pomodoro_break);`n        ui.set_pomodoro_text(model.pomodoro_label().into());`n        ui.set_page_label(model.page_profile.paper.label().into());"
-          $app = Get-Content -Raw -Encoding UTF8 'src/app.rs'
+          $app = Get-Content -Raw 'src/app.rs'
           if (-not $app.Contains($uiSet)) { throw 'No se encontró UI state' }
           $app = $app.Replace($uiSet, $uiSetNew)
           $keySet = "                ui.set_zen_active(model.zen_engaged());`n                ui.set_editor_active(model.editor.is_some());"
           $keySetNew = "                ui.set_zen_active(model.zen_engaged());`n                ui.set_editor_active(model.editor.is_some());`n                ui.set_pomodoro_prompt(model.pomodoro_offer);`n                ui.set_pomodoro_break(model.pomodoro_break);`n                ui.set_pomodoro_text(model.pomodoro_label().into());"
           if (-not $app.Contains($keySet)) { throw 'No se encontró key callback state' }
           $app = $app.Replace($keySet, $keySetNew)
-          Set-Content -Encoding UTF8 -NoNewline 'src/app.rs' $app
+          Write-Utf8 'src/app.rs' $app
 
           # version
-          $cargo = Get-Content -Raw -Encoding UTF8 'Cargo.toml'
+          $cargo = Get-Content -Raw 'Cargo.toml'
           $cargo = $cargo.Replace('version = "0.2.10"', 'version = "0.2.11"')
-          Set-Content -Encoding UTF8 -NoNewline 'Cargo.toml' $cargo
+          Write-Utf8 'Cargo.toml' $cargo
 
       - name: Format
         shell: pwsh
