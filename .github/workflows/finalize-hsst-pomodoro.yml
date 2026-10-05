@@ -23,7 +23,12 @@ jobs:
           components: rustfmt, clippy
       - name: Apply runtime fixes
         shell: pwsh
-        run: ./.github/scripts/finalize_runtime.ps1
+        run: |
+          $path = '.github/scripts/finalize_runtime.ps1'
+          $script = Get-Content -Raw $path
+          $script = $script.Replace('[System.IO.File]::ReadAllText($Path).Replace("`r`n", "`n")', '[System.IO.File]::ReadAllText($Path)')
+          [System.IO.File]::WriteAllText($path, $script, [System.Text.UTF8Encoding]::new($false))
+          & $path
       - name: Format
         shell: pwsh
         run: cargo fmt --all
