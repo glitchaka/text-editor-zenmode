@@ -1,0 +1,242 @@
+name: Bottom island once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/bottom-island-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Apply bottom compact island
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Read-Lf([string]$Path) {
+            (Get-Content -Raw $Path).Replace("`r`n", "`n")
+          }
+          function Write-Utf8([string]$Path, [string]$Text) {
+            [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
+          }
+          function Replace-Once([string]$Text, [string]$Old, [string]$New, [string]$Label) {
+            $index = $Text.IndexOf($Old)
+            if ($index -lt 0) { throw "No se encontró bloque: $Label" }
+            $Text.Substring(0, $index) + $New + $Text.Substring($index + $Old.Length)
+          }
+
+          $app = Read-Lf 'src/app.rs'
+
+          $app = $app.Replace('const ISLAND_TOP: f32 = 6.0;`n', '')
+
+          if (-not $app.Contains('callback start-pomodoro();')) {
+            $app = Replace-Once $app "        callback close-window();`n" "        callback close-window();`n        callback start-pomodoro();`n" 'callback Pomodoro'
+          }
+
+          $start = $app.IndexOf('        zen-reveal := TouchArea {')
+          $end = $app.IndexOf('        font-palette := Rectangle {', $start)
+          if ($start -lt 0 -or $end -lt 0) { throw 'No se encontró bloque de isla' }
+
+          $island = @'
+        bottom-reveal := TouchArea {
+            x: root.width - 224px;
+            y: root.height - 10px;
+            width: 224px;
+            height: 10px;
+            enabled: root.zen-active;
+        }
+
+        island := Rectangle {
+            visible: root.editor-active
+                && (!root.zen-active
+                    || bottom-reveal.has-hover
+                    || island-hover.has-hover
+                    || root.symbols-open
+                    || root.pomodoro-text != "");
+            width: 196px;
+            height: 34px;
+            x: root.width - self.width - 14px;
+            y: root.height - self.height - 7px;
+            border-radius: 13px;
+            background: rgba(10, 13, 20, 0.96);
+            border-width: 1px;
+            border-color: #2b3547;
+
+            island-hover := TouchArea {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+            }
+
+            island-move := WindowMoveArea {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                enabled: !root.zen-active;
+            }
+
+            Rectangle {
+                x: 5px; y: 3px; width: 112px; height: 28px;
+                border-radius: 9px;
+                background: pomodoro-touch.pressed
+                    ? #29384b
+                    : pomodoro-touch.has-hover ? #172334 : transparent;
+                Text {
+                    width: 100%; height: 100%;
+                    text: root.pomodoro-text != "" ? root.pomodoro-text : "POMODORO";
+                    color: root.pomodoro-break ? #ffb4a2 : #e8cc83;
+                    font-family: "Segoe UI Variable";
+                    font-size: root.pomodoro-text != "" ? 10px : 11px;
+                    font-weight: 650;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                pomodoro-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.start-pomodoro(); terminal-focus.focus(); }
+                }
+            }
+
+            Rectangle {
+                x: 121px; y: 3px; width: 32px; height: 28px;
+                border-radius: 9px;
+                background: symbol-menu.pressed
+                    ? #29384b
+                    : symbol-menu.has-hover ? #172334 : transparent;
+                Text {
+                    width: 100%; height: 100%; text: "Ω"; color: #8db9bb;
+                    font-family: "Segoe UI Variable"; font-size: 15px;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                symbol-menu := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.symbols-open = !root.symbols-open;
+                        root.font-palette-open = false;
+                        root.highlight-palette-open = false;
+                        root.page-menu-open = false;
+                    }
+                }
+            }
+
+            Rectangle {
+                x: 157px; y: 1px; width: 38px; height: 32px;
+                border-radius: 10px;
+                background: close-touch.pressed
+                    ? rgb(62, 23, 36)
+                    : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
+                Path {
+                    x: 10px; y: 8px; width: 18px; height: 18px;
+                    commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
+                    stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
+                    stroke-width: 2px; stroke-line-cap: round;
+                }
+                close-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.close-window(); }
+                }
+            }
+        }
+
+'@
+          $app = $app.Substring(0, $start) + $island + $app.Substring($end)
+
+          $app = $app.Replace('            x: island.x + 344px;`n            y: island.y + island.height + 5px;', '            x: island.x + island.width - self.width;`n            y: island.y - self.height - 5px;')
+
+          $oldGeometry = @'
+        let top_pad = if self.zen_engaged() {
+            (PAD_Y * scale).round()
+        } else {
+            ((ISLAND_TOP + ISLAND_HEIGHT + CONTENT_TOP_GAP + PAD_Y) * scale).round()
+        };
+'@
+          $newGeometry = @'
+        let top_pad = (PAD_Y * scale).round();
+'@
+          $app = Replace-Once $app $oldGeometry $newGeometry 'geometría superior'
+
+          $oldBottom = '        let bottom_pad = (PAD_Y * self.scale.max(0.5)).round();'
+          $newBottom = @'
+        let scale = self.scale.max(0.5);
+        let bottom_pad = if self.zen_engaged() && !self.pomodoro_active {
+            (PAD_Y * scale).round()
+        } else {
+            ((PAD_Y + ISLAND_HEIGHT + CONTENT_TOP_GAP) * scale).round()
+        };
+'@
+          $app = Replace-Once $app $oldBottom $newBottom 'reserva inferior'
+
+          $anchor = @'
+    {
+        let model = model.clone();
+        ui.on_format_action(move |action, value| {
+'@
+          if (-not $app.Contains('ui.on_start_pomodoro')) {
+            $pomodoroHandler = @'
+    {
+        let model = model.clone();
+        let weak = ui.as_weak();
+        ui.on_start_pomodoro(move || {
+            {
+                model.borrow_mut().start_pomodoro();
+            }
+            if let Some(ui) = weak.upgrade() {
+                let model = model.borrow();
+                ui.set_pomodoro_break(model.pomodoro_break);
+                ui.set_pomodoro_text(model.pomodoro_label().into());
+            }
+        });
+    }
+'@
+            $app = Replace-Once $app $anchor ($pomodoroHandler + $anchor) 'handler Pomodoro'
+          }
+
+          $oldClose = @'
+        ui.on_close_window(move || {
+            if model.borrow().zen_engaged() {
+                return;
+            }
+            if let Some(ui) = weak.upgrade() {
+'@
+          $newClose = @'
+        ui.on_close_window(move || {
+            if let Some(ui) = weak.upgrade() {
+'@
+          $app = Replace-Once $app $oldClose $newClose 'botón apagar'
+
+          Write-Utf8 'src/app.rs' $app
+
+          $cargo = Read-Lf 'Cargo.toml'
+          $cargo = $cargo.Replace('version = "0.2.12"', 'version = "0.2.13"')
+          Write-Utf8 'Cargo.toml' $cargo
+
+      - name: Format
+        shell: pwsh
+        run: cargo fmt --all
+
+      - name: Clippy
+        shell: pwsh
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build release
+        shell: pwsh
+        run: cargo build --release
+
+      - name: Commit and remove workflow
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          Remove-Item '.github/workflows/bottom-island-once.yml' -Force
+          git add Cargo.toml src/app.rs .github/workflows/bottom-island-once.yml
+          git commit -m "Mover isla al pie y reducir controles [skip ci]"
+          git push origin HEAD:main
