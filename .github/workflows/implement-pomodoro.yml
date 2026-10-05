@@ -21,7 +21,9 @@ jobs:
           components: rustfmt, clippy
       - name: Apply implementation
         shell: pwsh
-        run: python .github/scripts/implement_pomodoro.py
+        run: |
+          python .github/scripts/fix_pomodoro_script.py
+          python .github/scripts/implement_pomodoro.py
       - name: Format
         shell: pwsh
         run: cargo fmt --all -- --check
@@ -36,6 +38,7 @@ jobs:
         run: |
           rm .github/workflows/implement-pomodoro.yml
           rm .github/scripts/implement_pomodoro.py
+          rm .github/scripts/fix_pomodoro_script.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
