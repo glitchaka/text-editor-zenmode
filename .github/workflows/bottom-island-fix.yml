@@ -1,0 +1,61 @@
+name: Bottom island finalize
+
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - ".github/workflows/bottom-island-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Apply patch and lint fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $wf = Get-Content -Raw ".github/workflows/bottom-island-once.yml"
+          $m = [regex]::Match($wf, "FromBase64String\('([^']+)'\)")
+          if (-not $m.Success) { throw "No se encontró el parche de isla" }
+          $script = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($m.Groups[1].Value))
+          Invoke-Expression $script
+          $app = (Get-Content -Raw "src/app.rs").Replace("`r`n", "`n")
+          $app = $app.Replace("        let weak = ui.as_weak();`n        let model = model.clone();`n        ui.on_close_window", "        let weak = ui.as_weak();`n        ui.on_close_window")
+          [IO.File]::WriteAllText("src/app.rs", $app, [Text.UTF8Encoding]::new($false))
+
+      - name: Format
+        shell: pwsh
+        run: cargo fmt --all
+
+      - name: Clippy
+        shell: pwsh
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build release
+        shell: pwsh
+        run: cargo build --release
+
+      - name: Commit and cleanup
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          Remove-Item ".github/workflows/bottom-island-once.yml" -Force
+          Remove-Item ".github/workflows/bottom-island-fix.yml" -Force
+          git add Cargo.toml src/app.rs .github/workflows
+          git commit -m "Mover isla al pie y reducir controles [skip ci]"
+          git push origin HEAD:main
