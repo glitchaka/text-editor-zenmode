@@ -1,0 +1,75 @@
+name: Finish HSST compound migration once
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  finish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Apply concrete fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/format.rs')
+          s = p.read_text(encoding='utf-8')
+          for old, new in [
+              ('pub fn apply_to_selection(', '#[cfg(test)]\npub fn apply_to_selection('),
+              ('fn toggle_delimited(', '#[cfg(test)]\nfn toggle_delimited('),
+              ('fn set_tagged(', '#[cfg(test)]\nfn set_tagged('),
+              ('fn outer_tag(', '#[cfg(test)]\nfn outer_tag('),
+          ]:
+              if old not in s:
+                  raise SystemExit(f'missing format target: {old}')
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/editor.rs')
+          s = p.read_text(encoding='utf-8')
+          old = '        return bytes;\n    }\n\n    #[cfg(not(windows))]'
+          new = '        bytes\n    }\n\n    #[cfg(not(windows))]'
+          if old not in s:
+              raise SystemExit('missing editor target')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          p = Path('src/spell.rs')
+          s = p.read_text(encoding='utf-8')
+          old = "    if text.is_empty() || !text.ends_with('\\n') {\n        if lines.is_empty() {\n            lines.push((0, 0, text));\n        }\n    }"
+          new = "    if (text.is_empty() || !text.ends_with('\\n')) && lines.is_empty() {\n        lines.push((0, 0, text));\n    }"
+          if old not in s:
+              raise SystemExit('missing spell target')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Format
+        run: cargo fmt --all
+      - name: Clippy
+        run: cargo clippy --release -- -D warnings
+      - name: Test
+        run: cargo test --release
+      - name: Build release
+        run: cargo build --release
+      - name: Commit validated fix and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/finish-hsst-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/format.rs src/editor.rs src/spell.rs .github/workflows/finish-hsst-once.yml
+          git commit -m "Cerrar migración HSST compuesto sin warnings"
+          git push origin HEAD:main
