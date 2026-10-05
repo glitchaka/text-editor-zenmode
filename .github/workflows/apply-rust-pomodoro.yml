@@ -20,31 +20,205 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Apply Rust changes
+      - name: Apply Rust implementation
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
 
+          function Read-Lf([string]$Path) {
+            (Get-Content -Raw $Path).Replace("`r`n", "`n")
+          }
           function Write-Utf8([string]$Path, [string]$Text) {
             [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
           }
-
-          function Replace-Once([string]$Path, [string]$Old, [string]$New, [string]$Label) {
-            $s = Get-Content -Raw $Path
-            $i = $s.IndexOf($Old)
+          function Replace-Once([string]$Text, [string]$Old, [string]$New, [string]$Label) {
+            $i = $Text.IndexOf($Old)
             if ($i -lt 0) { throw "No se encontró bloque: $Label" }
-            $s = $s.Substring(0, $i) + $New + $s.Substring($i + $Old.Length)
-            Write-Utf8 $Path $s
+            $Text.Substring(0, $i) + $New + $Text.Substring($i + $Old.Length)
           }
 
-          foreach ($sourcePath in @('src/document.rs', 'src/spell.rs', 'src/editor.rs', 'src/app.rs', 'Cargo.toml')) {
-            $sourceText = Get-Content -Raw $sourcePath
-            $sourceText = $sourceText.Replace("`r`n", "`n")
-            Write-Utf8 $sourcePath $sourceText
+          # ---------------- spell.rs ----------------
+          $s = Read-Lf 'src/spell.rs'
+
+          # Eliminar la implementación duplicada antigua que ya rompe el build actual.
+          $dupStart = $s.IndexOf("`nfn text_style_token(")
+          if ($dupStart -ge 0) {
+            $dupEnd = $s.IndexOf("`nfn read_message(", $dupStart)
+            if ($dupEnd -lt 0) { throw 'No se encontró fin del helper duplicado de formato' }
+            $s = $s.Substring(0, $dupStart) + $s.Substring($dupEnd)
           }
 
-          # document.rs: aplicar formato directamente por rango LSP sobre formatting.json
-          $docHelper = @'
+          if (-not $s.Contains('const FORMAT_COMMAND: &str = "helix-sst.formatSelection";')) {
+            $s = Replace-Once $s 'const ADD_WORD_COMMAND: &str = "helix-sst.addWord";' "const ADD_WORD_COMMAND: &str = `"helix-sst.addWord`";`nconst FORMAT_COMMAND: &str = `"helix-sst.formatSelection`";" 'FORMAT_COMMAND'
+          }
+          if (-not $s.Contains('"commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]')) {
+            $s = Replace-Once $s '"commands": [ADD_WORD_COMMAND]' '"commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]' 'executeCommandProvider'
+          }
+          if (-not $s.Contains('message.get("result").is_some()')) {
+            $old = "        let id = message.get(`"id`").cloned();`n`n        match method {"
+            $new = "        let id = message.get(`"id`").cloned();`n        if method.is_empty() && (message.get(`"result`").is_some() || message.get(`"error`").is_some()) {`n            continue;`n        }`n`n        match method {"
+            $s = Replace-Once $s $old $new 'ignorar respuestas LSP'
+          }
+
+          if (-not $s.Contains('next_request_id: u64')) {
+            $s = Replace-Once $s "    source_file: Option<PathBuf>,`n}" "    source_file: Option<PathBuf>,`n    next_request_id: u64,`n}" 'campo next_request_id'
+            $s = Replace-Once $s "            source_file,`n        })" "            source_file,`n            next_request_id: 1,`n        })" 'inicialización next_request_id'
+          }
+
+          $execStart = $s.IndexOf('            "workspace/executeCommand" => {')
+          $execEnd = $s.IndexOf('            "shutdown" => {', $execStart)
+          if ($execStart -lt 0 -or $execEnd -lt 0) { throw 'No se encontró workspace/executeCommand' }
+          $newExec = @'
+                      "workspace/executeCommand" => {
+                          let command = message.pointer("/params/command").and_then(Value::as_str);
+                          let mut changed = false;
+                          match command {
+                              Some(ADD_WORD_COMMAND) => {
+                                  if let Some(word) = message
+                                      .pointer("/params/arguments/0")
+                                      .and_then(Value::as_str)
+                                  {
+                                      changed = server.add_user_word(word)?;
+                                  }
+                              }
+                              Some(FORMAT_COMMAND) => {
+                                  changed = server.apply_format_command(
+                                      message.pointer("/params/arguments").unwrap_or(&Value::Null),
+                                  )?;
+                              }
+                              _ => {}
+                          }
+                          if let Some(id) = id {
+                              send_response(&mut output, id, json!(changed))?;
+                          }
+                          if changed && command == Some(ADD_WORD_COMMAND) {
+                              let documents = server
+                                  .documents
+                                  .iter()
+                                  .map(|(uri, text)| (uri.clone(), text.clone()))
+                                  .collect::<Vec<_>>();
+                              for (uri, text) in documents {
+                                  server.publish(&uri, &text, &mut output)?;
+                              }
+                          } else if changed && command == Some(FORMAT_COMMAND) {
+                              let request_id = server.next_request_id;
+                              server.next_request_id = server.next_request_id.saturating_add(1);
+                              send_request(
+                                  &mut output,
+                                  json!(request_id),
+                                  "workspace/semanticTokens/refresh",
+                                  Value::Null,
+                              )?;
+                          }
+                      }
+          '@
+          $s = $s.Substring(0, $execStart) + $newExec + $s.Substring($execEnd)
+
+          if (-not $s.Contains('fn apply_format_command(&self, arguments: &Value)')) {
+            $marker = "        actions`n    }`n`n    fn completions"
+            $replacement = @'
+                  if let Some(source) = self.source_file.as_ref()
+                      && crate::document::is_native_path(source)
+                      && let Some(range) = params.get("range").cloned()
+                      && range.pointer("/start") != range.pointer("/end")
+                  {
+                      let mut push_format = |title: &str, action: &str, value: &str| {
+                          actions.push(json!({
+                              "title": title,
+                              "kind": "refactor.rewrite",
+                              "command": {
+                                  "title": title,
+                                  "command": FORMAT_COMMAND,
+                                  "arguments": [range.clone(), action, value]
+                              }
+                          }));
+                      };
+                      push_format("Formato · Negrita", "bold", "");
+                      push_format("Formato · Cursiva", "italic", "");
+                      push_format("Formato · Subrayado", "underline", "");
+                      for (label, value) in [
+                          ("Blanco", "white"),
+                          ("Rojo", "red"),
+                          ("Naranjo", "orange"),
+                          ("Amarillo", "yellow"),
+                          ("Verde", "green"),
+                          ("Cian", "cyan"),
+                          ("Azul", "blue"),
+                          ("Púrpura", "purple"),
+                          ("Gris", "gray"),
+                      ] {
+                          push_format(&format!("Color de texto · {label}"), "font-color", value);
+                      }
+                      for (label, value) in [
+                          ("Amarillo", "yellow"),
+                          ("Naranjo", "orange"),
+                          ("Verde", "green"),
+                          ("Cian", "cyan"),
+                          ("Azul", "blue"),
+                          ("Púrpura", "purple"),
+                          ("Rojo", "red"),
+                          ("Gris", "gray"),
+                      ] {
+                          push_format(&format!("Resaltado · {label}"), "highlight-color", value);
+                      }
+                  }
+                  actions
+              }
+
+              fn apply_format_command(&self, arguments: &Value) -> Result<bool> {
+                  let Some(source) = self.source_file.as_deref() else {
+                      return Ok(false);
+                  };
+                  let Some(range) = arguments.get(0) else {
+                      return Ok(false);
+                  };
+                  let action = arguments.get(1).and_then(Value::as_str).unwrap_or("");
+                  let value = arguments.get(2).and_then(Value::as_str).unwrap_or("");
+                  let start_line = range.pointer("/start/line").and_then(Value::as_u64).unwrap_or(0) as usize;
+                  let start_character = range.pointer("/start/character").and_then(Value::as_u64).unwrap_or(0) as usize;
+                  let end_line = range.pointer("/end/line").and_then(Value::as_u64).unwrap_or(0) as usize;
+                  let end_character = range.pointer("/end/character").and_then(Value::as_u64).unwrap_or(0) as usize;
+                  crate::document::apply_format_lsp_range(
+                      source,
+                      start_line,
+                      start_character,
+                      end_line,
+                      end_character,
+                      action,
+                      value,
+                  )
+              }
+
+              fn completions
+          '@
+            $s = Replace-Once $s $marker $replacement 'acciones de formato'
+          }
+
+          if (-not $s.Contains('fn send_request(output: &mut impl Write')) {
+            $marker = 'fn send_notification(output: &mut impl Write, method: &str, params: Value) -> Result<()> {'
+            $helper = @'
+          fn send_request(output: &mut impl Write, id: Value, method: &str, params: Value) -> Result<()> {
+              send_json(
+                  output,
+                  &json!({
+                      "jsonrpc": "2.0",
+                      "id": id,
+                      "method": method,
+                      "params": params
+                  }),
+              )
+          }
+
+          '@
+            $s = Replace-Once $s $marker ($helper + $marker) 'send_request'
+          }
+          Write-Utf8 'src/spell.rs' $s
+
+          # ---------------- document.rs ----------------
+          $s = Read-Lf 'src/document.rs'
+          if (-not $s.Contains('pub fn apply_format_lsp_range(')) {
+            $marker = 'pub fn remap_formatting(formatting: &Value, old: &str, new: &str) -> Value {'
+            $helper = @'
           fn utf16_position_to_byte(body: &str, line: usize, character: usize) -> usize {
               let mut line_start = 0usize;
               for (index, segment) in body.split_inclusive('\n').enumerate() {
@@ -90,7 +264,6 @@ jobs:
               {
                   return Ok(false);
               }
-
               let runs = normalized_runs_for_selection(
                   &document.body,
                   &document.formatting,
@@ -109,178 +282,20 @@ jobs:
           }
 
           '@
-          Replace-Once 'src/document.rs' 'pub fn remap_formatting(formatting: &Value, old: &str, new: &str) -> Value {' ($docHelper + 'pub fn remap_formatting(formatting: &Value, old: &str, new: &str) -> Value {') 'document helper'
-
-          # spell.rs: F2 / Space+a = corrección + formato de selección
-          Replace-Once 'src/spell.rs' 'const ADD_WORD_COMMAND: &str = "helix-sst.addWord";' "const ADD_WORD_COMMAND: &str = `"helix-sst.addWord`";`nconst FORMAT_COMMAND: &str = `"helix-sst.formatSelection`";" 'FORMAT_COMMAND'
-          Replace-Once 'src/spell.rs' '"commands": [ADD_WORD_COMMAND]' '"commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]' 'execute command provider'
-          Replace-Once 'src/spell.rs' "        let id = message.get(`"id`").cloned();`n`n        match method {" "        let id = message.get(`"id`").cloned();`n        if method.is_empty() && (message.get(`"result`").is_some() || message.get(`"error`").is_some()) {`n            continue;`n        }`n`n        match method {" 'ignore LSP responses'
-          Replace-Once 'src/spell.rs' "    source_file: Option<PathBuf>,`n}" "    source_file: Option<PathBuf>,`n    next_request_id: u64,`n}" 'SpellServer field'
-          Replace-Once 'src/spell.rs' "            source_file,`n        })" "            source_file,`n            next_request_id: 1,`n        })" 'SpellServer init'
-
-          $oldExecute = @'
-                      "workspace/executeCommand" => {
-                          let mut added = false;
-                          if message.pointer("/params/command").and_then(Value::as_str)
-                              == Some(ADD_WORD_COMMAND)
-                              && let Some(word) = message
-                                  .pointer("/params/arguments/0")
-                                  .and_then(Value::as_str)
-                          {
-                              added = server.add_user_word(word)?;
-                          }
-                          if let Some(id) = id {
-                              send_response(&mut output, id, json!(added))?;
-                          }
-                          if added {
-                              let documents = server
-                                  .documents
-                                  .iter()
-                                  .map(|(uri, text)| (uri.clone(), text.clone()))
-                                  .collect::<Vec<_>>();
-                              for (uri, text) in documents {
-                                  server.publish(&uri, &text, &mut output)?;
-                              }
-                          }
-                      }
-          '@
-          $newExecute = @'
-                      "workspace/executeCommand" => {
-                          let command = message.pointer("/params/command").and_then(Value::as_str);
-                          let mut changed = false;
-                          match command {
-                              Some(ADD_WORD_COMMAND) => {
-                                  if let Some(word) = message
-                                      .pointer("/params/arguments/0")
-                                      .and_then(Value::as_str)
-                                  {
-                                      changed = server.add_user_word(word)?;
-                                  }
-                              }
-                              Some(FORMAT_COMMAND) => {
-                                  changed = server.apply_format_command(
-                                      message.pointer("/params/arguments").unwrap_or(&Value::Null),
-                                  )?;
-                              }
-                              _ => {}
-                          }
-                          if let Some(id) = id {
-                              send_response(&mut output, id, json!(changed))?;
-                          }
-                          if changed && command == Some(ADD_WORD_COMMAND) {
-                              let documents = server
-                                  .documents
-                                  .iter()
-                                  .map(|(uri, text)| (uri.clone(), text.clone()))
-                                  .collect::<Vec<_>>();
-                              for (uri, text) in documents {
-                                  server.publish(&uri, &text, &mut output)?;
-                              }
-                          } else if changed && command == Some(FORMAT_COMMAND) {
-                              let request_id = server.next_request_id;
-                              server.next_request_id = server.next_request_id.saturating_add(1);
-                              send_request(
-                                  &mut output,
-                                  json!(request_id),
-                                  "workspace/semanticTokens/refresh",
-                                  Value::Null,
-                              )?;
-                          }
-                      }
-          '@
-          Replace-Once 'src/spell.rs' $oldExecute $newExecute 'executeCommand'
-
-          $actionsMarker = @'
-                  actions
-              }
-
-              fn completions
-          '@
-          $actionsReplacement = @'
-                  if let Some(source) = self.source_file.as_ref()
-                      && crate::document::is_native_path(source)
-                      && let Some(range) = params.get("range").cloned()
-                      && range.pointer("/start") != range.pointer("/end")
-                  {
-                      let mut push_format = |title: &str, action: &str, value: &str| {
-                          actions.push(json!({
-                              "title": title,
-                              "kind": "refactor.rewrite",
-                              "command": {
-                                  "title": title,
-                                  "command": FORMAT_COMMAND,
-                                  "arguments": [range.clone(), action, value]
-                              }
-                          }));
-                      };
-                      push_format("Formato · Negrita", "bold", "");
-                      push_format("Formato · Cursiva", "italic", "");
-                      push_format("Formato · Subrayado", "underline", "");
-                      for (label, value) in [
-                          ("Blanco", "white"), ("Rojo", "red"), ("Naranjo", "orange"),
-                          ("Amarillo", "yellow"), ("Verde", "green"), ("Cian", "cyan"),
-                          ("Azul", "blue"), ("Púrpura", "purple"), ("Gris", "gray"),
-                      ] {
-                          push_format(&format!("Color de texto · {label}"), "font-color", value);
-                      }
-                      for (label, value) in [
-                          ("Amarillo", "yellow"), ("Naranjo", "orange"), ("Verde", "green"),
-                          ("Cian", "cyan"), ("Azul", "blue"), ("Púrpura", "purple"),
-                          ("Rojo", "red"), ("Gris", "gray"),
-                      ] {
-                          push_format(&format!("Resaltado · {label}"), "highlight-color", value);
-                      }
-                  }
-                  actions
-              }
-
-              fn apply_format_command(&self, arguments: &Value) -> Result<bool> {
-                  let Some(source) = self.source_file.as_deref() else {
-                      return Ok(false);
-                  };
-                  let Some(range) = arguments.get(0) else {
-                      return Ok(false);
-                  };
-                  let action = arguments.get(1).and_then(Value::as_str).unwrap_or("");
-                  let value = arguments.get(2).and_then(Value::as_str).unwrap_or("");
-                  let start_line = range.pointer("/start/line").and_then(Value::as_u64).unwrap_or(0) as usize;
-                  let start_character = range.pointer("/start/character").and_then(Value::as_u64).unwrap_or(0) as usize;
-                  let end_line = range.pointer("/end/line").and_then(Value::as_u64).unwrap_or(0) as usize;
-                  let end_character = range.pointer("/end/character").and_then(Value::as_u64).unwrap_or(0) as usize;
-                  crate::document::apply_format_lsp_range(
-                      source, start_line, start_character, end_line, end_character, action, value,
-                  )
-              }
-
-              fn completions
-          '@
-          Replace-Once 'src/spell.rs' $actionsMarker $actionsReplacement 'format code actions'
-
-          $notifyMarker = 'fn send_notification(output: &mut impl Write, method: &str, params: Value) -> Result<()> {'
-          $requestHelper = @'
-          fn send_request(output: &mut impl Write, id: Value, method: &str, params: Value) -> Result<()> {
-              send_json(
-                  output,
-                  &json!({
-                      "jsonrpc": "2.0",
-                      "id": id,
-                      "method": method,
-                      "params": params
-                  }),
-              )
+            $s = Replace-Once $s $marker ($helper + $marker) 'formato por rango LSP'
           }
+          Write-Utf8 'src/document.rs' $s
 
-          '@
-          Replace-Once 'src/spell.rs' $notifyMarker ($requestHelper + $notifyMarker) 'send_request'
-
-          # editor.rs: tema de descanso y etiquetas F2/F4
-          Replace-Once 'src/editor.rs' '    write_zen_theme(&themes_dir.join("helix-sst-zen.toml"))?;' "    write_zen_theme(&themes_dir.join(`"helix-sst-zen.toml`"))?;`n    write_break_theme(&themes_dir.join(`"helix-sst-break.toml`"))?;" 'install break theme'
-          $e = Get-Content -Raw 'src/editor.rs'
-          $e = $e.Replace('normal = "NORMAL · i: escribir · F2: ortografía"', 'normal = "NORMAL · i: escribir · F2: acciones · F4: Pomodoro"')
-          $e = $e.Replace('insert = "INSERTAR · Alt+d: — · F2: ortografía · Esc: comandos"', 'insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · Esc: comandos"')
-          Write-Utf8 'src/editor.rs' $e
-
-          $breakTheme = @'
+          # ---------------- editor.rs ----------------
+          $s = Read-Lf 'src/editor.rs'
+          if (-not $s.Contains('write_break_theme(&themes_dir.join("helix-sst-break.toml"))?;')) {
+            $s = Replace-Once $s '    write_zen_theme(&themes_dir.join("helix-sst-zen.toml"))?;' "    write_zen_theme(&themes_dir.join(`"helix-sst-zen.toml`"))?;`n    write_break_theme(&themes_dir.join(`"helix-sst-break.toml`"))?;" 'instalar tema descanso'
+          }
+          $s = $s.Replace('normal = "NORMAL · i: escribir · F2: ortografía"', 'normal = "NORMAL · i: escribir · F2: acciones · F4: Pomodoro"')
+          $s = $s.Replace('insert = "INSERTAR · Alt+d: — · F2: ortografía · Esc: comandos"', 'insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · Esc: comandos"')
+          if (-not $s.Contains('fn write_break_theme(path: &Path)')) {
+            $marker = 'fn write_language_config('
+            $helper = @'
           fn write_break_theme(path: &Path) -> Result<()> {
               fs::write(
                   path,
@@ -306,14 +321,21 @@ jobs:
           }
 
           '@
-          Replace-Once 'src/editor.rs' 'fn write_language_config(' ($breakTheme + 'fn write_language_config(') 'break theme function'
+            $s = Replace-Once $s $marker ($helper + $marker) 'tema descanso'
+          }
+          Write-Utf8 'src/editor.rs' $s
 
-          # app.rs: Pomodoro 25/5, prompt, F4 y :PD
-          Replace-Once 'src/app.rs' 'const CONTENT_TOP_GAP: f32 = 8.0;' "const CONTENT_TOP_GAP: f32 = 8.0;`nconst POMODORO_WRITE_SECS: u64 = 25 * 60;`nconst POMODORO_BREAK_SECS: u64 = 5 * 60;" 'pomodoro constants'
-          Replace-Once 'src/app.rs' '        in property <bool> editor-active: false;' "        in property <bool> editor-active: false;`n        in property <bool> pomodoro-prompt: false;`n        in property <bool> pomodoro-break: false;`n        in property <string> pomodoro-text: `"`";" 'pomodoro properties'
-          Replace-Once 'src/app.rs' '                || root.page-menu-open;' '                || root.page-menu-open`n                || root.pomodoro-text != "";' 'keep timer visible'
+          # ---------------- app.rs ----------------
+          $s = Read-Lf 'src/app.rs'
+          if (-not $s.Contains('const POMODORO_WRITE_SECS')) {
+            $s = Replace-Once $s 'const CONTENT_TOP_GAP: f32 = 8.0;' "const CONTENT_TOP_GAP: f32 = 8.0;`nconst POMODORO_WRITE_SECS: u64 = 25 * 60;`nconst POMODORO_BREAK_SECS: u64 = 5 * 60;" 'constantes Pomodoro'
+          }
+          if (-not $s.Contains('in property <bool> pomodoro-prompt')) {
+            $s = Replace-Once $s '        in property <bool> editor-active: false;' "        in property <bool> editor-active: false;`n        in property <bool> pomodoro-prompt: false;`n        in property <bool> pomodoro-break: false;`n        in property <string> pomodoro-text: `"`";" 'propiedades Pomodoro'
+          }
 
-          $versionBlock = @'
+          if (-not $s.Contains('text: root.pomodoro-text;')) {
+            $version = @'
                       Text {
                           x: 112px;
                           y: 0;
@@ -326,7 +348,7 @@ jobs:
                           vertical-alignment: center;
                       }
           '@
-          $timerBlock = $versionBlock + @'
+            $timer = $version + @'
 
                       Rectangle {
                           visible: root.editor-active && root.pomodoro-text != "";
@@ -344,10 +366,12 @@ jobs:
                           }
                       }
           '@
-          Replace-Once 'src/app.rs' $versionBlock $timerBlock 'timer pill'
+            $s = Replace-Once $s $version $timer 'reloj Pomodoro'
+          }
 
-          $overlayMarker = "`n    }`n}`n`n#[derive(Clone, Copy)]`nstruct Rgb"
-          $overlay = @'
+          if (-not $s.Contains('text: "¿INICIAR POMODORO?"')) {
+            $marker = "`n    }`n}`n`n#[derive(Clone, Copy)]`nstruct Rgb"
+            $overlay = @'
 
                   Rectangle {
                       visible: root.pomodoro-prompt;
@@ -382,22 +406,19 @@ jobs:
                       }
                   }
           '@
-          Replace-Once 'src/app.rs' $overlayMarker ($overlay + $overlayMarker) 'pomodoro overlay'
+            $s = Replace-Once $s $marker ($overlay + $marker) 'pregunta Pomodoro'
+          }
 
-          Replace-Once 'src/app.rs' "    zen_requested: bool,`n    page_profile: crate::page::PageProfile," "    zen_requested: bool,`n    pomodoro_offer: bool,`n    pomodoro_active: bool,`n    pomodoro_break: bool,`n    pomodoro_deadline: Option<Instant>,`n    command_capture: Option<String>,`n    page_profile: crate::page::PageProfile," 'pomodoro fields'
-          Replace-Once 'src/app.rs' "            zen_requested,`n            page_profile: crate::page::PageProfile::default()," "            zen_requested,`n            pomodoro_offer: false,`n            pomodoro_active: false,`n            pomodoro_break: false,`n            pomodoro_deadline: None,`n            command_capture: None,`n            page_profile: crate::page::PageProfile::default()," 'pomodoro init'
+          if (-not $s.Contains('pomodoro_offer: bool')) {
+            $s = Replace-Once $s "    zen_requested: bool,`n    page_profile: crate::page::PageProfile," "    zen_requested: bool,`n    pomodoro_offer: bool,`n    pomodoro_active: bool,`n    pomodoro_break: bool,`n    pomodoro_deadline: Option<Instant>,`n    command_capture: Option<String>,`n    page_profile: crate::page::PageProfile," 'campos Pomodoro'
+            $s = Replace-Once $s "            zen_requested,`n            page_profile: crate::page::PageProfile::default()," "            zen_requested,`n            pomodoro_offer: false,`n            pomodoro_active: false,`n            pomodoro_break: false,`n            pomodoro_deadline: None,`n            command_capture: None,`n            page_profile: crate::page::PageProfile::default()," 'inicio Pomodoro'
+          }
 
-          $zenMethod = @'
-              fn toggle_editor_zen(&mut self) {
-                  if self.editor.is_some() {
-                      self.zen_requested = !self.zen_requested;
-                      self.dirty = true;
-                      self.glyphs.clear();
-                  }
-              }
+          if (-not $s.Contains('fn start_pomodoro(&mut self)')) {
+            $marker = @'
+              fn page_visual(&self) -> Option<PageVisual> {
           '@
-          $pomoMethods = $zenMethod + @'
-
+            $methods = @'
               fn start_pomodoro(&mut self) {
                   if self.editor.is_none() || self.pomodoro_active {
                       self.pomodoro_offer = false;
@@ -479,7 +500,6 @@ jobs:
                       }
                       return false;
                   }
-
                   match key.code {
                       KeyCode::Enter => {
                           let is_pd = self.command_capture.as_deref().is_some_and(|command| command.trim().eq_ignore_ascii_case("pd"));
@@ -506,23 +526,27 @@ jobs:
                   }
                   false
               }
-          '@
-          Replace-Once 'src/app.rs' $zenMethod $pomoMethods 'pomodoro methods'
-
-          Replace-Once 'src/app.rs' "        self.editor = Some(session);`n        self.glyphs.clear();" "        self.editor = Some(session);`n        self.pomodoro_offer = true;`n        self.pomodoro_active = false;`n        self.pomodoro_break = false;`n        self.pomodoro_deadline = None;`n        self.command_capture = None;`n        self.glyphs.clear();" 'offer on open'
-          Replace-Once 'src/app.rs' "    fn apply_format(&mut self, action: &str, value: &str) {`n        let Some(current)" "    fn apply_format(&mut self, action: &str, value: &str) {`n        if self.pomodoro_break { return; }`n        let Some(current)" 'format break guard'
-          Replace-Once 'src/app.rs' "    fn insert_symbol(&mut self, symbol: &str) {`n        if symbol.is_empty() {" "    fn insert_symbol(&mut self, symbol: &str) {`n        if self.pomodoro_break || symbol.is_empty() {" 'symbol break guard'
-          Replace-Once 'src/app.rs' "        if self.splash_active {`n            return;`n        }`n        let mut finished = false;" "        if self.splash_active {`n            return;`n        }`n        self.update_pomodoro();`n        let mut finished = false;" 'tick pomodoro'
-          Replace-Once 'src/app.rs' "            self.chapter_switch_until = None;`n            self.launcher.refresh();" "            self.chapter_switch_until = None;`n            self.pomodoro_offer = false;`n            self.pomodoro_active = false;`n            self.pomodoro_break = false;`n            self.pomodoro_deadline = None;`n            self.command_capture = None;`n            self.launcher.refresh();" 'pomodoro reset'
-
-          $editorPrelude = @'
-              fn editor_key(&mut self, key: KeyEvent) {
-                  if self.try_continue_to_next_chapter(key) {
-                      return;
-                  }
 
           '@
-          $editorReplacement = @'
+            $s = Replace-Once $s $marker ($methods + $marker) 'métodos Pomodoro'
+          }
+
+          if (-not $s.Contains('self.pomodoro_offer = true;')) {
+            $s = Replace-Once $s "        self.editor = Some(session);`n        self.glyphs.clear();" "        self.editor = Some(session);`n        self.pomodoro_offer = true;`n        self.pomodoro_active = false;`n        self.pomodoro_break = false;`n        self.pomodoro_deadline = None;`n        self.command_capture = None;`n        self.glyphs.clear();" 'preguntar al abrir'
+          }
+          if (-not $s.Contains('self.update_pomodoro();')) {
+            $s = Replace-Once $s "        if self.splash_active {`n            return;`n        }`n        let mut finished = false;" "        if self.splash_active {`n            return;`n        }`n        self.update_pomodoro();`n        let mut finished = false;" 'actualizar reloj'
+          }
+          if (-not $s.Contains('if self.pomodoro_break || symbol.is_empty()')) {
+            $s = Replace-Once $s "    fn insert_symbol(&mut self, symbol: &str) {`n        if symbol.is_empty() {" "    fn insert_symbol(&mut self, symbol: &str) {`n        if self.pomodoro_break || symbol.is_empty() {" 'bloquear símbolos'
+          }
+          if (-not $s.Contains('if self.pomodoro_break {`n            return;`n        }`n        let Some(current)')) {
+            $s = Replace-Once $s "    fn apply_format(&mut self, action: &str, value: &str) {`n        let Some(current)" "    fn apply_format(&mut self, action: &str, value: &str) {`n        if self.pomodoro_break {`n            return;`n        }`n        let Some(current)" 'bloquear formato'
+          }
+
+          if (-not $s.Contains('if self.pomodoro_offer {')) {
+            $old = "    fn editor_key(&mut self, key: KeyEvent) {`n        if self.try_continue_to_next_chapter(key) {`n            return;`n        }`n`n"
+            $new = @'
               fn editor_key(&mut self, key: KeyEvent) {
                   if self.pomodoro_offer {
                       match key.code {
@@ -533,65 +557,79 @@ jobs:
                       }
                       return;
                   }
-
                   if key.code == KeyCode::F(4) && key.modifiers.is_empty() {
                       self.start_pomodoro();
                       return;
                   }
-
                   if self.capture_pd_command(key) {
                       return;
                   }
-
                   if self.pomodoro_break {
                       if key.modifiers.is_empty()
-                          && matches!(key.code, KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End | KeyCode::Esc)
+                          && matches!(
+                              key.code,
+                              KeyCode::Left
+                                  | KeyCode::Right
+                                  | KeyCode::Up
+                                  | KeyCode::Down
+                                  | KeyCode::PageUp
+                                  | KeyCode::PageDown
+                                  | KeyCode::Home
+                                  | KeyCode::End
+                                  | KeyCode::Esc
+                          )
                           && let Some(editor) = self.editor.as_ref()
                       {
                           let _ = editor.send_key(key, editor.win32_input());
                       }
                       return;
                   }
-
                   if self.try_continue_to_next_chapter(key) {
                       return;
                   }
 
           '@
-          Replace-Once 'src/app.rs' $editorPrelude $editorReplacement 'editor pomodoro prelude'
+            $s = Replace-Once $s $old $new 'entrada Pomodoro'
+          }
 
-          $uiSet = "        ui.set_editor_active(model.editor.is_some());`n        ui.set_page_label(model.page_profile.paper.label().into());"
-          $uiSetNew = "        ui.set_editor_active(model.editor.is_some());`n        ui.set_pomodoro_prompt(model.pomodoro_offer);`n        ui.set_pomodoro_break(model.pomodoro_break);`n        ui.set_pomodoro_text(model.pomodoro_label().into());`n        ui.set_page_label(model.page_profile.paper.label().into());"
-          $app = Get-Content -Raw 'src/app.rs'
-          if (-not $app.Contains($uiSet)) { throw 'No se encontró UI state' }
-          $app = $app.Replace($uiSet, $uiSetNew)
-          $keySet = "                ui.set_zen_active(model.zen_engaged());`n                ui.set_editor_active(model.editor.is_some());"
-          $keySetNew = "                ui.set_zen_active(model.zen_engaged());`n                ui.set_editor_active(model.editor.is_some());`n                ui.set_pomodoro_prompt(model.pomodoro_offer);`n                ui.set_pomodoro_break(model.pomodoro_break);`n                ui.set_pomodoro_text(model.pomodoro_label().into());"
-          if (-not $app.Contains($keySet)) { throw 'No se encontró key callback state' }
-          $app = $app.Replace($keySet, $keySetNew)
-          Write-Utf8 'src/app.rs' $app
+          if (-not $s.Contains('self.pomodoro_active = false;`n            self.pomodoro_break = false;')) {
+            $old = "            self.chapter_switch_until = None;`n            self.launcher.refresh();"
+            $new = "            self.chapter_switch_until = None;`n            self.pomodoro_offer = false;`n            self.pomodoro_active = false;`n            self.pomodoro_break = false;`n            self.pomodoro_deadline = None;`n            self.command_capture = None;`n            self.launcher.refresh();"
+            $s = Replace-Once $s $old $new 'reiniciar Pomodoro al cerrar'
+          }
 
-          $cargo = Get-Content -Raw 'Cargo.toml'
-          $cargo = $cargo.Replace('version = "0.2.10"', 'version = "0.2.11"')
-          Write-Utf8 'Cargo.toml' $cargo
+          $stateOld = "        ui.set_editor_active(model.editor.is_some());`n        ui.set_page_label(model.page_profile.paper.label().into());"
+          $stateNew = "        ui.set_editor_active(model.editor.is_some());`n        ui.set_pomodoro_prompt(model.pomodoro_offer);`n        ui.set_pomodoro_break(model.pomodoro_break);`n        ui.set_pomodoro_text(model.pomodoro_label().into());`n        ui.set_page_label(model.page_profile.paper.label().into());"
+          if ($s.Contains($stateOld)) { $s = $s.Replace($stateOld, $stateNew) }
+
+          $keyOld = "                ui.set_zen_active(model.zen_engaged());`n                ui.set_editor_active(model.editor.is_some());"
+          $keyNew = "                ui.set_zen_active(model.zen_engaged());`n                ui.set_editor_active(model.editor.is_some());`n                ui.set_pomodoro_prompt(model.pomodoro_offer);`n                ui.set_pomodoro_break(model.pomodoro_break);`n                ui.set_pomodoro_text(model.pomodoro_label().into());"
+          if ($s.Contains($keyOld)) { $s = $s.Replace($keyOld, $keyNew) }
+
+          Write-Utf8 'src/app.rs' $s
+
+          # versión visible
+          $s = Read-Lf 'Cargo.toml'
+          $s = [regex]::Replace($s, '(?m)^version = "0\.2\.10"$', 'version = "0.2.11"', 1)
+          Write-Utf8 'Cargo.toml' $s
 
       - name: Format
         shell: pwsh
         run: cargo fmt --all
-
+      - name: Check formatting
+        shell: pwsh
+        run: cargo fmt --all -- --check
       - name: Clippy
         shell: pwsh
         run: cargo clippy --release -- -D warnings
-
       - name: Tests
         shell: pwsh
         run: cargo test --release
-
       - name: Build
         shell: pwsh
         run: cargo build --release
 
-      - name: Commit Rust implementation and remove temporary workflow
+      - name: Commit final Rust implementation
         shell: bash
         run: |
           rm .github/workflows/apply-rust-pomodoro.yml
