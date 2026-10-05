@@ -37,6 +37,12 @@ jobs:
             Write-Utf8 $Path $s
           }
 
+          foreach ($sourcePath in @('src/document.rs', 'src/spell.rs', 'src/editor.rs', 'src/app.rs', 'Cargo.toml')) {
+            $sourceText = Get-Content -Raw $sourcePath
+            $sourceText = $sourceText.Replace("`r`n", "`n")
+            Write-Utf8 $sourcePath $sourceText
+          }
+
           # document.rs: aplicar formato directamente por rango LSP sobre formatting.json
           $docHelper = @'
           fn utf16_position_to_byte(body: &str, line: usize, character: usize) -> usize {
@@ -108,6 +114,7 @@ jobs:
           # spell.rs: F2 / Space+a = corrección + formato de selección
           Replace-Once 'src/spell.rs' 'const ADD_WORD_COMMAND: &str = "helix-sst.addWord";' "const ADD_WORD_COMMAND: &str = `"helix-sst.addWord`";`nconst FORMAT_COMMAND: &str = `"helix-sst.formatSelection`";" 'FORMAT_COMMAND'
           Replace-Once 'src/spell.rs' '"commands": [ADD_WORD_COMMAND]' '"commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]' 'execute command provider'
+          Replace-Once 'src/spell.rs' "        let id = message.get(`"id`").cloned();`n`n        match method {" "        let id = message.get(`"id`").cloned();`n        if method.is_empty() && (message.get(`"result`").is_some() || message.get(`"error`").is_some()) {`n            continue;`n        }`n`n        match method {" 'ignore LSP responses'
           Replace-Once 'src/spell.rs' "    source_file: Option<PathBuf>,`n}" "    source_file: Option<PathBuf>,`n    next_request_id: u64,`n}" 'SpellServer field'
           Replace-Once 'src/spell.rs' "            source_file,`n        })" "            source_file,`n            next_request_id: 1,`n        })" 'SpellServer init'
 
@@ -304,6 +311,7 @@ jobs:
           # app.rs: Pomodoro 25/5, prompt, F4 y :PD
           Replace-Once 'src/app.rs' 'const CONTENT_TOP_GAP: f32 = 8.0;' "const CONTENT_TOP_GAP: f32 = 8.0;`nconst POMODORO_WRITE_SECS: u64 = 25 * 60;`nconst POMODORO_BREAK_SECS: u64 = 5 * 60;" 'pomodoro constants'
           Replace-Once 'src/app.rs' '        in property <bool> editor-active: false;' "        in property <bool> editor-active: false;`n        in property <bool> pomodoro-prompt: false;`n        in property <bool> pomodoro-break: false;`n        in property <string> pomodoro-text: `"`";" 'pomodoro properties'
+          Replace-Once 'src/app.rs' '                || root.page-menu-open;' '                || root.page-menu-open`n                || root.pomodoro-text != "";' 'keep timer visible'
 
           $versionBlock = @'
                       Text {
@@ -563,7 +571,6 @@ jobs:
           $app = $app.Replace($keySet, $keySetNew)
           Write-Utf8 'src/app.rs' $app
 
-          # version
           $cargo = Get-Content -Raw 'Cargo.toml'
           $cargo = $cargo.Replace('version = "0.2.10"', 'version = "0.2.11"')
           Write-Utf8 'Cargo.toml' $cargo
