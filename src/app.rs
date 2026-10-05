@@ -149,15 +149,18 @@ slint::slint! {
         }
 
         island := Rectangle {
-            visible: root.zen-active
-                ? (zen-reveal.has-hover
-                    || zen-title-hover.has-hover
-                    || zen-touch.has-hover
-                    || root.font-palette-open
-                    || root.highlight-palette-open
-                    || root.symbols-open
-                    || root.page-menu-open)
-                : true;
+            // Fuera de Zenmode la isla debe permanecer visible siempre. En el
+            // launcher editor-active es false, así que tampoco puede heredar
+            // accidentalmente un zen-active obsoleto al cerrar el editor.
+            visible: !root.editor-active
+                || !root.zen-active
+                || zen-reveal.has-hover
+                || zen-title-hover.has-hover
+                || zen-touch.has-hover
+                || root.font-palette-open
+                || root.highlight-palette-open
+                || root.symbols-open
+                || root.page-menu-open;
             width: min(900px, root.width - 20px);
             height: 34px;
             x: (root.width - self.width) / 2;
@@ -1183,6 +1186,7 @@ impl TerminalModel {
             if let Some(editor) = self.editor.as_mut() {
                 let _ = editor.flush_native();
             }
+            self.zen_requested = false;
             self.editor = None;
             self.current_file = None;
             self.page_profile = crate::page::PageProfile::default();
@@ -2172,13 +2176,32 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
 
     {
         let model = model.clone();
+        let weak = ui.as_weak();
         ui.on_key_input(move |text, ctrl, alt, shift| {
-            handle_key(&mut model.borrow_mut(), text.as_str(), ctrl, alt, shift);
+            {
+                let mut model = model.borrow_mut();
+                handle_key(&mut model, text.as_str(), ctrl, alt, shift);
+            }
+            if let Some(ui) = weak.upgrade() {
+                let model = model.borrow();
+                ui.set_zen_active(model.zen_engaged());
+                ui.set_editor_active(model.editor.is_some());
+            }
         });
     }
     {
         let model = model.clone();
-        ui.on_toggle_zen(move || model.borrow_mut().toggle_editor_zen());
+        let weak = ui.as_weak();
+        ui.on_toggle_zen(move || {
+            let zen = {
+                let mut model = model.borrow_mut();
+                model.toggle_editor_zen();
+                model.zen_engaged()
+            };
+            if let Some(ui) = weak.upgrade() {
+                ui.set_zen_active(zen);
+            }
+        });
     }
     {
         let model = model.clone();
