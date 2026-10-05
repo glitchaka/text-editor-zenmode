@@ -430,13 +430,6 @@ impl SpellServer {
         };
 
         let mut absolute = Vec::<(u32, u32, u32, u32)>::new();
-        if let Some(source) = self.source_file.as_deref()
-            && crate::document::is_native_path(source)
-            && let Ok(document) = crate::document::read(source)
-            && document.body == *text
-        {
-            append_native_format_tokens(&document, &mut absolute);
-        }
         let mut frontmatter = false;
 
         for (line_index, line) in text.lines().enumerate() {

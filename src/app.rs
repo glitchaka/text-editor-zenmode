@@ -1089,8 +1089,12 @@ impl TerminalModel {
                 return;
             }
         };
+        let previous_clipboard = clipboard.get_text().ok();
         let _ = clipboard.set_text(sentinel.clone());
         if let Err(error) = editor.yank_selection_to_clipboard() {
+            if let Some(previous) = previous_clipboard {
+                let _ = clipboard.set_text(previous);
+            }
             self.launcher.message = Some(format!("No se pudo leer la selección: {error}"));
             return;
         }
@@ -1104,6 +1108,9 @@ impl TerminalModel {
                 selected = Some(text);
                 break;
             }
+        }
+        if let Some(previous) = previous_clipboard {
+            let _ = clipboard.set_text(previous);
         }
         let Some(selected) = selected.filter(|text| !text.is_empty()) else {
             self.launcher.message = Some("Selecciona texto antes de aplicar formato.".into());
