@@ -26,7 +26,14 @@ jobs:
         run: |
           $path = '.github/scripts/finalize_runtime.ps1'
           $script = Get-Content -Raw $path
-          $script = $script.Replace('[System.IO.File]::ReadAllText($Path).Replace("`r`n", "`n")', '[System.IO.File]::ReadAllText($Path)')
+          $needle = '  $i = $Text.IndexOf($Old)'
+          $replacement = @'
+  $Text = $Text.Replace("`r`n", "`n")
+  $Old = $Old.Replace("`r`n", "`n")
+  $New = $New.Replace("`r`n", "`n")
+  $i = $Text.IndexOf($Old)
+'@
+          $script = $script.Replace($needle, $replacement)
           [System.IO.File]::WriteAllText($path, $script, [System.Text.UTF8Encoding]::new($false))
           & $path
       - name: Format
