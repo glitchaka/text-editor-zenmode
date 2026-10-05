@@ -1,0 +1,648 @@
+name: Finalize HSST Pomodoro
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/finalize-hsst-pomodoro.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Apply final Rust changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Read-Lf([string]$Path) {
+            (Get-Content -Raw $Path).Replace("`r`n", "`n")
+          }
+          function Write-Utf8([string]$Path, [string]$Text) {
+            [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
+          }
+          function Replace-Once([string]$Text, [string]$Old, [string]$New, [string]$Label) {
+            $i = $Text.IndexOf($Old)
+            if ($i -lt 0) { throw "No se encontró bloque: $Label" }
+            $Text.Substring(0, $i) + $New + $Text.Substring($i + $Old.Length)
+          }
+
+          # spell.rs: una sola implementación de tokens + acciones F2/Space+a.
+          $s = Read-Lf 'src/spell.rs'
+          $dupStart = $s.IndexOf("`nfn text_style_token(")
+          if ($dupStart -ge 0) {
+            $dupEnd = $s.IndexOf("`nfn read_message(", $dupStart)
+            if ($dupEnd -lt 0) { throw 'No se encontró fin del helper duplicado' }
+            $s = $s.Substring(0, $dupStart) + $s.Substring($dupEnd)
+          }
+
+          if (-not $s.Contains('const FORMAT_COMMAND: &str = "helix-sst.formatSelection";')) {
+            $s = Replace-Once $s 'const ADD_WORD_COMMAND: &str = "helix-sst.addWord";' "const ADD_WORD_COMMAND: &str = `"helix-sst.addWord`";`nconst FORMAT_COMMAND: &str = `"helix-sst.formatSelection`";" 'FORMAT_COMMAND'
+          }
+          if (-not $s.Contains('"commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]')) {
+            $s = Replace-Once $s '"commands": [ADD_WORD_COMMAND]' '"commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]' 'executeCommandProvider'
+          }
+          if (-not $s.Contains('message.get("result").is_some()')) {
+            $old = "        let id = message.get(`"id`").cloned();`n`n        match method {"
+            $new = "        let id = message.get(`"id`").cloned();`n        if method.is_empty() && (message.get(`"result`").is_some() || message.get(`"error`").is_some()) {`n            continue;`n        }`n`n        match method {"
+            $s = Replace-Once $s $old $new 'respuestas LSP'
+          }
+          if (-not $s.Contains('next_request_id: u64')) {
+            $s = Replace-Once $s "    source_file: Option<PathBuf>,`n}" "    source_file: Option<PathBuf>,`n    next_request_id: u64,`n}" 'campo request id'
+            $s = Replace-Once $s "            source_file,`n        })" "            source_file,`n            next_request_id: 1,`n        })" 'init request id'
+          }
+
+          $execStart = $s.IndexOf('            "workspace/executeCommand" => {')
+          $execEnd = $s.IndexOf('            "shutdown" => {', $execStart)
+          if ($execStart -lt 0 -or $execEnd -lt 0) { throw 'No se encontró workspace/executeCommand' }
+          $newExec = @'
+            "workspace/executeCommand" => {
+                let command = message.pointer("/params/command").and_then(Value::as_str);
+                let mut changed = false;
+                match command {
+                    Some(ADD_WORD_COMMAND) => {
+                        if let Some(word) = message
+                            .pointer("/params/arguments/0")
+                            .and_then(Value::as_str)
+                        {
+                            changed = server.add_user_word(word)?;
+                        }
+                    }
+                    Some(FORMAT_COMMAND) => {
+                        changed = server.apply_format_command(
+                            message.pointer("/params/arguments").unwrap_or(&Value::Null),
+                        )?;
+                    }
+                    _ => {}
+                }
+                if let Some(id) = id {
+                    send_response(&mut output, id, json!(changed))?;
+                }
+                if changed && command == Some(ADD_WORD_COMMAND) {
+                    let documents = server
+                        .documents
+                        .iter()
+                        .map(|(uri, text)| (uri.clone(), text.clone()))
+                        .collect::<Vec<_>>();
+                    for (uri, text) in documents {
+                        server.publish(&uri, &text, &mut output)?;
+                    }
+                } else if changed && command == Some(FORMAT_COMMAND) {
+                    let request_id = server.next_request_id;
+                    server.next_request_id = server.next_request_id.saturating_add(1);
+                    send_request(
+                        &mut output,
+                        json!(request_id),
+                        "workspace/semanticTokens/refresh",
+                        Value::Null,
+                    )?;
+                }
+            }
+'@
+          $s = $s.Substring(0, $execStart) + $newExec + $s.Substring($execEnd)
+
+          if (-not $s.Contains('fn apply_format_command(&self, arguments: &Value)')) {
+            $marker = "        actions`n    }`n`n    fn completions"
+            $replacement = @'
+        if let Some(source) = self.source_file.as_ref()
+            && crate::document::is_native_path(source)
+            && let Some(range) = params.get("range").cloned()
+            && range.pointer("/start") != range.pointer("/end")
+        {
+            let mut push_format = |title: &str, action: &str, value: &str| {
+                actions.push(json!({
+                    "title": title,
+                    "kind": "refactor.rewrite",
+                    "command": {
+                        "title": title,
+                        "command": FORMAT_COMMAND,
+                        "arguments": [uri, range.clone(), action, value]
+                    }
+                }));
+            };
+            push_format("Formato · Negrita", "bold", "");
+            push_format("Formato · Cursiva", "italic", "");
+            push_format("Formato · Subrayado", "underline", "");
+            for (label, value) in [
+                ("Blanco", "white"),
+                ("Rojo", "red"),
+                ("Naranjo", "orange"),
+                ("Amarillo", "yellow"),
+                ("Verde", "green"),
+                ("Cian", "cyan"),
+                ("Azul", "blue"),
+                ("Púrpura", "purple"),
+                ("Gris", "gray"),
+            ] {
+                push_format(&format!("Color de texto · {label}"), "font-color", value);
+            }
+            push_format("Color de texto · Quitar", "font-color", "none");
+            for (label, value) in [
+                ("Amarillo", "yellow"),
+                ("Naranjo", "orange"),
+                ("Verde", "green"),
+                ("Cian", "cyan"),
+                ("Azul", "blue"),
+                ("Púrpura", "purple"),
+                ("Rojo", "red"),
+                ("Gris", "gray"),
+            ] {
+                push_format(&format!("Resaltado · {label}"), "highlight-color", value);
+            }
+            push_format("Resaltado · Quitar", "highlight-color", "none");
+        }
+        actions
+    }
+
+    fn apply_format_command(&self, arguments: &Value) -> Result<bool> {
+        let Some(source) = self.source_file.as_deref() else {
+            return Ok(false);
+        };
+        let Some(uri) = arguments.get(0).and_then(Value::as_str) else {
+            return Ok(false);
+        };
+        let Some(current_text) = self.documents.get(uri) else {
+            return Ok(false);
+        };
+        let Some(range) = arguments.get(1) else {
+            return Ok(false);
+        };
+        let action = arguments.get(2).and_then(Value::as_str).unwrap_or("");
+        let value = arguments.get(3).and_then(Value::as_str).unwrap_or("");
+        let start_line = range.pointer("/start/line").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let start_character = range.pointer("/start/character").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let end_line = range.pointer("/end/line").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let end_character = range.pointer("/end/character").and_then(Value::as_u64).unwrap_or(0) as usize;
+        crate::document::apply_format_lsp_range(
+            source,
+            current_text,
+            start_line,
+            start_character,
+            end_line,
+            end_character,
+            action,
+            value,
+        )
+    }
+
+    fn completions
+'@
+            $s = Replace-Once $s $marker $replacement 'acciones de formato'
+          }
+
+          if (-not $s.Contains('fn send_request(output: &mut impl Write')) {
+            $marker = 'fn send_notification(output: &mut impl Write, method: &str, params: Value) -> Result<()> {'
+            $helper = @'
+fn send_request(output: &mut impl Write, id: Value, method: &str, params: Value) -> Result<()> {
+    send_json(
+        output,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params
+        }),
+    )
+}
+
+'@
+            $s = Replace-Once $s $marker ($helper + $marker) 'send_request'
+          }
+          Write-Utf8 'src/spell.rs' $s
+
+          # document.rs: rango LSP sobre el texto vivo de Helix.
+          $s = Read-Lf 'src/document.rs'
+          if (-not $s.Contains('pub fn apply_format_lsp_range(')) {
+            $marker = 'pub fn remap_formatting(formatting: &Value, old: &str, new: &str) -> Value {'
+            $helper = @'
+fn utf16_position_to_byte(body: &str, line: usize, character: usize) -> usize {
+    let mut line_start = 0usize;
+    for (index, segment) in body.split_inclusive('\n').enumerate() {
+        if index == line {
+            let line_body = segment.strip_suffix('\n').unwrap_or(segment);
+            let mut utf16 = 0usize;
+            for (offset, ch) in line_body.char_indices() {
+                if utf16 >= character {
+                    return line_start + offset;
+                }
+                let next = utf16 + ch.len_utf16();
+                if next > character {
+                    return line_start + offset;
+                }
+                utf16 = next;
+            }
+            return line_start + line_body.len();
+        }
+        line_start += segment.len();
+    }
+    body.len()
+}
+
+pub fn apply_format_lsp_range(
+    path: &Path,
+    current_body: &str,
+    start_line: usize,
+    start_character: usize,
+    end_line: usize,
+    end_character: usize,
+    action: &str,
+    value: &str,
+) -> Result<bool> {
+    if !is_native_path(path) {
+        return Ok(false);
+    }
+    let mut document = read(path)?;
+    if document.body != current_body {
+        document.formatting = remap_formatting(&document.formatting, &document.body, current_body);
+        document.body = current_body.to_owned();
+    }
+    let start = utf16_position_to_byte(&document.body, start_line, start_character);
+    let end = utf16_position_to_byte(&document.body, end_line, end_character);
+    if start >= end
+        || end > document.body.len()
+        || !document.body.is_char_boundary(start)
+        || !document.body.is_char_boundary(end)
+    {
+        return Ok(false);
+    }
+    let runs = normalized_runs_for_selection(
+        &document.body,
+        &document.formatting,
+        start,
+        end,
+        action,
+        value,
+    );
+    let next = encode_formatting_runs(&runs);
+    if next == document.formatting {
+        return Ok(false);
+    }
+    document.formatting = next;
+    write(path, &document)?;
+    Ok(true)
+}
+
+'@
+            $s = Replace-Once $s $marker ($helper + $marker) 'formato por rango LSP'
+          }
+          Write-Utf8 'src/document.rs' $s
+
+          # editor.rs: tema de descanso y ayuda de teclas.
+          $s = Read-Lf 'src/editor.rs'
+          if (-not $s.Contains('write_break_theme(&themes_dir.join("helix-sst-break.toml"))?;')) {
+            $s = Replace-Once $s '    write_zen_theme(&themes_dir.join("helix-sst-zen.toml"))?;' "    write_zen_theme(&themes_dir.join(`"helix-sst-zen.toml`"))?;`n    write_break_theme(&themes_dir.join(`"helix-sst-break.toml`"))?;" 'instalar tema descanso'
+          }
+          $s = $s.Replace('normal = "NORMAL · i: escribir · F2: ortografía"', 'normal = "NORMAL · i: escribir · F2: acciones · F4: Pomodoro"')
+          $s = $s.Replace('insert = "INSERTAR · Alt+d: — · F2: ortografía · Esc: comandos"', 'insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · Esc: comandos"')
+          if (-not $s.Contains('fn write_break_theme(path: &Path)')) {
+            $marker = 'fn write_language_config('
+            $helper = @'
+fn write_break_theme(path: &Path) -> Result<()> {
+    fs::write(
+        path,
+        r##"inherits = "helix-sst-zen"
+
+"ui.background" = { bg = "#2b2027" }
+"ui.text" = "#f5d0c5"
+"ui.text.focus" = "#ffe5dc"
+"ui.cursor" = { fg = "#2b2027", bg = "#ffb4a2" }
+"ui.cursor.primary" = { fg = "#2b2027", bg = "#ffb4a2" }
+"ui.cursorline.primary" = { bg = "#35262d" }
+"ui.selection" = { bg = "#5a3a46" }
+"ui.linenr" = "#b9878d"
+"ui.linenr.selected" = "#ffb4a2"
+"ui.statusline" = { fg = "#ffd6c9", bg = "#3b2932" }
+"ui.statusline.inactive" = { fg = "#c9939c", bg = "#32242b" }
+"ui.popup" = { fg = "#ffe0d7", bg = "#3b2932" }
+"ui.menu" = { fg = "#ffe0d7", bg = "#3b2932" }
+"ui.menu.selected" = { fg = "#2b2027", bg = "#ffb4a2" }
+"##,
+    )?;
+    Ok(())
+}
+
+'@
+            $s = Replace-Once $s $marker ($helper + $marker) 'tema descanso'
+          }
+          Write-Utf8 'src/editor.rs' $s
+
+          # app.rs: Pomodoro 25/5, F4 y :PD.
+          $s = Read-Lf 'src/app.rs'
+          if (-not $s.Contains('const POMODORO_WRITE_SECS')) {
+            $s = Replace-Once $s 'const CONTENT_TOP_GAP: f32 = 8.0;' "const CONTENT_TOP_GAP: f32 = 8.0;`nconst POMODORO_WRITE_SECS: u64 = 25 * 60;`nconst POMODORO_BREAK_SECS: u64 = 5 * 60;" 'constantes Pomodoro'
+          }
+          if (-not $s.Contains('in property <bool> pomodoro-prompt')) {
+            $s = Replace-Once $s '        in property <bool> editor-active: false;' "        in property <bool> editor-active: false;`n        in property <bool> pomodoro-prompt: false;`n        in property <bool> pomodoro-break: false;`n        in property <string> pomodoro-text: `"`";" 'propiedades Pomodoro'
+          }
+          if (-not $s.Contains('text: root.pomodoro-text;')) {
+            $needle = '                text: root.version-text;'
+            $i = $s.IndexOf($needle)
+            if ($i -lt 0) { throw 'No se encontró texto de versión' }
+            $close = $s.IndexOf("            }", $i)
+            if ($close -lt 0) { throw 'No se encontró cierre del texto de versión' }
+            $close += "            }".Length
+            $timer = @'
+
+            Rectangle {
+                visible: root.editor-active && root.pomodoro-text != "";
+                x: island.width - 350px;
+                y: 4px;
+                width: 116px;
+                height: 26px;
+                border-radius: 8px;
+                background: root.pomodoro-break ? #5a3a46 : #172334;
+                Text {
+                    width: 100%; height: 100%; text: root.pomodoro-text;
+                    color: root.pomodoro-break ? #ffb4a2 : #e8cc83;
+                    font-family: "Segoe UI Variable"; font-size: 10px; font-weight: 650;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+            }
+'@
+            $s = $s.Substring(0, $close) + $timer + $s.Substring($close)
+          }
+          if (-not $s.Contains('|| root.pomodoro-text != ""')) {
+            $s = Replace-Once $s '                || root.page-menu-open;' "                || root.page-menu-open`n                || root.pomodoro-text != `"`";" 'isla Pomodoro visible'
+          }
+          if (-not $s.Contains('text: "¿INICIAR POMODORO?"')) {
+            $marker = "`n    }`n}`n`n#[derive(Clone, Copy)]`nstruct Rgb"
+            $overlay = @'
+
+        Rectangle {
+            visible: root.pomodoro-prompt;
+            x: 0; y: 0; width: 100%; height: 100%;
+            background: rgba(8, 10, 14, 0.72);
+            Rectangle {
+                width: 430px; height: 150px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 12px;
+                background: #171b20;
+                border-width: 1px;
+                border-color: #5a6570;
+                Text {
+                    x: 20px; y: 18px; width: parent.width - 40px; height: 28px;
+                    text: "¿INICIAR POMODORO?"; color: #e8cc83;
+                    font-family: "Segoe UI Variable"; font-size: 16px; font-weight: 700;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                Text {
+                    x: 20px; y: 54px; width: parent.width - 40px; height: 28px;
+                    text: "25 min escritura · 5 min descanso"; color: #dfe8ef;
+                    font-family: "Segoe UI Variable"; font-size: 13px;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                Text {
+                    x: 20px; y: 98px; width: parent.width - 40px; height: 28px;
+                    text: "Enter / F4 iniciar     ·     Esc continuar sin temporizador";
+                    color: #8db9bb; font-family: "Segoe UI Variable"; font-size: 11px;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+            }
+        }
+'@
+            $s = Replace-Once $s $marker ($overlay + $marker) 'pregunta Pomodoro'
+          }
+          if (-not $s.Contains('pomodoro_offer: bool')) {
+            $s = Replace-Once $s "    zen_requested: bool,`n    page_profile: crate::page::PageProfile," "    zen_requested: bool,`n    pomodoro_offer: bool,`n    pomodoro_active: bool,`n    pomodoro_break: bool,`n    pomodoro_deadline: Option<Instant>,`n    command_capture: Option<String>,`n    page_profile: crate::page::PageProfile," 'campos Pomodoro'
+            $s = Replace-Once $s "            zen_requested,`n            page_profile: crate::page::PageProfile::default()," "            zen_requested,`n            pomodoro_offer: false,`n            pomodoro_active: false,`n            pomodoro_break: false,`n            pomodoro_deadline: None,`n            command_capture: None,`n            page_profile: crate::page::PageProfile::default()," 'inicio Pomodoro'
+          }
+          if (-not $s.Contains('fn start_pomodoro(&mut self)')) {
+            $marker = "    fn page_visual(&self) -> Option<PageVisual> {"
+            $methods = @'
+    fn start_pomodoro(&mut self) {
+        if self.editor.is_none() || self.pomodoro_active {
+            self.pomodoro_offer = false;
+            return;
+        }
+        self.pomodoro_offer = false;
+        self.pomodoro_active = true;
+        self.pomodoro_break = false;
+        self.pomodoro_deadline = Some(Instant::now() + Duration::from_secs(POMODORO_WRITE_SECS));
+        if let Some(editor) = self.editor.as_ref() {
+            let _ = editor.send_command(":theme helix-sst-zen");
+        }
+        self.dirty = true;
+    }
+
+    fn dismiss_pomodoro_offer(&mut self) {
+        self.pomodoro_offer = false;
+    }
+
+    fn pomodoro_label(&self) -> String {
+        if !self.pomodoro_active {
+            return String::new();
+        }
+        let remaining = self
+            .pomodoro_deadline
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()).as_secs())
+            .unwrap_or(0);
+        let minutes = remaining / 60;
+        let seconds = remaining % 60;
+        let phase = if self.pomodoro_break { "DESCANSO" } else { "ESCRITURA" };
+        format!("{phase} {minutes:02}:{seconds:02}")
+    }
+
+    fn begin_pomodoro_break(&mut self) {
+        self.pomodoro_break = true;
+        self.pomodoro_deadline = Some(Instant::now() + Duration::from_secs(POMODORO_BREAK_SECS));
+        self.command_capture = None;
+        if let Some(editor) = self.editor.as_ref() {
+            let win32 = editor.win32_input();
+            let _ = editor.send_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), win32);
+            let _ = editor.send_command(":theme helix-sst-break");
+        }
+        self.dirty = true;
+    }
+
+    fn begin_pomodoro_writing(&mut self) {
+        self.pomodoro_break = false;
+        self.pomodoro_deadline = Some(Instant::now() + Duration::from_secs(POMODORO_WRITE_SECS));
+        if let Some(editor) = self.editor.as_ref() {
+            let _ = editor.send_command(":theme helix-sst-zen");
+        }
+        self.dirty = true;
+    }
+
+    fn update_pomodoro(&mut self) {
+        if !self.pomodoro_active {
+            return;
+        }
+        let Some(deadline) = self.pomodoro_deadline else {
+            return;
+        };
+        if Instant::now() < deadline {
+            return;
+        }
+        if self.pomodoro_break {
+            self.begin_pomodoro_writing();
+        } else {
+            self.begin_pomodoro_break();
+        }
+    }
+
+    fn capture_pd_command(&mut self, key: KeyEvent) -> bool {
+        if self.command_capture.is_none() {
+            if key.code == KeyCode::Char(':')
+                && key.modifiers.is_empty()
+                && self.helix_is_normal_mode()
+            {
+                self.command_capture = Some(String::new());
+            }
+            return false;
+        }
+        match key.code {
+            KeyCode::Enter => {
+                let is_pd = self
+                    .command_capture
+                    .as_deref()
+                    .is_some_and(|command| command.trim().eq_ignore_ascii_case("pd"));
+                self.command_capture = None;
+                if is_pd {
+                    if let Some(editor) = self.editor.as_ref() {
+                        let _ = editor.send_key(
+                            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                            editor.win32_input(),
+                        );
+                    }
+                    self.start_pomodoro();
+                    return true;
+                }
+            }
+            KeyCode::Esc => self.command_capture = None,
+            KeyCode::Backspace => {
+                if let Some(command) = self.command_capture.as_mut() {
+                    command.pop();
+                }
+            }
+            KeyCode::Char(ch)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                if let Some(command) = self.command_capture.as_mut() {
+                    command.push(ch);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+'@
+            $s = Replace-Once $s $marker ($methods + $marker) 'métodos Pomodoro'
+          }
+          if (-not $s.Contains('self.pomodoro_offer = true;')) {
+            $s = Replace-Once $s "        self.editor = Some(session);`n        self.glyphs.clear();" "        self.editor = Some(session);`n        self.pomodoro_offer = true;`n        self.pomodoro_active = false;`n        self.pomodoro_break = false;`n        self.pomodoro_deadline = None;`n        self.command_capture = None;`n        self.glyphs.clear();" 'preguntar al abrir'
+          }
+          if (-not $s.Contains('self.update_pomodoro();')) {
+            $s = Replace-Once $s "        if self.splash_active {`n            return;`n        }`n        let mut finished = false;" "        if self.splash_active {`n            return;`n        }`n        self.update_pomodoro();`n        let mut finished = false;" 'actualizar reloj'
+          }
+          if (-not $s.Contains('if self.pomodoro_break || symbol.is_empty()')) {
+            $s = Replace-Once $s "    fn insert_symbol(&mut self, symbol: &str) {`n        if symbol.is_empty() {" "    fn insert_symbol(&mut self, symbol: &str) {`n        if self.pomodoro_break || symbol.is_empty() {" 'bloquear símbolos'
+          }
+          if (-not $s.Contains('if self.pomodoro_break {`n            return;`n        }`n        let Some(current)')) {
+            $s = Replace-Once $s "    fn apply_format(&mut self, action: &str, value: &str) {`n        let Some(current)" "    fn apply_format(&mut self, action: &str, value: &str) {`n        if self.pomodoro_break {`n            return;`n        }`n        let Some(current)" 'bloquear formato'
+          }
+          if (-not $s.Contains('if self.pomodoro_offer {')) {
+            $old = "    fn editor_key(&mut self, key: KeyEvent) {`n        if self.try_continue_to_next_chapter(key) {`n            return;`n        }`n`n"
+            $new = @'
+    fn editor_key(&mut self, key: KeyEvent) {
+        if self.pomodoro_offer {
+            match key.code {
+                KeyCode::Enter | KeyCode::F(4) | KeyCode::Char('s') | KeyCode::Char('S')
+                | KeyCode::Char('y') | KeyCode::Char('Y') => self.start_pomodoro(),
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => self.dismiss_pomodoro_offer(),
+                _ => {}
+            }
+            return;
+        }
+        if key.code == KeyCode::F(4) && key.modifiers.is_empty() {
+            self.start_pomodoro();
+            return;
+        }
+        if self.capture_pd_command(key) {
+            return;
+        }
+        if self.pomodoro_break {
+            if key.modifiers.is_empty()
+                && matches!(
+                    key.code,
+                    KeyCode::Left
+                        | KeyCode::Right
+                        | KeyCode::Up
+                        | KeyCode::Down
+                        | KeyCode::PageUp
+                        | KeyCode::PageDown
+                        | KeyCode::Home
+                        | KeyCode::End
+                        | KeyCode::Esc
+                )
+                && let Some(editor) = self.editor.as_ref()
+            {
+                let _ = editor.send_key(key, editor.win32_input());
+            }
+            return;
+        }
+        if self.try_continue_to_next_chapter(key) {
+            return;
+        }
+
+'@
+            $s = Replace-Once $s $old $new 'entrada Pomodoro'
+          }
+          if (-not $s.Contains('self.pomodoro_offer = false;`n            self.pomodoro_active = false;')) {
+            $old = "            self.chapter_switch_until = None;`n            self.launcher.refresh();"
+            $new = "            self.chapter_switch_until = None;`n            self.pomodoro_offer = false;`n            self.pomodoro_active = false;`n            self.pomodoro_break = false;`n            self.pomodoro_deadline = None;`n            self.command_capture = None;`n            self.launcher.refresh();"
+            $s = Replace-Once $s $old $new 'reiniciar Pomodoro al cerrar'
+          }
+
+          $stateOld = "        ui.set_editor_active(model.editor.is_some());`n        ui.set_page_label(model.page_profile.paper.label().into());"
+          $stateNew = "        ui.set_editor_active(model.editor.is_some());`n        ui.set_pomodoro_prompt(model.pomodoro_offer);`n        ui.set_pomodoro_break(model.pomodoro_break);`n        ui.set_pomodoro_text(model.pomodoro_label().into());`n        ui.set_page_label(model.page_profile.paper.label().into());"
+          if ($s.Contains($stateOld)) { $s = $s.Replace($stateOld, $stateNew) }
+
+          $keyOld = "                ui.set_zen_active(model.zen_engaged());`n                ui.set_editor_active(model.editor.is_some());"
+          $keyNew = "                ui.set_zen_active(model.zen_engaged());`n                ui.set_editor_active(model.editor.is_some());`n                ui.set_pomodoro_prompt(model.pomodoro_offer);`n                ui.set_pomodoro_break(model.pomodoro_break);`n                ui.set_pomodoro_text(model.pomodoro_label().into());"
+          if ($s.Contains($keyOld)) { $s = $s.Replace($keyOld, $keyNew) }
+          Write-Utf8 'src/app.rs' $s
+
+          # version
+          $s = Read-Lf 'Cargo.toml'
+          $s = [regex]::Replace($s, '(?m)^version = "0\.2\.10"$', 'version = "0.2.11"', 1)
+          Write-Utf8 'Cargo.toml' $s
+
+      - name: Format
+        shell: pwsh
+        run: cargo fmt --all
+      - name: Check formatting
+        shell: pwsh
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        shell: pwsh
+        run: cargo clippy --release -- -D warnings
+      - name: Tests
+        shell: pwsh
+        run: cargo test --release
+      - name: Build
+        shell: pwsh
+        run: cargo build --release
+
+      - name: Commit final source
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-rust-pomodoro.yml
+          rm -f .github/workflows/finalize-hsst-pomodoro.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+glitchaka@users.noreply.github.com"
+          git add -A
+          git commit -m "Finalizar formato contextual y Pomodoro [skip ci]"
+          git push origin HEAD:main
