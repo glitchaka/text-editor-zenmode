@@ -24,6 +24,16 @@ jobs:
       - name: Apply runtime fixes
         shell: pwsh
         run: |
+          $appPath = 'src/app.rs'
+          $app = Get-Content -Raw $appPath
+          if (-not $app.Contains('pomodoro_requested: bool')) {
+            $app = [regex]::Replace($app, '(?m)^(\s*)pomodoro_offer: bool,', '$1pomodoro_requested: bool,' + "`n" + '$1pomodoro_offer: bool,', 1)
+          }
+          if (-not $app.Contains('pomodoro_requested: false')) {
+            $app = [regex]::Replace($app, '(?m)^(\s*)pomodoro_offer: false,', '$1pomodoro_requested: false,' + "`n" + '$1pomodoro_offer: false,', 1)
+          }
+          [System.IO.File]::WriteAllText($appPath, $app, [System.Text.UTF8Encoding]::new($false))
+
           $path = '.github/scripts/finalize_runtime.ps1'
           $script = Get-Content -Raw $path
           $needle = '  $i = $Text.IndexOf($Old)'
