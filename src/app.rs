@@ -44,7 +44,6 @@ const CELL_WIDTH: f32 = 8.0;
 const CELL_HEIGHT: f32 = 18.0;
 const FONT_SIZE: f32 = 14.0;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
-const ISLAND_TOP: f32 = 6.0;
 const ISLAND_HEIGHT: f32 = 34.0;
 const CONTENT_TOP_GAP: f32 = 8.0;
 const POMODORO_WRITE_SECS: u64 = 25 * 60;
@@ -111,6 +110,7 @@ slint::slint! {
         callback key-input(string, bool, bool, bool);
         callback toggle-zen();
         callback close-window();
+        callback start-pomodoro();
         callback format-action(string, string);
         callback insert-symbol(string);
         callback page-action(string, string);
@@ -145,190 +145,67 @@ slint::slint! {
             }
         }
 
-        zen-reveal := TouchArea {
-            x: 0;
-            y: 0;
-            width: 100%;
-            height: 8px;
+        bottom-reveal := TouchArea {
+            x: root.width - 224px;
+            y: root.height - 10px;
+            width: 224px;
+            height: 10px;
             enabled: root.zen-active;
         }
 
         island := Rectangle {
-            // Fuera de Zenmode la isla debe permanecer visible siempre. En el
-            // launcher editor-active es false, así que tampoco puede heredar
-            // accidentalmente un zen-active obsoleto al cerrar el editor.
-            visible: !root.editor-active
-                || !root.zen-active
-                || zen-reveal.has-hover
-                || zen-title-hover.has-hover
-                || zen-touch.has-hover
-                || root.font-palette-open
-                || root.highlight-palette-open
-                || root.symbols-open
-                || root.page-menu-open
-                || root.pomodoro-text != "";
-            width: min(900px, root.width - 20px);
+            visible: root.editor-active
+                && (!root.zen-active
+                    || bottom-reveal.has-hover
+                    || island-hover.has-hover
+                    || root.symbols-open
+                    || root.pomodoro-text != "");
+            width: 196px;
             height: 34px;
-            x: (root.width - self.width) / 2;
-            y: 6px;
+            x: root.width - self.width - 14px;
+            y: root.height - self.height - 7px;
             border-radius: 13px;
             background: rgba(10, 13, 20, 0.96);
             border-width: 1px;
             border-color: #2b3547;
 
-            zen-title-hover := TouchArea {
-                x: 0;
-                y: 0;
-                width: island.width;
-                height: island.height;
-                enabled: root.zen-active;
+            island-hover := TouchArea {
+                x: 0; y: 0; width: parent.width; height: parent.height;
             }
 
             island-move := WindowMoveArea {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: parent.height;
+                x: 0; y: 0; width: parent.width; height: parent.height;
                 enabled: !root.zen-active;
             }
 
-            Text {
-                x: 17px;
-                y: 0;
-                width: 94px;
-                height: parent.height;
-                text: "HELIX SST";
-                color: #dfe8ef;
-                font-family: "Segoe UI Variable";
-                font-size: 14px;
-                font-weight: 700;
-                vertical-alignment: center;
-            }
-
-            Text {
-                x: 112px;
-                y: 0;
-                width: 58px;
-                height: parent.height;
-                text: root.version-text;
-                color: #7f8b9b;
-                font-family: "Segoe UI Variable";
-                font-size: 12px;
-                vertical-alignment: center;
-            }
-  Rectangle {
-      visible: root.editor-active && root.pomodoro-text != "";
-      x: island.width - 350px;
-      y: 4px;
-      width: 116px;
-      height: 26px;
-      border-radius: 8px;
-      background: root.pomodoro-break ? #5a3a46 : #172334;
-      Text {
-          width: 100%; height: 100%; text: root.pomodoro-text;
-          color: root.pomodoro-break ? #ffb4a2 : #e8cc83;
-          font-family: "Segoe UI Variable"; font-size: 10px; font-weight: 650;
-          horizontal-alignment: center; vertical-alignment: center;
-      }
-  }
-
             Rectangle {
-                visible: false;
-                x: 178px;
-                y: 3px;
-                width: 28px;
-                height: 28px;
-                border-radius: 7px;
-                background: fmt-bold.pressed ? #29384b : fmt-bold.has-hover ? #172334 : transparent;
+                x: 5px; y: 3px; width: 112px; height: 28px;
+                border-radius: 9px;
+                background: pomodoro-touch.pressed
+                    ? #29384b
+                    : pomodoro-touch.has-hover ? #172334 : transparent;
                 Text {
-                    width: 100%; height: 100%; text: "B"; color: #dfe8ef;
-                    font-family: "Segoe UI Variable"; font-size: 13px; font-weight: 700;
-                    horizontal-alignment: center; vertical-alignment: center;
+                    width: 100%; height: 100%;
+                    text: root.pomodoro-text != "" ? root.pomodoro-text : "POMODORO";
+                    color: root.pomodoro-break ? #ffb4a2 : #e8cc83;
+                    font-family: "Segoe UI Variable";
+                    font-size: root.pomodoro-text != "" ? 10px : 11px;
+                    font-weight: 650;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
                 }
-                fmt-bold := TouchArea {
+                pomodoro-touch := TouchArea {
                     mouse-cursor: pointer;
-                    clicked => { root.format-action("bold", ""); terminal-focus.focus(); }
+                    clicked => { root.start-pomodoro(); terminal-focus.focus(); }
                 }
             }
 
             Rectangle {
-                visible: false;
-                x: 210px; y: 3px; width: 28px; height: 28px; border-radius: 7px;
-                background: fmt-italic.pressed ? #29384b : fmt-italic.has-hover ? #172334 : transparent;
-                Text {
-                    width: 100%; height: 100%; text: "I"; color: #dfe8ef;
-                    font-family: "Segoe UI Variable"; font-size: 13px;
-                    horizontal-alignment: center; vertical-alignment: center;
-                }
-                fmt-italic := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.format-action("italic", ""); terminal-focus.focus(); }
-                }
-            }
-
-            Rectangle {
-                visible: false;
-                x: 242px; y: 3px; width: 28px; height: 28px; border-radius: 7px;
-                background: fmt-underline.pressed ? #29384b : fmt-underline.has-hover ? #172334 : transparent;
-                Text {
-                    width: 100%; height: 100%; text: "U"; color: #dfe8ef;
-                    font-family: "Segoe UI Variable"; font-size: 13px;
-                    horizontal-alignment: center; vertical-alignment: center;
-                }
-                Rectangle { x: 8px; y: 22px; width: 12px; height: 1px; background: #dfe8ef; }
-                fmt-underline := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.format-action("underline", ""); terminal-focus.focus(); }
-                }
-            }
-
-            Rectangle {
-                visible: false;
-                x: 276px; y: 3px; width: 34px; height: 28px; border-radius: 7px;
-                background: font-menu.pressed ? #29384b : font-menu.has-hover ? #172334 : transparent;
-                Text {
-                    x: 0; y: -1px; width: 27px; height: 25px; text: "A"; color: #dfe8ef;
-                    font-family: "Segoe UI Variable"; font-size: 13px; font-weight: 650;
-                    horizontal-alignment: center; vertical-alignment: center;
-                }
-                Rectangle { x: 7px; y: 23px; width: 20px; height: 2px; background: #83a598; }
-                Text { x: 25px; y: 0; width: 8px; height: 100%; text: "▾"; color: #7f8b9b; font-size: 9px; vertical-alignment: center; }
-                font-menu := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.font-palette-open = !root.font-palette-open;
-                        root.highlight-palette-open = false;
-                        root.symbols-open = false;
-                        root.page-menu-open = false;
-                    }
-                }
-            }
-
-            Rectangle {
-                visible: false;
-                x: 314px; y: 3px; width: 34px; height: 28px; border-radius: 7px;
-                background: highlight-menu.pressed ? #29384b : highlight-menu.has-hover ? #172334 : transparent;
-                Text {
-                    x: 0; y: 0; width: 27px; height: 100%; text: "▰"; color: #fabd2f;
-                    font-family: "Segoe UI Variable"; font-size: 15px;
-                    horizontal-alignment: center; vertical-alignment: center;
-                }
-                Text { x: 25px; y: 0; width: 8px; height: 100%; text: "▾"; color: #7f8b9b; font-size: 9px; vertical-alignment: center; }
-                highlight-menu := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.highlight-palette-open = !root.highlight-palette-open;
-                        root.font-palette-open = false;
-                        root.symbols-open = false;
-                        root.page-menu-open = false;
-                    }
-                }
-            }
-
-            Rectangle {
-                visible: false;
-                x: 352px; y: 3px; width: 34px; height: 28px; border-radius: 7px;
-                background: symbol-menu.pressed ? #29384b : symbol-menu.has-hover ? #172334 : transparent;
+                x: 121px; y: 3px; width: 32px; height: 28px;
+                border-radius: 9px;
+                background: symbol-menu.pressed
+                    ? #29384b
+                    : symbol-menu.has-hover ? #172334 : transparent;
                 Text {
                     width: 100%; height: 100%; text: "Ω"; color: #8db9bb;
                     font-family: "Segoe UI Variable"; font-size: 15px;
@@ -346,130 +223,23 @@ slint::slint! {
             }
 
             Rectangle {
-                visible: root.editor-active && island.width >= 840px;
-                x: island.width - 226px; y: 3px; width: 96px; height: 28px; border-radius: 7px;
-                background: page-menu-touch.pressed ? #29384b : page-menu-touch.has-hover ? #172334 : transparent;
-                Text {
-                    width: 100%; height: 100%; text: root.page-label + " ▾"; color: #b8bb26;
-                    font-family: "Segoe UI Variable"; font-size: 11px; font-weight: 650;
-                    horizontal-alignment: center; vertical-alignment: center;
-                }
-                page-menu-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.page-menu-open = !root.page-menu-open;
-                        root.font-palette-open = false;
-                        root.highlight-palette-open = false;
-                        root.symbols-open = false;
-                    }
-                }
-            }
-
-            zen-control := Rectangle {
-                visible: island.width >= 470px;
-                x: (island.width - 104px) / 2;
-                y: 3px;
-                width: 104px;
-                height: island.height - 6px;
-                border-radius: 9px;
-                background: zen-touch.pressed
-                    ? rgb(36, 49, 67)
-                    : zen-touch.has-hover ? rgb(23, 35, 52) : transparent;
-
-                Text {
-                    width: 100%;
-                    height: 100%;
-                    text: root.editor-active
-                        ? (root.zen-active ? "ZENMODE ACTIVO" : "ENTRAR ZEN")
-                        : "EDITOR";
-                    color: root.zen-active ? #e8cc83 : #8db9bb;
-                    font-family: "Segoe UI Variable";
-                    font-size: 11px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    horizontal-alignment: center;
-                }
-
-                zen-touch := TouchArea {
-                    enabled: root.editor-active;
-                    mouse-cursor: pointer;
-                    clicked => { root.toggle-zen(); }
-                }
-            }
-
-            Rectangle {
-                visible: !root.zen-active;
-                x: island.width - 114px;
-                y: 1px;
-                width: 38px;
-                height: island.height - 2px;
-                border-radius: 10px;
-                background: minimize-touch.pressed
-                    ? rgb(36, 49, 67)
-                    : minimize-touch.has-hover ? rgb(23, 35, 52) : transparent;
-
-                Path {
-                    x: 11px; y: 10px; width: 16px; height: 12px;
-                    commands: "M 1 1 L 8 9 L 15 1";
-                    stroke: #74c8f5; stroke-width: 2.4px;
-                    stroke-line-cap: round; stroke-line-join: round;
-                }
-
-                minimize-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.minimized = true; }
-                }
-            }
-
-            Rectangle {
-                visible: !root.zen-active;
-                x: island.width - 76px;
-                y: 1px;
-                width: 38px;
-                height: island.height - 2px;
-                border-radius: 10px;
-                background: maximize-touch.pressed
-                    ? rgb(36, 49, 67)
-                    : maximize-touch.has-hover ? rgb(23, 35, 52) : transparent;
-
-                Path {
-                    x: 11px; y: 11px; width: 16px; height: 12px;
-                    commands: "M 1 10 L 8 2 L 15 10";
-                    stroke: #74c8f5; stroke-width: 2.4px;
-                    stroke-line-cap: round; stroke-line-join: round;
-                }
-
-                maximize-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.maximized = !root.maximized; }
-                }
-            }
-
-            Rectangle {
-                visible: !root.zen-active;
-                x: island.width - 38px;
-                y: 1px;
-                width: 38px;
-                height: island.height - 2px;
+                x: 157px; y: 1px; width: 38px; height: 32px;
                 border-radius: 10px;
                 background: close-touch.pressed
                     ? rgb(62, 23, 36)
                     : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
-
                 Path {
                     x: 10px; y: 8px; width: 18px; height: 18px;
                     commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
                     stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
                     stroke-width: 2px; stroke-line-cap: round;
                 }
-
                 close-touch := TouchArea {
                     mouse-cursor: pointer;
                     clicked => { root.close-window(); }
                 }
             }
         }
-
         font-palette := Rectangle {
             visible: root.editor-active && root.font-palette-open;
             x: island.x + 270px;
@@ -528,8 +298,8 @@ slint::slint! {
 
         symbols-palette := Rectangle {
             visible: root.editor-active && root.symbols-open;
-            x: island.x + 344px;
-            y: island.y + island.height + 5px;
+            x: island.x + island.width - self.width;
+            y: island.y - self.height - 5px;
             width: 218px;
             height: 62px;
             border-radius: 9px;
@@ -1047,11 +817,7 @@ impl TerminalModel {
         }
 
         let left_pad = (PAD_X * scale).round();
-        let top_pad = if self.zen_engaged() {
-            (PAD_Y * scale).round()
-        } else {
-            ((ISLAND_TOP + ISLAND_HEIGHT + CONTENT_TOP_GAP + PAD_Y) * scale).round()
-        };
+        let top_pad = (PAD_Y * scale).round();
         let cell_width = (CELL_WIDTH * scale).round().max(1.0);
         let cell_height = (CELL_HEIGHT * scale).round().max(1.0);
         (left_pad, top_pad, cell_width, cell_height)
@@ -1073,7 +839,12 @@ impl TerminalModel {
 
         let cols = (((self.width as f32 - left_pad * 2.0) / cell_width).floor() as i32)
             .clamp(20, 300) as u16;
-        let bottom_pad = (PAD_Y * self.scale.max(0.5)).round();
+        let scale = self.scale.max(0.5);
+        let bottom_pad = if self.zen_engaged() && !self.pomodoro_active {
+            (PAD_Y * scale).round()
+        } else {
+            ((PAD_Y + ISLAND_HEIGHT + CONTENT_TOP_GAP) * scale).round()
+        };
         let rows = (((self.height as f32 - top_pad - bottom_pad) / cell_height).floor() as i32)
             .clamp(8, 160) as u16;
         (cols, rows)
@@ -2527,6 +2298,20 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     }
     {
         let model = model.clone();
+        let weak = ui.as_weak();
+        ui.on_start_pomodoro(move || {
+            {
+                model.borrow_mut().start_pomodoro();
+            }
+            if let Some(ui) = weak.upgrade() {
+                let model = model.borrow();
+                ui.set_pomodoro_break(model.pomodoro_break);
+                ui.set_pomodoro_text(model.pomodoro_label().into());
+            }
+        });
+    }
+    {
+        let model = model.clone();
         ui.on_format_action(move |action, value| {
             model
                 .borrow_mut()
@@ -2549,11 +2334,7 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     }
     {
         let weak = ui.as_weak();
-        let model = model.clone();
         ui.on_close_window(move || {
-            if model.borrow().zen_engaged() {
-                return;
-            }
             if let Some(ui) = weak.upgrade() {
                 let _ = ui.hide();
             }
