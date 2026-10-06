@@ -1,0 +1,66 @@
+name: Repair executor
+
+on:
+  push:
+    branches:
+      - repair-ui-format-final
+    paths:
+      - .github/workflows/repair-executor.yml
+
+permissions:
+  contents: write
+
+env:
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  repair:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Apply repair
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $wf = git show origin/repair-ui-format-final:.github/workflows/repair-ui-format-final.yml | Out-String
+          $match = [regex]::Match($wf, "FromBase64String\('([^']+)'\)")
+          if (-not $match.Success) { throw 'No se encontró el parche de reparación' }
+          $script = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($match.Groups[1].Value))
+          $script = $script -replace "(?m)^'w$", "'@"
+          Invoke-Expression $script
+
+      - name: Format
+        shell: pwsh
+        run: cargo fmt --all
+
+      - name: Clippy
+        shell: pwsh
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Tests
+        shell: pwsh
+        run: cargo test --release
+
+      - name: Build release
+        shell: pwsh
+        run: cargo build --release
+
+      - name: Commit directly to main
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml src/app.rs src/editor.rs src/spell.rs
+          git commit -m "Restaurar barra inferior y cerrar formato HSST"
+          git push origin HEAD:main
