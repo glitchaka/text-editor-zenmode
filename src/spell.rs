@@ -168,15 +168,6 @@ pub fn run_lsp(
                     for (uri, text) in documents {
                         server.publish(&uri, &text, &mut output)?;
                     }
-                } else if changed && command == Some(FORMAT_COMMAND) {
-                    let request_id = server.next_request_id;
-                    server.next_request_id = server.next_request_id.saturating_add(1);
-                    send_request(
-                        &mut output,
-                        json!(request_id),
-                        "workspace/semanticTokens/refresh",
-                        Value::Null,
-                    )?;
                 }
             }
             "shutdown" => {
@@ -203,7 +194,6 @@ struct SpellServer {
     documents: HashMap<String, String>,
     library_root: Option<PathBuf>,
     source_file: Option<PathBuf>,
-    next_request_id: u64,
 }
 
 impl SpellServer {
@@ -235,7 +225,6 @@ impl SpellServer {
             documents: HashMap::new(),
             library_root,
             source_file,
-            next_request_id: 1,
         })
     }
 
@@ -942,17 +931,6 @@ fn send_response(output: &mut impl Write, id: Value, result: Value) -> Result<()
     )
 }
 
-fn send_request(output: &mut impl Write, id: Value, method: &str, params: Value) -> Result<()> {
-    send_json(
-        output,
-        &json!({
-          "jsonrpc": "2.0",
-          "id": id,
-          "method": method,
-          "params": params
-        }),
-    )
-}
 fn send_notification(output: &mut impl Write, method: &str, params: Value) -> Result<()> {
     send_json(
         output,

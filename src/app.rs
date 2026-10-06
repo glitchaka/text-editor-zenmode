@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::{Context, Result};
@@ -572,12 +572,12 @@ impl Launcher {
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
         self.entries = entries;
-        self.selected = self.selected.min(self.entries.len() + 3);
+        self.selected = self.selected.min(self.entries.len() + 2);
     }
 
     fn selected_entry(&self) -> Option<&Entry> {
         self.selected
-            .checked_sub(4)
+            .checked_sub(3)
             .and_then(|index| self.entries.get(index))
     }
 }
@@ -590,6 +590,7 @@ struct TerminalModel {
     library: LibraryPaths,
     editor: Option<EditorSession>,
     current_file: Option<PathBuf>,
+    source_modified: Option<SystemTime>,
     chapter_switch_until: Option<Instant>,
     width: u32,
     height: u32,
@@ -642,6 +643,7 @@ impl TerminalModel {
             library,
             editor: None,
             current_file: None,
+            source_modified: None,
             chapter_switch_until: None,
             width: 980,
             height: 680,
@@ -975,6 +977,9 @@ impl TerminalModel {
         let previous_file = self.current_file.clone();
         let previous_page = self.page_profile;
         self.current_file = Some(file.clone());
+        self.source_modified = fs::metadata(&file)
+            .and_then(|metadata| metadata.modified())
+            .ok();
         self.page_profile = document::read_metadata(&file)
             .map(|metadata| metadata.page)
             .unwrap_or_default();
@@ -1094,6 +1099,9 @@ impl TerminalModel {
             value,
         ) {
             Ok(true) => {
+                self.source_modified = fs::metadata(&current)
+                    .and_then(|metadata| metadata.modified())
+                    .ok();
                 let _ = editor.refresh_after_formatting();
                 self.dirty = true;
             }
@@ -1152,6 +1160,9 @@ impl TerminalModel {
                 Some(format!("No se pudo guardar el perfil de página: {error}"));
             return;
         }
+        self.source_modified = fs::metadata(&current)
+            .and_then(|metadata| metadata.modified())
+            .ok();
         self.page_profile = page;
         let (cols, rows) = self.terminal_size();
         self.parser.screen_mut().set_size(rows, cols);
@@ -1184,10 +1195,29 @@ impl TerminalModel {
         self.update_pomodoro();
         let mut finished = false;
 
+        let current_source = self.current_file.clone();
         if let Some(editor) = self.editor.as_mut() {
             let _ = editor.settle_startup_language();
-            if let Err(error) = editor.sync_native() {
-                self.launcher.message = Some(format!("No se pudo sincronizar HSST: {error}"));
+            let body_changed = match editor.sync_native() {
+                Ok(changed) => changed,
+                Err(error) => {
+                    self.launcher.message = Some(format!("No se pudo sincronizar HSST: {error}"));
+                    false
+                }
+            };
+            if let Some(source) = current_source.as_ref() {
+                let modified = fs::metadata(source)
+                    .and_then(|metadata| metadata.modified())
+                    .ok();
+                if body_changed {
+                    self.source_modified = modified;
+                } else if modified.is_some() && modified != self.source_modified {
+                    self.source_modified = modified;
+                    if let Err(error) = editor.refresh_after_formatting() {
+                        self.launcher.message =
+                            Some(format!("No se pudo refrescar el formato: {error}"));
+                    }
+                }
             }
 
             while let Some(result) = editor.try_output() {
@@ -1216,6 +1246,7 @@ impl TerminalModel {
             self.zen_requested = false;
             self.editor = None;
             self.current_file = None;
+            self.source_modified = None;
             self.page_profile = crate::page::PageProfile::default();
             self.chapter_switch_until = None;
             self.pomodoro_offer = false;
@@ -1662,23 +1693,16 @@ impl TerminalModel {
             KeyCode::Up => self.launcher.selected = self.launcher.selected.saturating_sub(1),
             KeyCode::Down => {
                 self.launcher.selected =
-                    (self.launcher.selected + 1).min(self.launcher.entries.len() + 3)
+                    (self.launcher.selected + 1).min(self.launcher.entries.len() + 2)
             }
             KeyCode::Char('n') | KeyCode::Char('N') => {
-                self.launcher.selected = 3;
+                self.launcher.selected = 2;
                 self.launcher.creating = true;
                 self.launcher.new_name.clear();
                 self.launcher.message = None;
             }
             KeyCode::Char('r') | KeyCode::Char('R') => self.launcher.refresh(),
-            KeyCode::Char('p') | KeyCode::Char('P') | KeyCode::F(4) => {
-                self.pomodoro_requested = !self.pomodoro_requested;
-                self.launcher.message = Some(if self.pomodoro_requested {
-                    "Pomodoro 25/5 activado para el próximo archivo.".into()
-                } else {
-                    "Pomodoro desactivado.".into()
-                });
-            }
+
             KeyCode::Char('e') | KeyCode::Char('E') => {
                 if let Some(entry) = self.launcher.selected_entry().cloned()
                     && !entry.directory
@@ -1717,14 +1741,6 @@ impl TerminalModel {
                     self.launcher.message = Some("Zenmode real seleccionado.".into());
                 }
                 2 => {
-                    self.pomodoro_requested = !self.pomodoro_requested;
-                    self.launcher.message = Some(if self.pomodoro_requested {
-                        "Pomodoro 25/5 activado para el próximo archivo.".into()
-                    } else {
-                        "Pomodoro desactivado.".into()
-                    });
-                }
-                3 => {
                     self.launcher.creating = true;
                     self.launcher.new_name.clear();
                     self.launcher.message = None;
@@ -1834,7 +1850,6 @@ impl TerminalModel {
         for (index, (label, active)) in [
             ("Normal", !self.zen_requested),
             ("Zenmode real", self.zen_requested),
-            ("Pomodoro 25/5", self.pomodoro_requested),
         ]
         .into_iter()
         .enumerate()
@@ -1936,17 +1951,17 @@ impl TerminalModel {
                 ),
             );
         } else {
-            let chrome_rows = 17usize;
+            let chrome_rows = 16usize;
             let available = (rows as usize).saturating_sub(chrome_rows).max(3);
             let selected = self.launcher.selected;
             let total = self.launcher.entries.len() + 1;
-            let file_selected = selected.saturating_sub(3);
+            let file_selected = selected.saturating_sub(2);
             let start = file_selected.saturating_sub(available.saturating_sub(1) / 2);
             let end = (start + available).min(total);
 
             for index in start..end {
                 if index == 0 {
-                    let selected_now = selected == 3;
+                    let selected_now = selected == 2;
                     let marker = if selected_now { "▶" } else { " " };
                     let line = format!(
                         "{}{} \x1b[38;5;222m{ICON_DOCUMENT}\x1b[0m   Nuevo archivo",
@@ -1963,7 +1978,7 @@ impl TerminalModel {
                 }
 
                 if let Some(entry) = self.launcher.entries.get(index - 1) {
-                    let selected_now = selected == index + 3;
+                    let selected_now = selected == index + 2;
                     let marker = if selected_now { "▶" } else { " " };
                     let suffix = if entry.directory { "/" } else { "" };
                     let (icon, icon_color) = file_icon(entry);
@@ -2022,7 +2037,7 @@ impl TerminalModel {
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  P/F4 Pomodoro  Backspace subir  R refrescar\x1b[0m",
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  Backspace subir  R refrescar\x1b[0m",
                     inner_width,
                     "38;5;244",
                 ),

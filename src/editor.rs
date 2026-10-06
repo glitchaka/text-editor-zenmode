@@ -273,10 +273,9 @@ impl EditorSession {
     }
 
     pub fn refresh_after_formatting(&self) -> Result<()> {
-        self.send_key(
-            KeyEvent::new(KeyCode::F(21), KeyModifiers::NONE),
-            self.win32_input(),
-        )
+        self.send_command(":set-language markdown")?;
+        thread::sleep(Duration::from_millis(20));
+        self.send_command(":set-language prose")
     }
 
     pub fn sync_native(&mut self) -> Result<bool> {
