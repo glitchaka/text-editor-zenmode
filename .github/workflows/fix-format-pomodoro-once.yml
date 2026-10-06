@@ -1,0 +1,276 @@
+name: Fix format and Pomodoro once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-format-pomodoro-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.85.0
+          components: rustfmt, clippy
+
+      - name: Apply targeted fixes
+        shell: pwsh
+        run: |
+          function Replace-Exact([string]$text, [string]$old, [string]$new, [string]$label) {
+            if (-not $text.Contains($old)) { throw "No se encontró bloque: $label" }
+            return $text.Replace($old, $new)
+          }
+
+          $appPath = 'src/app.rs'
+          $app = Get-Content $appPath -Raw
+          $app = Replace-Exact $app 'time::{Duration, Instant},' 'time::{Duration, Instant, SystemTime},' 'import SystemTime'
+          $app = Replace-Exact $app '        self.selected = self.selected.min(self.entries.len() + 3);' '        self.selected = self.selected.min(self.entries.len() + 2);' 'launcher refresh bound'
+          $app = Replace-Exact $app '            .checked_sub(4)' '            .checked_sub(3)' 'selected_entry offset'
+          $app = Replace-Exact $app @'
+    current_file: Option<PathBuf>,
+    chapter_switch_until: Option<Instant>,
+'@ @'
+    current_file: Option<PathBuf>,
+    source_modified: Option<SystemTime>,
+    chapter_switch_until: Option<Instant>,
+'@ 'source_modified field'
+          $app = Replace-Exact $app @'
+            current_file: None,
+            chapter_switch_until: None,
+'@ @'
+            current_file: None,
+            source_modified: None,
+            chapter_switch_until: None,
+'@ 'source_modified init'
+          $app = Replace-Exact $app @'
+        self.current_file = Some(file.clone());
+        self.page_profile = document::read_metadata(&file)
+'@ @'
+        self.current_file = Some(file.clone());
+        self.source_modified = fs::metadata(&file).and_then(|metadata| metadata.modified()).ok();
+        self.page_profile = document::read_metadata(&file)
+'@ 'source stamp on open'
+          $app = Replace-Exact $app @'
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.settle_startup_language();
+            if let Err(error) = editor.sync_native() {
+                self.launcher.message = Some(format!("No se pudo sincronizar HSST: {error}"));
+            }
+
+            while let Some(result) = editor.try_output() {
+'@ @'
+        let current_source = self.current_file.clone();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.settle_startup_language();
+            let body_changed = match editor.sync_native() {
+                Ok(changed) => changed,
+                Err(error) => {
+                    self.launcher.message = Some(format!("No se pudo sincronizar HSST: {error}"));
+                    false
+                }
+            };
+            if let Some(source) = current_source.as_ref() {
+                let modified = fs::metadata(source).and_then(|metadata| metadata.modified()).ok();
+                if body_changed {
+                    self.source_modified = modified;
+                } else if modified.is_some() && modified != self.source_modified {
+                    self.source_modified = modified;
+                    if let Err(error) = editor.refresh_after_formatting() {
+                        self.launcher.message = Some(format!("No se pudo refrescar el formato: {error}"));
+                    }
+                }
+            }
+
+            while let Some(result) = editor.try_output() {
+'@ 'format change watcher'
+          $app = Replace-Exact $app @'
+            self.editor = None;
+            self.current_file = None;
+            self.page_profile = crate::page::PageProfile::default();
+'@ @'
+            self.editor = None;
+            self.current_file = None;
+            self.source_modified = None;
+            self.page_profile = crate::page::PageProfile::default();
+'@ 'clear source stamp'
+          $app = Replace-Exact $app @'
+            Ok(true) => {
+                let _ = editor.refresh_after_formatting();
+                self.dirty = true;
+            }
+'@ @'
+            Ok(true) => {
+                self.source_modified = fs::metadata(&current)
+                    .and_then(|metadata| metadata.modified())
+                    .ok();
+                let _ = editor.refresh_after_formatting();
+                self.dirty = true;
+            }
+'@ 'direct format refresh stamp'
+          $app = Replace-Exact $app @'
+        self.page_profile = page;
+        let (cols, rows) = self.terminal_size();
+'@ @'
+        self.source_modified = fs::metadata(&current)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        self.page_profile = page;
+        let (cols, rows) = self.terminal_size();
+'@ 'page stamp'
+
+          $app = Replace-Exact $app '                    (self.launcher.selected + 1).min(self.launcher.entries.len() + 3)' '                    (self.launcher.selected + 1).min(self.launcher.entries.len() + 2)' 'launcher key bound'
+          $app = Replace-Exact $app '                self.launcher.selected = 3;' '                self.launcher.selected = 2;' 'new file selection'
+          $oldPomodoroKey = @'
+            KeyCode::Char('p') | KeyCode::Char('P') | KeyCode::F(4) => {
+                self.pomodoro_requested = !self.pomodoro_requested;
+                self.launcher.message = Some(if self.pomodoro_requested {
+                    "Pomodoro 25/5 activado para el próximo archivo.".into()
+                } else {
+                    "Pomodoro desactivado.".into()
+                });
+            }
+'@
+          $app = Replace-Exact $app $oldPomodoroKey '' 'remove launcher pomodoro key'
+          $oldEnter = @'
+                2 => {
+                    self.pomodoro_requested = !self.pomodoro_requested;
+                    self.launcher.message = Some(if self.pomodoro_requested {
+                        "Pomodoro 25/5 activado para el próximo archivo.".into()
+                    } else {
+                        "Pomodoro desactivado.".into()
+                    });
+                }
+                3 => {
+                    self.launcher.creating = true;
+'@
+          $newEnter = @'
+                2 => {
+                    self.launcher.creating = true;
+'@
+          $app = Replace-Exact $app $oldEnter $newEnter 'remove pomodoro enter row'
+          $app = Replace-Exact $app @'
+        for (index, (label, active)) in [
+            ("Normal", !self.zen_requested),
+            ("Zenmode real", self.zen_requested),
+            ("Pomodoro 25/5", self.pomodoro_requested),
+        ]
+'@ @'
+        for (index, (label, active)) in [
+            ("Normal", !self.zen_requested),
+            ("Zenmode real", self.zen_requested),
+        ]
+'@ 'remove launcher pomodoro row'
+          $app = Replace-Exact $app '            let chrome_rows = 17usize;' '            let chrome_rows = 16usize;' 'launcher chrome rows'
+          $app = Replace-Exact $app '            let file_selected = selected.saturating_sub(3);' '            let file_selected = selected.saturating_sub(2);' 'launcher viewport offset'
+          $app = Replace-Exact $app '                    let selected_now = selected == 3;' '                    let selected_now = selected == 2;' 'new selected row'
+          $app = Replace-Exact $app '                    let selected_now = selected == index + 3;' '                    let selected_now = selected == index + 2;' 'entry selected row'
+          $app = Replace-Exact $app '↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  P/F4 Pomodoro  Backspace subir  R refrescar' '↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  Backspace subir  R refrescar' 'launcher footer'
+          Set-Content $appPath $app -Encoding utf8NoBOM
+
+          $editorPath = 'src/editor.rs'
+          $editor = Get-Content $editorPath -Raw
+          $editor = Replace-Exact $editor @'
+    pub fn refresh_after_formatting(&self) -> Result<()> {
+        self.send_key(
+            KeyEvent::new(KeyCode::F(21), KeyModifiers::NONE),
+            self.win32_input(),
+        )
+    }
+'@ @'
+    pub fn refresh_after_formatting(&self) -> Result<()> {
+        self.send_command(":set-language markdown")?;
+        thread::sleep(Duration::from_millis(20));
+        self.send_command(":set-language prose")
+    }
+'@ 'force LSP semantic refresh'
+          Set-Content $editorPath $editor -Encoding utf8NoBOM
+
+          $spellPath = 'src/spell.rs'
+          $spell = Get-Content $spellPath -Raw
+          $spell = Replace-Exact $spell @'
+                } else if changed && command == Some(FORMAT_COMMAND) {
+                    let request_id = server.next_request_id;
+                    server.next_request_id = server.next_request_id.saturating_add(1);
+                    send_request(
+                        &mut output,
+                        json!(request_id),
+                        "workspace/semanticTokens/refresh",
+                        Value::Null,
+                    )?;
+                }
+'@ @'
+                }
+'@ 'remove unsupported semantic refresh request'
+          $spell = Replace-Exact $spell @'
+    source_file: Option<PathBuf>,
+    next_request_id: u64,
+'@ @'
+    source_file: Option<PathBuf>,
+'@ 'remove request id field'
+          $spell = Replace-Exact $spell @'
+            library_root,
+            source_file,
+            next_request_id: 1,
+'@ @'
+            library_root,
+            source_file,
+'@ 'remove request id init'
+          $spell = Replace-Exact $spell @'
+fn send_request(output: &mut impl Write, id: Value, method: &str, params: Value) -> Result<()> {
+    send_json(
+        output,
+        &json!({
+          "jsonrpc": "2.0",
+          "id": id,
+          "method": method,
+          "params": params
+        }),
+    )
+}
+'@ '' 'remove unused send_request'
+          Set-Content $spellPath $spell -Encoding utf8NoBOM
+
+          $cargoPath = 'Cargo.toml'
+          $cargo = Get-Content $cargoPath -Raw
+          $cargo = Replace-Exact $cargo 'version = "0.2.13"' 'version = "0.2.14"' 'version bump'
+          Set-Content $cargoPath $cargo -Encoding utf8NoBOM
+
+          if (Test-Path '.github/scripts/finalize_runtime.ps1') {
+            Remove-Item '.github/scripts/finalize_runtime.ps1' -Force
+          }
+
+      - name: Format
+        shell: pwsh
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        shell: pwsh
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        shell: pwsh
+        run: cargo test
+
+      - name: Build release
+        shell: pwsh
+        run: cargo build --release
+
+      - name: Commit final state and remove temporary workflow
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/fix-format-pomodoro-once.yml
+          if (Test-Path '.github/scripts/finalize_runtime.ps1') { git rm -f .github/scripts/finalize_runtime.ps1 }
+          git add src/app.rs src/editor.rs src/spell.rs Cargo.toml
+          git commit -m "Corregir formato real y retirar Pomodoro del launcher [skip ci]"
+          git push origin HEAD:main
