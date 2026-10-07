@@ -1218,10 +1218,10 @@ impl TerminalModel {
                     self.source_modified = modified;
                 } else if modified.is_some() && modified != self.source_modified {
                     self.source_modified = modified;
-                    // El LSP solicita por si mismo el refresco de semantic tokens.
-                    // Evitar cambiar prose -> markdown -> prose aqui: ese ciclo rompia
-                    // el estado visual/seleccion justo despues de aplicar F2.
-                    self.dirty = true;
+                    if let Err(error) = editor.refresh_after_formatting() {
+                        self.launcher.message =
+                            Some(format!("No se pudo refrescar el formato: {error}"));
+                    }
                 }
             }
 

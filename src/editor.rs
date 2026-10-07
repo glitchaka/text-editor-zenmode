@@ -273,9 +273,10 @@ impl EditorSession {
     }
 
     pub fn refresh_after_formatting(&self) -> Result<()> {
-        self.send_command(":set-language markdown")?;
-        thread::sleep(Duration::from_millis(20));
-        self.send_command(":set-language prose")
+        // Helix 25.07.1 no implementa workspace/semanticTokens/refresh.
+        // Reiniciar solo el LSP conserva el buffer y la seleccion, y fuerza
+        // una nueva peticion de semantic tokens sin cambiar el lenguaje.
+        self.send_command(":lsp-restart")
     }
 
     pub fn sync_native(&mut self) -> Result<bool> {
