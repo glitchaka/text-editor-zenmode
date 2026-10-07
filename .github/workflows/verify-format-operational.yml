@@ -33,7 +33,12 @@ jobs:
 
       - name: Inject operational tests only in runner
         shell: pwsh
-        run: python .github/scripts/verify_format_operational.py
+        run: |
+          python .github/scripts/verify_format_operational.py
+          $p='tests/format_operational.rs'
+          $t=Get-Content $p -Raw
+          $t=$t.Replace("fn response<'a>(messages: &'a [Value], id: u64) -> &'a Value", "fn response(messages: &[Value], id: u64) -> &Value")
+          [IO.File]::WriteAllText((Resolve-Path $p),$t,[Text.UTF8Encoding]::new($false))
 
       - name: Format injected tests
         shell: pwsh
