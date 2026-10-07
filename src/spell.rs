@@ -24,6 +24,7 @@ pub fn run_lsp(
     source_file: Option<PathBuf>,
 ) -> Result<i32> {
     let mut server = SpellServer::new(user_dictionary, library_root, source_file)?;
+    let mut semantic_refresh_serial = 0u64;
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut input = BufReader::new(stdin.lock());
@@ -168,6 +169,18 @@ pub fn run_lsp(
                     for (uri, text) in documents {
                         server.publish(&uri, &text, &mut output)?;
                     }
+                }
+                if changed && command == Some(FORMAT_COMMAND) {
+                    semantic_refresh_serial = semantic_refresh_serial.wrapping_add(1);
+                    send_json(
+                        &mut output,
+                        &json!({
+                            "jsonrpc": "2.0",
+                            "id": format!("helix-sst-semantic-refresh-{semantic_refresh_serial}"),
+                            "method": "workspace/semanticTokens/refresh",
+                            "params": null
+                        }),
+                    )?;
                 }
             }
             "shutdown" => {

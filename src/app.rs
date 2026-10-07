@@ -154,12 +154,10 @@ slint::slint! {
         }
 
         island := Rectangle {
-            visible: root.editor-active
-                && (!root.zen-active
-                    || bottom-reveal.has-hover
-                    || island-hover.has-hover
-                    || root.symbols-open
-                    || root.pomodoro-text != "");
+            visible: !root.zen-active
+                || bottom-reveal.has-hover
+                || island-hover.has-hover
+                || root.symbols-open;
             width: 196px;
             height: 34px;
             x: root.width - self.width - 14px;
@@ -681,10 +679,17 @@ impl TerminalModel {
     }
 
     fn start_pomodoro(&mut self) {
-        if self.editor.is_none() || self.pomodoro_active {
+        if self.pomodoro_active {
             self.pomodoro_offer = false;
             return;
         }
+        if self.editor.is_none() {
+            self.pomodoro_requested = true;
+            self.pomodoro_offer = false;
+            self.dirty = true;
+            return;
+        }
+        self.pomodoro_requested = false;
         self.pomodoro_offer = false;
         self.pomodoro_active = true;
         self.pomodoro_break = false;
@@ -1213,10 +1218,10 @@ impl TerminalModel {
                     self.source_modified = modified;
                 } else if modified.is_some() && modified != self.source_modified {
                     self.source_modified = modified;
-                    if let Err(error) = editor.refresh_after_formatting() {
-                        self.launcher.message =
-                            Some(format!("No se pudo refrescar el formato: {error}"));
-                    }
+                    // El LSP solicita por si mismo el refresco de semantic tokens.
+                    // Evitar cambiar prose -> markdown -> prose aqui: ese ciclo rompia
+                    // el estado visual/seleccion justo despues de aplicar F2.
+                    self.dirty = true;
                 }
             }
 
@@ -2394,6 +2399,9 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
 
             let zen = model.zen_engaged();
             ui.set_editor_active(model.editor.is_some());
+            ui.set_pomodoro_prompt(model.pomodoro_offer);
+            ui.set_pomodoro_break(model.pomodoro_break);
+            ui.set_pomodoro_text(model.pomodoro_label().into());
             ui.set_page_label(model.page_profile.paper.label().into());
             ui.set_page_orientation_text(model.page_profile.orientation.label().into());
             ui.set_margin_left_text(model.page_profile.margin_left_mm.to_string().into());
