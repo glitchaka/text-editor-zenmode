@@ -1,0 +1,62 @@
+name: Verify format operational
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/verify-format-operational.yml'
+      - '.github/scripts/verify_format_operational.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-pc-windows-msvc
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  verify:
+    name: F2 format end-to-end
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Inject operational tests only in runner
+        shell: pwsh
+        run: python .github/scripts/verify_format_operational.py
+
+      - name: Format injected tests
+        shell: pwsh
+        run: cargo fmt --all
+
+      - name: Clippy with operational tests
+        shell: pwsh
+        run: cargo clippy --release --target $env:TARGET --all-targets -- -D warnings
+
+      - name: Build real executable used by Helix LSP
+        shell: pwsh
+        run: cargo build --release --target $env:TARGET
+
+      - name: Run F2 LSP pipeline test
+        shell: pwsh
+        run: cargo test --release --target $env:TARGET --test format_operational -- --nocapture
+
+      - name: Run live Helix PTY visual-style test
+        shell: pwsh
+        run: |
+          $env:HELIX_SST_TEST_LAUNCHER = (Resolve-Path "target/$env:TARGET/release/helix-sst-zen.exe").Path
+          cargo test --release --target $env:TARGET live_hsst_format_reaches_terminal_attributes -- --nocapture
+
+      - name: Full test suite
+        shell: pwsh
+        run: cargo test --release --target $env:TARGET
