@@ -1,0 +1,22 @@
+name: Format current source
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fmt-current.yml]
+permissions:
+  contents: write
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all
+      - run: |
+          git config user.name "glitchaka"
+          git config user.email "82622846+glitchaka@users.noreply.github.com"
+          git add src/app.rs
+          git commit -m "style: format native window drag change"
+          git push origin HEAD:main
