@@ -149,9 +149,9 @@ slint::slint! {
         // Keep it on the top edge so dragging never steals normal editor clicks.
         window-drag-strip := WindowMoveArea {
             x: 7px;
-            y: 0px;
+            y: 7px;
             width: root.width - 14px;
-            height: 12px;
+            height: 22px;
             enabled: !root.zen-active
                 && !root.font-palette-open
                 && !root.highlight-palette-open
