@@ -1,0 +1,45 @@
+name: Fix window drag
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-window-drag.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch drag target
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/app.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '''        window-drag-strip := WindowMoveArea {
+              x: 7px;
+              y: 0px;
+              width: root.width - 14px;
+              height: 12px;'''
+          new = '''        window-drag-strip := WindowMoveArea {
+              x: 7px;
+              y: 7px;
+              width: root.width - 14px;
+              height: 22px;'''
+          if old not in text:
+              raise SystemExit('drag target not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "glitchaka"
+          git config user.email "82622846+glitchaka@users.noreply.github.com"
+          git add src/app.rs
+          git commit -m "fix: make frameless window reliably draggable"
+          git push origin HEAD:main
