@@ -160,9 +160,9 @@ slint::slint! {
         }
 
         bottom-reveal := TouchArea {
-            x: root.width - 460px;
+            x: root.width - 224px;
             y: root.height - 10px;
-            width: 460px;
+            width: 224px;
             height: 10px;
             enabled: root.zen-active;
         }
@@ -171,11 +171,8 @@ slint::slint! {
             visible: !root.zen-active
                 || bottom-reveal.has-hover
                 || island-hover.has-hover
-                || root.font-palette-open
-                || root.highlight-palette-open
-                || root.symbols-open
-                || root.page-menu-open;
-            width: 432px;
+                || root.symbols-open;
+            width: 196px;
             height: 34px;
             x: root.width - self.width - 14px;
             y: root.height - self.height - 7px;
@@ -194,81 +191,7 @@ slint::slint! {
             }
 
             Rectangle {
-                visible: root.editor-active;
-                x: 5px; y: 3px; width: 28px; height: 28px;
-                border-radius: 7px;
-                background: bold-touch.pressed ? #29384b : bold-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "B"; color: #dfe8ef; font-size: 13px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
-                bold-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("bold", ""); terminal-focus.focus(); } }
-            }
-            Rectangle {
-                visible: root.editor-active;
-                x: 35px; y: 3px; width: 28px; height: 28px;
-                border-radius: 7px;
-                background: italic-touch.pressed ? #29384b : italic-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "I"; color: #dfe8ef; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
-                italic-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("italic", ""); terminal-focus.focus(); } }
-            }
-            Rectangle {
-                visible: root.editor-active;
-                x: 65px; y: 3px; width: 28px; height: 28px;
-                border-radius: 7px;
-                background: underline-touch.pressed ? #29384b : underline-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "U"; color: #dfe8ef; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
-                Rectangle { x: 8px; y: 22px; width: 12px; height: 1px; background: #dfe8ef; }
-                underline-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("underline", ""); terminal-focus.focus(); } }
-            }
-            Rectangle {
-                visible: root.editor-active;
-                x: 95px; y: 3px; width: 28px; height: 28px;
-                border-radius: 7px;
-                background: font-menu.pressed ? #29384b : font-menu.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "A"; color: #e8cc83; font-size: 13px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
-                font-menu := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.font-palette-open = !root.font-palette-open;
-                        root.highlight-palette-open = false;
-                        root.symbols-open = false;
-                        root.page-menu-open = false;
-                    }
-                }
-            }
-            Rectangle {
-                visible: root.editor-active;
-                x: 125px; y: 3px; width: 28px; height: 28px;
-                border-radius: 7px;
-                background: highlight-menu.pressed ? #29384b : highlight-menu.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "▰"; color: #fabd2f; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
-                highlight-menu := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.highlight-palette-open = !root.highlight-palette-open;
-                        root.font-palette-open = false;
-                        root.symbols-open = false;
-                        root.page-menu-open = false;
-                    }
-                }
-            }
-            Rectangle {
-                visible: root.editor-active;
-                x: 155px; y: 3px; width: 28px; height: 28px;
-                border-radius: 7px;
-                background: page-menu.pressed ? #29384b : page-menu.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "P"; color: #8db9bb; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
-                page-menu := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.page-menu-open = !root.page-menu-open;
-                        root.font-palette-open = false;
-                        root.highlight-palette-open = false;
-                        root.symbols-open = false;
-                    }
-                }
-            }
-
-            Rectangle {
-                x: 221px; y: 3px; width: 128px; height: 28px;
+                x: 5px; y: 3px; width: 112px; height: 28px;
                 border-radius: 9px;
                 background: pomodoro-touch.pressed
                     ? #29384b
@@ -290,7 +213,7 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 185px; y: 3px; width: 32px; height: 28px;
+                x: 121px; y: 3px; width: 32px; height: 28px;
                 border-radius: 9px;
                 background: symbol-menu.pressed
                     ? #29384b
@@ -312,7 +235,7 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 393px; y: 1px; width: 38px; height: 32px;
+                x: 157px; y: 1px; width: 38px; height: 32px;
                 border-radius: 10px;
                 background: close-touch.pressed
                     ? rgb(62, 23, 36)
@@ -331,8 +254,8 @@ slint::slint! {
         }
         font-palette := Rectangle {
             visible: root.editor-active && root.font-palette-open;
-            x: island.x + 95px;
-            y: island.y - self.height - 5px;
+            x: island.x + 270px;
+            y: island.y + island.height + 5px;
             width: 226px;
             height: 32px;
             border-radius: 9px;
@@ -359,8 +282,8 @@ slint::slint! {
 
         highlight-palette := Rectangle {
             visible: root.editor-active && root.highlight-palette-open;
-            x: island.x + 125px;
-            y: island.y - self.height - 5px;
+            x: island.x + 308px;
+            y: island.y + island.height + 5px;
             width: 226px;
             height: 32px;
             border-radius: 9px;
@@ -415,7 +338,7 @@ slint::slint! {
         page-palette := Rectangle {
             visible: root.editor-active && root.page-menu-open;
             x: island.x + island.width - 430px;
-            y: island.y - self.height - 5px;
+            y: island.y + island.height + 5px;
             width: 420px;
             height: 100px;
             border-radius: 9px;
