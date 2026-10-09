@@ -19,11 +19,11 @@ use windows_sys::Win32::{
     Foundation::HWND,
     System::Threading::{AttachThreadInput, GetCurrentThreadId},
     UI::{
-        Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
+        Input::KeyboardAndMouse::{GetAsyncKeyState, ReleaseCapture, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
             BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HTCAPTION,
-            HWND_NOTOPMOST, HWND_TOPMOST, ReleaseCapture, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-            SendMessageW, SetForegroundWindow, SetWindowPos, WM_NCLBUTTONDOWN,
+            HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW,
+            SetForegroundWindow, SetWindowPos, WM_NCLBUTTONDOWN,
         },
     },
 };
@@ -160,9 +160,9 @@ slint::slint! {
             pointer-event(event) => {
                 if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
                     root.begin-window-drag();
-                    accept
+                    EventResult.accept
                 } else {
-                    reject
+                    EventResult.reject
                 }
             }
         }
