@@ -1,0 +1,177 @@
+name: Repair format UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-format-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore rich-format controls and palettes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const branch = 'main';
+
+            async function patchFile(path, replacements, message) {
+              const { data } = await github.rest.repos.getContent({ owner, repo, path, ref: branch });
+              let text = Buffer.from(data.content, 'base64').toString('utf8');
+              for (const [needle, replacement] of replacements) {
+                if (!text.includes(needle)) throw new Error(`Needle not found in ${path}: ${needle.slice(0, 120)}`);
+                text = text.replace(needle, replacement);
+              }
+              const latest = await github.rest.repos.getContent({ owner, repo, path, ref: branch });
+              await github.rest.repos.createOrUpdateFileContents({
+                owner, repo, path, branch, message, sha: latest.data.sha,
+                content: Buffer.from(text, 'utf8').toString('base64')
+              });
+            }
+
+            await patchFile('src/app.rs', [
+              [
+`        bottom-reveal := TouchArea {
+            x: root.width - 224px;
+            y: root.height - 10px;
+            width: 224px;
+            height: 10px;
+            enabled: root.zen-active;
+        }`,
+`        bottom-reveal := TouchArea {
+            x: root.width - 460px;
+            y: root.height - 10px;
+            width: 460px;
+            height: 10px;
+            enabled: root.zen-active;
+        }`
+              ],
+              [
+`            visible: !root.zen-active
+                || bottom-reveal.has-hover
+                || island-hover.has-hover
+                || root.symbols-open;
+            width: 196px;`,
+`            visible: !root.zen-active
+                || bottom-reveal.has-hover
+                || island-hover.has-hover
+                || root.font-palette-open
+                || root.highlight-palette-open
+                || root.symbols-open
+                || root.page-menu-open;
+            width: 432px;`
+              ],
+              [
+`            Rectangle {
+                x: 5px; y: 3px; width: 112px; height: 28px;`,
+`            Rectangle {
+                visible: root.editor-active;
+                x: 5px; y: 3px; width: 28px; height: 28px;
+                border-radius: 7px;
+                background: bold-touch.pressed ? #29384b : bold-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "B"; color: #dfe8ef; font-size: 13px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                bold-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("bold", ""); terminal-focus.focus(); } }
+            }
+            Rectangle {
+                visible: root.editor-active;
+                x: 35px; y: 3px; width: 28px; height: 28px;
+                border-radius: 7px;
+                background: italic-touch.pressed ? #29384b : italic-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "I"; color: #dfe8ef; font-size: 13px; font-style: italic; horizontal-alignment: center; vertical-alignment: center; }
+                italic-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("italic", ""); terminal-focus.focus(); } }
+            }
+            Rectangle {
+                visible: root.editor-active;
+                x: 65px; y: 3px; width: 28px; height: 28px;
+                border-radius: 7px;
+                background: underline-touch.pressed ? #29384b : underline-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "U̲"; color: #dfe8ef; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                underline-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("underline", ""); terminal-focus.focus(); } }
+            }
+            Rectangle {
+                visible: root.editor-active;
+                x: 95px; y: 3px; width: 28px; height: 28px;
+                border-radius: 7px;
+                background: font-menu.pressed ? #29384b : font-menu.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "A"; color: #e8cc83; font-size: 13px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                font-menu := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.font-palette-open = !root.font-palette-open;
+                        root.highlight-palette-open = false;
+                        root.symbols-open = false;
+                        root.page-menu-open = false;
+                    }
+                }
+            }
+            Rectangle {
+                visible: root.editor-active;
+                x: 125px; y: 3px; width: 28px; height: 28px;
+                border-radius: 7px;
+                background: highlight-menu.pressed ? #29384b : highlight-menu.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "▰"; color: #fabd2f; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                highlight-menu := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.highlight-palette-open = !root.highlight-palette-open;
+                        root.font-palette-open = false;
+                        root.symbols-open = false;
+                        root.page-menu-open = false;
+                    }
+                }
+            }
+            Rectangle {
+                visible: root.editor-active;
+                x: 155px; y: 3px; width: 28px; height: 28px;
+                border-radius: 7px;
+                background: page-menu.pressed ? #29384b : page-menu.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "P"; color: #8db9bb; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                page-menu := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.page-menu-open = !root.page-menu-open;
+                        root.font-palette-open = false;
+                        root.highlight-palette-open = false;
+                        root.symbols-open = false;
+                    }
+                }
+            }
+
+            Rectangle {
+                x: 221px; y: 3px; width: 128px; height: 28px;`
+              ],
+              [
+`                x: 121px; y: 3px; width: 32px; height: 28px;`,
+`                x: 185px; y: 3px; width: 32px; height: 28px;`
+              ],
+              [
+`                x: 157px; y: 1px; width: 38px; height: 32px;`,
+`                x: 393px; y: 1px; width: 38px; height: 32px;`
+              ],
+              [
+`            x: island.x + 270px;
+            y: island.y + island.height + 5px;`,
+`            x: island.x + 95px;
+            y: island.y - self.height - 5px;`
+              ],
+              [
+`            x: island.x + 308px;
+            y: island.y + island.height + 5px;`,
+`            x: island.x + 125px;
+            y: island.y - self.height - 5px;`
+              ],
+              [
+`            y: island.y + island.height + 5px;
+            width: 420px;
+            height: 100px;`,
+`            y: island.y - self.height - 5px;
+            width: 420px;
+            height: 100px;`
+              ]
+            ], 'fix: restore rich formatting toolbar and visible palettes');
