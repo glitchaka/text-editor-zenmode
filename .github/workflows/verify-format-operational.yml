@@ -1,5 +1,6 @@
 name: Verify format operational
 # Regression: F2 formatting must reach the real Helix terminal renderer.
+# Rerun after native drag correction.
 
 on:
   push:
