@@ -274,9 +274,15 @@ impl EditorSession {
 
     pub fn refresh_after_formatting(&self) -> Result<()> {
         // Helix 25.07.1 no implementa workspace/semanticTokens/refresh.
-        // Reiniciar solo el LSP conserva el buffer y la seleccion, y fuerza
-        // una nueva peticion de semantic tokens sin cambiar el lenguaje.
-        self.send_command(":lsp-restart")
+        // Reload forces the unchanged shadow buffer through the normal document
+        // refresh path, then restarting the LSP makes it reread HSST formatting.
+        // Reapplying the theme finally forces a terminal redraw of the new SGR
+        // attributes (bold/italic/underline) without modifying the prose buffer.
+        self.send_command(":reload")?;
+        std::thread::sleep(Duration::from_millis(30));
+        self.send_command(":lsp-restart")?;
+        std::thread::sleep(Duration::from_millis(90));
+        self.send_command(":theme helix-sst-zen")
     }
 
     pub fn sync_native(&mut self) -> Result<bool> {
