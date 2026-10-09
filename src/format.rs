@@ -241,9 +241,13 @@ pub const ENHANCED_THEME: &str = r##"inherits = "gruvbox"
 "comment" = { fg = "#928374", modifiers = ["dim"] }
 "keyword" = { fg = "#fabd2f", modifiers = ["bold"] }
 "string" = { fg = "#ebdbb2", modifiers = ["bold"] }
+# Helix maps the LSP regexp semantic token to string.regexp.
 "regexp" = { fg = "#d3869b", modifiers = ["italic"] }
+"string.regexp" = { fg = "#d3869b", modifiers = ["italic"] }
+# Likewise, macro tokens can resolve through function.macro depending on grammar.
 "macro" = { fg = "#282828", bg = "#fabd2f", modifiers = ["bold"] }
-"operator" = { fg = "#ebdbb2", underline = { color = "#ebdbb2", style = "line" } }
+"function.macro" = { fg = "#282828", bg = "#fabd2f", modifiers = ["bold"] }
+"operator" = { fg = "#ebdbb2", modifiers = ["underlined"], underline = { color = "#ebdbb2", style = "line" } }
 
 # Foreground palette.
 "variable.parameter" = { fg = "#ebdbb2" }
