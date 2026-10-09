@@ -145,6 +145,20 @@ slint::slint! {
             }
         }
 
+        // Frameless windows still need a predictable native drag target.
+        // Keep it on the top edge so dragging never steals normal editor clicks.
+        window-drag-strip := WindowMoveArea {
+            x: 7px;
+            y: 0px;
+            width: root.width - 14px;
+            height: 12px;
+            enabled: !root.zen-active
+                && !root.font-palette-open
+                && !root.highlight-palette-open
+                && !root.symbols-open
+                && !root.page-menu-open;
+        }
+
         bottom-reveal := TouchArea {
             x: root.width - 224px;
             y: root.height - 10px;
