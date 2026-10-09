@@ -1,0 +1,113 @@
+name: Finish console fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/finish-console.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch window drag and rich-text refresh
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const branch = 'main';
+
+            async function patchFile(path, replacements, message) {
+              const { data } = await github.rest.repos.getContent({ owner, repo, path, ref: branch });
+              if (Array.isArray(data) || !data.content) throw new Error(`No file content for ${path}`);
+              let text = Buffer.from(data.content, 'base64').toString('utf8');
+              for (const [needle, replacement] of replacements) {
+                if (!text.includes(needle)) throw new Error(`Needle not found in ${path}: ${needle.slice(0, 100)}`);
+                text = text.replace(needle, replacement);
+              }
+              const latest = await github.rest.repos.getContent({ owner, repo, path, ref: branch });
+              await github.rest.repos.createOrUpdateFileContents({
+                owner,
+                repo,
+                path,
+                branch,
+                message,
+                sha: latest.data.sha,
+                content: Buffer.from(text, 'utf8').toString('base64'),
+              });
+            }
+
+            await patchFile('src/app.rs', [[
+`        bottom-reveal := TouchArea {
+            x: root.width - 224px;
+            y: root.height - 10px;
+            width: 224px;
+            height: 10px;
+            enabled: root.zen-active;
+        }
+
+        island := Rectangle {`,
+`        // Frameless windows still need a predictable native drag target.
+        // Keep it on the top edge so dragging never steals normal editor clicks.
+        window-drag-strip := WindowMoveArea {
+            x: 7px;
+            y: 0px;
+            width: root.width - 14px;
+            height: 12px;
+            enabled: !root.zen-active
+                && !root.font-palette-open
+                && !root.highlight-palette-open
+                && !root.symbols-open
+                && !root.page-menu-open;
+        }
+
+        bottom-reveal := TouchArea {
+            x: root.width - 224px;
+            y: root.height - 10px;
+            width: 224px;
+            height: 10px;
+            enabled: root.zen-active;
+        }
+
+        island := Rectangle {`
+            ]], 'fix: restore frameless window dragging');
+
+            await patchFile('src/editor.rs', [[
+`    pub fn refresh_after_formatting(&self) -> Result<()> {
+        // Helix 25.07.1 no implementa workspace/semanticTokens/refresh.
+        // Reiniciar solo el LSP conserva el buffer y la seleccion, y fuerza
+        // una nueva peticion de semantic tokens sin cambiar el lenguaje.
+        self.send_command(":lsp-restart")
+    }`,
+`    pub fn refresh_after_formatting(&self) -> Result<()> {
+        // Helix 25.07.1 no implementa workspace/semanticTokens/refresh.
+        // Reload forces the unchanged shadow buffer through the normal document
+        // refresh path, then restarting the LSP makes it reread HSST formatting.
+        // Reapplying the theme finally forces a terminal redraw of the new SGR
+        // attributes (bold/italic/underline) without modifying the prose buffer.
+        self.send_command(":reload")?;
+        std::thread::sleep(Duration::from_millis(30));
+        self.send_command(":lsp-restart")?;
+        std::thread::sleep(Duration::from_millis(90));
+        self.send_command(":theme helix-sst-zen")
+    }`
+            ]], 'fix: refresh visible HSST formatting');
+
+            await patchFile('src/format.rs', [[
+`"string" = { fg = "#ebdbb2", modifiers = ["bold"] }
+"regexp" = { fg = "#d3869b", modifiers = ["italic"] }
+"macro" = { fg = "#282828", bg = "#fabd2f", modifiers = ["bold"] }
+"operator" = { fg = "#ebdbb2", underline = { color = "#ebdbb2", style = "line" } }`,
+`"string" = { fg = "#ebdbb2", modifiers = ["bold"] }
+# Helix maps the LSP regexp semantic token to string.regexp.
+"regexp" = { fg = "#d3869b", modifiers = ["italic"] }
+"string.regexp" = { fg = "#d3869b", modifiers = ["italic"] }
+# Likewise, macro tokens can resolve through function.macro depending on grammar.
+"macro" = { fg = "#282828", bg = "#fabd2f", modifiers = ["bold"] }
+"function.macro" = { fg = "#282828", bg = "#fabd2f", modifiers = ["bold"] }
+"operator" = { fg = "#ebdbb2", modifiers = ["underlined"], underline = { color = "#ebdbb2", style = "line" } }`
+            ]], 'fix: map semantic formatting to Helix theme scopes');
