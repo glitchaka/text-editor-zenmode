@@ -25,6 +25,7 @@ mod live_format_operational_tests {
         Bold,
         Italic,
         Underline,
+        ForegroundRed,
     }
 
     fn word_has_style(session: &EditorSession, word: &str, expected: ExpectedStyle) -> bool {
@@ -71,10 +72,92 @@ mod live_format_operational_tests {
                     ExpectedStyle::Bold => cell.bold(),
                     ExpectedStyle::Italic => cell.italic(),
                     ExpectedStyle::Underline => cell.underline(),
+                    ExpectedStyle::ForegroundRed => {
+                        cell.fgcolor() == vt100::Color::Rgb(0xfb, 0x49, 0x34)
+                    }
                 }
             });
         }
         false
+    }
+
+    #[test]
+    fn live_refresh_after_f2_metadata_change_reaches_terminal() {
+        let root = std::env::temp_dir().join(format!(
+            "helix-sst-live-refresh-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("crear directorio temporal");
+        let path = root.join("dynamic-format.hsst");
+
+        let document = document::HsstDocument {
+            metadata: document::DocumentMetadata::new("dynamic-format"),
+            body: "DINAMICO".to_owned(),
+            formatting: serde_json::json!({
+                "version": 1,
+                "unit": "utf8-byte",
+                "runs": []
+            }),
+        };
+        document::write(&path, &document).expect("crear HSST dinamico");
+
+        let session = EditorSession::start(&path, 100, 28).expect("arrancar Helix real en PTY");
+        let startup_deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < startup_deadline {
+            while let Some(result) = session.try_output() {
+                result.expect("salida de Helix valida");
+            }
+            if session
+                .protocol
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .screen()
+                .contents()
+                .contains("DINAMICO")
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        assert!(
+            document::apply_format_lsp_range(
+                &path,
+                "DINAMICO",
+                0,
+                0,
+                0,
+                8,
+                "font-color",
+                "red",
+            )
+            .expect("aplicar color rojo"),
+            "el cambio de metadatos de formato no se aplico"
+        );
+        session
+            .refresh_after_formatting()
+            .expect("refrescar formato tras F2");
+
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut red = false;
+        while Instant::now() < deadline {
+            while let Some(result) = session.try_output() {
+                result.expect("salida de Helix valida");
+            }
+            red = word_has_style(&session, "DINAMICO", ExpectedStyle::ForegroundRed);
+            if red {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        let _ = session.send_command(":quit!");
+        assert!(
+            red,
+            "el refresco tras el cambio F2 no llevo el color rojo al terminal"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
