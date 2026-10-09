@@ -1,6 +1,6 @@
 name: Verify format operational
 # Regression: F2 formatting must reach the real Helix terminal renderer.
-# Rerun after native drag correction.
+# Includes live refresh after format metadata changes.
 
 on:
   push:
@@ -58,11 +58,11 @@ jobs:
         shell: pwsh
         run: cargo test --release --target $env:TARGET --test format_operational -- --nocapture
 
-      - name: Run live Helix PTY visual-style test
+      - name: Run live Helix PTY visual and refresh tests
         shell: pwsh
         run: |
           $env:HELIX_SST_TEST_LAUNCHER = (Resolve-Path "target/$env:TARGET/release/helix-sst-zen.exe").Path
-          cargo test --release --target $env:TARGET live_hsst_format_reaches_terminal_attributes -- --nocapture
+          cargo test --release --target $env:TARGET live_ -- --nocapture
 
       - name: Full test suite
         shell: pwsh
