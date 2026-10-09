@@ -21,9 +21,9 @@ use windows_sys::Win32::{
     UI::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
-            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HTCAPTION, HWND_NOTOPMOST,
-            HWND_TOPMOST, ReleaseCapture, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW,
-            SetForegroundWindow, SetWindowPos, WM_NCLBUTTONDOWN,
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HTCAPTION,
+            HWND_NOTOPMOST, HWND_TOPMOST, ReleaseCapture, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            SendMessageW, SetForegroundWindow, SetWindowPos, WM_NCLBUTTONDOWN,
         },
     },
 };
