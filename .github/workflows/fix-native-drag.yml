@@ -1,0 +1,66 @@
+name: Fix native window drag
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-native-drag.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch native drag
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('src/app.rs')
+          text = path.read_text(encoding='utf-8')
+
+          text = text.replace(
+              'BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,\n            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,\n            SetWindowPos,',
+              'BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HTCAPTION, HWND_NOTOPMOST,\n            HWND_TOPMOST, ReleaseCapture, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW,\n            SetForegroundWindow, SetWindowPos, WM_NCLBUTTONDOWN,'
+          )
+
+          text = text.replace(
+              '        callback close-window();\n        callback start-pomodoro();',
+              '        callback close-window();\n        callback begin-window-drag();\n        callback start-pomodoro();'
+          )
+
+          pattern = re.compile(r'''        // Frameless windows still need a predictable native drag target\.\n        // Keep it on the top edge so dragging never steals normal editor clicks\.\n        window-drag-strip := WindowMoveArea \{\n            x: 7px;\n            y: 7px;\n            width: root\.width - 14px;\n            height: 22px;\n            enabled: !root\.zen-active\n                && !root\.font-palette-open\n                && !root\.highlight-palette-open\n                && !root\.symbols-open\n                && !root\.page-menu-open;\n        \}\n''')
+          replacement = '''        // Native drag target: do not rely on Slint WindowMoveArea for the frameless Win32 window.\n        window-drag-strip := TouchArea {\n            x: 7px;\n            y: 7px;\n            width: root.width - 14px;\n            height: 22px;\n            enabled: !root.zen-active\n                && !root.font-palette-open\n                && !root.highlight-palette-open\n                && !root.symbols-open\n                && !root.page-menu-open;\n            pointer-event(event) => {\n                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {\n                    root.begin-window-drag();\n                    accept\n                } else {\n                    reject\n                }\n            }\n        }\n'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'drag-area patch count={count}')
+
+          marker = '''#[cfg(windows)]\nunsafe fn focus_native_window(hwnd: HWND) {'''
+          helper = '''#[cfg(windows)]\nunsafe fn begin_native_window_drag(hwnd: HWND) {\n    unsafe {\n        ReleaseCapture();\n        SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);\n    }\n}\n\n'''
+          if helper not in text:
+              if marker not in text:
+                  raise SystemExit('focus_native_window marker not found')
+              text = text.replace(marker, helper + marker, 1)
+
+          handler_marker = '''    {\n        let model = model.clone();\n        let weak = ui.as_weak();\n        ui.on_start_pomodoro(move || {'''
+          handler = '''    {\n        let weak = ui.as_weak();\n        ui.on_begin_window_drag(move || {\n            if let Some(ui) = weak.upgrade() {\n                #[cfg(windows)]\n                if let Some(hwnd) = slint_hwnd(&ui) {\n                    unsafe {\n                        begin_native_window_drag(hwnd);\n                    }\n                }\n            }\n        });\n    }\n'''
+          if handler not in text:
+              if handler_marker not in text:
+                  raise SystemExit('start_pomodoro handler marker not found')
+              text = text.replace(handler_marker, handler + handler_marker, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "glitchaka"
+          git config user.email "82622846+glitchaka@users.noreply.github.com"
+          git add src/app.rs
+          git commit -m "fix: drag frameless window through native Win32 caption move"
+          git push origin HEAD:main
