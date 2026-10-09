@@ -21,9 +21,9 @@ use windows_sys::Win32::{
     UI::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
-            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
-            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
-            SetWindowPos,
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HTCAPTION, HWND_NOTOPMOST,
+            HWND_TOPMOST, ReleaseCapture, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW,
+            SetForegroundWindow, SetWindowPos, WM_NCLBUTTONDOWN,
         },
     },
 };
@@ -110,6 +110,7 @@ slint::slint! {
         callback key-input(string, bool, bool, bool);
         callback toggle-zen();
         callback close-window();
+        callback begin-window-drag();
         callback start-pomodoro();
         callback format-action(string, string);
         callback insert-symbol(string);
@@ -145,9 +146,8 @@ slint::slint! {
             }
         }
 
-        // Frameless windows still need a predictable native drag target.
-        // Keep it on the top edge so dragging never steals normal editor clicks.
-        window-drag-strip := WindowMoveArea {
+        // Native drag target: do not rely on Slint WindowMoveArea for the frameless Win32 window.
+        window-drag-strip := TouchArea {
             x: 7px;
             y: 7px;
             width: root.width - 14px;
@@ -157,6 +157,14 @@ slint::slint! {
                 && !root.highlight-palette-open
                 && !root.symbols-open
                 && !root.page-menu-open;
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    root.begin-window-drag();
+                    accept
+                } else {
+                    reject
+                }
+            }
         }
 
         bottom-reveal := TouchArea {
@@ -2238,6 +2246,14 @@ fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
 }
 
 #[cfg(windows)]
+unsafe fn begin_native_window_drag(hwnd: HWND) {
+    unsafe {
+        ReleaseCapture();
+        SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
+    }
+}
+
+#[cfg(windows)]
 unsafe fn focus_native_window(hwnd: HWND) {
     unsafe {
         let foreground = GetForegroundWindow();
@@ -2327,6 +2343,19 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             };
             if let Some(ui) = weak.upgrade() {
                 ui.set_zen_active(zen);
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_begin_window_drag(move || {
+            if let Some(ui) = weak.upgrade() {
+                #[cfg(windows)]
+                if let Some(hwnd) = slint_hwnd(&ui) {
+                    unsafe {
+                        begin_native_window_drag(hwnd);
+                    }
+                }
             }
         });
     }
