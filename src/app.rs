@@ -2137,6 +2137,13 @@ impl TerminalModel {
         }
 
         let screen = self.parser.screen();
+        let format_overlay = self
+            .current_file
+            .as_ref()
+            .filter(|path| document::is_native_path(path))
+            .and_then(|path| document::read(path).ok())
+            .map(|document| native_format_overlay(screen, &document))
+            .unwrap_or_default();
         let (rows, cols) = screen.size();
         let cursor = screen.cursor_position();
         let cursor_on = !screen.hide_cursor();
