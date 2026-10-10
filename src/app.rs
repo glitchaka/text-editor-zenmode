@@ -1480,13 +1480,6 @@ impl TerminalModel {
 
     fn helix_status_text(&self) -> String {
         let screen = self.parser.screen();
-        let format_overlay = self
-            .current_file
-            .as_ref()
-            .filter(|path| document::is_native_path(path))
-            .and_then(|path| document::read(path).ok())
-            .map(|document| native_format_overlay(screen, &document))
-            .unwrap_or_default();
         let (rows, cols) = screen.size();
         let start_row = rows.saturating_sub(3);
         let mut output = String::new();
@@ -2919,16 +2912,15 @@ fn screen_line_number(screen: &vt100::Screen, row: u16, line_count: usize) -> Op
     last
 }
 
-fn match_source_row(
-    screen: &vt100::Screen,
-    row: u16,
-    source: &str,
-) -> Option<(u16, Vec<(u16, usize, usize)>)> {
+type ScreenCellMatch = (u16, usize, usize);
+type ScreenRowMatch = (u16, Vec<ScreenCellMatch>);
+
+fn match_source_row(screen: &vt100::Screen, row: u16, source: &str) -> Option<ScreenRowMatch> {
     if source.is_empty() {
         return None;
     }
     let (_, cols) = screen.size();
-    let mut best: Option<(u16, Vec<(u16, usize, usize)>)> = None;
+    let mut best: Option<ScreenRowMatch> = None;
 
     for start_col in 0..cols {
         let mut col = start_col;
