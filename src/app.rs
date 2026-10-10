@@ -1480,6 +1480,13 @@ impl TerminalModel {
 
     fn helix_status_text(&self) -> String {
         let screen = self.parser.screen();
+        let format_overlay = self
+            .current_file
+            .as_ref()
+            .filter(|path| document::is_native_path(path))
+            .and_then(|path| document::read(path).ok())
+            .map(|document| native_format_overlay(screen, &document))
+            .unwrap_or_default();
         let (rows, cols) = screen.size();
         let start_row = rows.saturating_sub(3);
         let mut output = String::new();
@@ -2148,10 +2155,18 @@ impl TerminalModel {
                     continue;
                 }
 
-                let mut fg = terminal_color(cell.fgcolor(), FG);
-                let mut bg = terminal_color(cell.bgcolor(), BG);
-                let mut paint_background =
-                    !matches!(cell.bgcolor(), vt100::Color::Default) || cell.inverse();
+                let overlay_style = format_overlay.get(&(row, col)).copied().unwrap_or_default();
+                let mut fg = overlay_style
+                    .foreground
+                    .map(palette_color)
+                    .unwrap_or_else(|| terminal_color(cell.fgcolor(), FG));
+                let mut bg = overlay_style
+                    .background
+                    .map(palette_color)
+                    .unwrap_or_else(|| terminal_color(cell.bgcolor(), BG));
+                let mut paint_background = overlay_style.background.is_some()
+                    || !matches!(cell.bgcolor(), vt100::Color::Default)
+                    || cell.inverse();
                 if cell.inverse() {
                     std::mem::swap(&mut fg, &mut bg);
                 }
@@ -2205,9 +2220,9 @@ impl TerminalModel {
                             baseline,
                             glyph,
                             fg,
-                            cell.italic(),
+                            cell.italic() || overlay_style.italic,
                         );
-                        if cell.bold() {
+                        if cell.bold() || overlay_style.bold {
                             draw_glyph(
                                 pixels,
                                 (width, height),
@@ -2215,14 +2230,14 @@ impl TerminalModel {
                                 baseline,
                                 glyph,
                                 fg,
-                                cell.italic(),
+                                cell.italic() || overlay_style.italic,
                             );
                         }
                         pen_x += glyph.metrics.advance_width.round() as i32;
                     }
                 }
 
-                if cell.underline() {
+                if cell.underline() || overlay_style.underline {
                     let thickness = scale.round().max(1.0) as i32;
                     let underline_y = (baseline + thickness).min(y + h - thickness);
                     fill_rect(pixels, (width, height), (x, underline_y, w, thickness), fg);
@@ -2232,6 +2247,61 @@ impl TerminalModel {
 
         self.dirty = false;
         Image::from_rgba8_premultiplied(buffer)
+    }
+}
+
+#[cfg(test)]
+mod native_format_overlay_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn document_with_run(body: &str, run: serde_json::Value) -> document::HsstDocument {
+        document::HsstDocument {
+            metadata: document::DocumentMetadata::new("test"),
+            body: body.to_owned(),
+            formatting: json!({"version": 1, "unit": "utf8-byte", "runs": [run]}),
+        }
+    }
+
+    #[test]
+    fn maps_bold_from_hsst_metadata_to_visible_helix_cells() {
+        let mut parser = vt100::Parser::new(4, 40, 0);
+        parser.process(b"  1  NEGRITA texto\r\n  2  normal");
+        let doc = document_with_run(
+            "NEGRITA texto\nnormal",
+            json!({"start": 0, "end": 7, "bold": true}),
+        );
+        let overlay = native_format_overlay(parser.screen(), &doc);
+        assert!((5..12).all(|col| overlay.get(&(0, col)).is_some_and(|style| style.bold)));
+    }
+
+    #[test]
+    fn maps_font_and_background_colors_without_semantic_tokens() {
+        let mut parser = vt100::Parser::new(3, 40, 0);
+        parser.process(b"  1  ROJO FONDO");
+        let doc = document::HsstDocument {
+            metadata: document::DocumentMetadata::new("test"),
+            body: "ROJO FONDO".to_owned(),
+            formatting: json!({
+                "version": 1,
+                "unit": "utf8-byte",
+                "runs": [
+                    {"start": 0, "end": 4, "foreground": "red"},
+                    {"start": 5, "end": 10, "background": "yellow"}
+                ]
+            }),
+        };
+        let overlay = native_format_overlay(parser.screen(), &doc);
+        assert!((5..9).all(|col| {
+            overlay
+                .get(&(0, col))
+                .is_some_and(|style| style.foreground == Some(crate::format::PaletteColor::Red))
+        }));
+        assert!((10..15).all(|col| {
+            overlay
+                .get(&(0, col))
+                .is_some_and(|style| style.background == Some(crate::format::PaletteColor::Yellow))
+        }));
     }
 }
 
@@ -2797,6 +2867,168 @@ fn truncate(text: &str, max: usize) -> String {
     } else {
         taken
     }
+}
+
+fn palette_color(color: crate::format::PaletteColor) -> Rgb {
+    match color {
+        crate::format::PaletteColor::White => Rgb(0xEB, 0xDB, 0xB2),
+        crate::format::PaletteColor::Red => Rgb(0xFB, 0x49, 0x34),
+        crate::format::PaletteColor::Orange => Rgb(0xFE, 0x80, 0x19),
+        crate::format::PaletteColor::Yellow => Rgb(0xFA, 0xBD, 0x2F),
+        crate::format::PaletteColor::Green => Rgb(0xB8, 0xBB, 0x26),
+        crate::format::PaletteColor::Cyan => Rgb(0x8E, 0xC0, 0x7C),
+        crate::format::PaletteColor::Blue => Rgb(0x83, 0xA5, 0x98),
+        crate::format::PaletteColor::Purple => Rgb(0xD3, 0x86, 0x9B),
+        crate::format::PaletteColor::Gray => Rgb(0x92, 0x83, 0x74),
+    }
+}
+
+fn screen_line_number(screen: &vt100::Screen, row: u16, line_count: usize) -> Option<usize> {
+    let (_, cols) = screen.size();
+    let mut text = String::new();
+    for col in 0..cols.min(10) {
+        let Some(cell) = screen.cell(row, col) else {
+            continue;
+        };
+        if !cell.is_wide_continuation() {
+            text.push_str(cell.contents());
+        }
+    }
+
+    let mut last = None;
+    let mut digits = String::new();
+    for ch in text.chars().chain(std::iter::once(' ')) {
+        if ch.is_ascii_digit() {
+            digits.push(ch);
+        } else if !digits.is_empty() {
+            if let Ok(number) = digits.parse::<usize>()
+                && (1..=line_count).contains(&number)
+            {
+                last = Some(number - 1);
+            }
+            digits.clear();
+        }
+    }
+    last
+}
+
+fn match_source_row(
+    screen: &vt100::Screen,
+    row: u16,
+    source: &str,
+) -> Option<(u16, Vec<(u16, usize, usize)>)> {
+    if source.is_empty() {
+        return None;
+    }
+    let (_, cols) = screen.size();
+    let mut best: Option<(u16, Vec<(u16, usize, usize)>)> = None;
+
+    for start_col in 0..cols {
+        let mut col = start_col;
+        let mut matched = Vec::new();
+        for (byte, ch) in source.char_indices() {
+            while col < cols
+                && screen
+                    .cell(row, col)
+                    .is_some_and(|cell| cell.is_wide_continuation())
+            {
+                col += 1;
+            }
+            if col >= cols {
+                break;
+            }
+            let Some(cell) = screen.cell(row, col) else {
+                break;
+            };
+            let contents = cell.contents();
+            let mut chars = contents.chars();
+            if chars.next() != Some(ch) || chars.next().is_some() {
+                break;
+            }
+            let end = byte + ch.len_utf8();
+            matched.push((col, byte, end));
+            col += if cell.is_wide() { 2 } else { 1 };
+        }
+        if matched.len() > best.as_ref().map_or(0, |(_, cells)| cells.len()) {
+            best = Some((start_col, matched));
+        }
+    }
+    best.filter(|(_, cells)| !cells.is_empty())
+}
+
+fn native_format_overlay(
+    screen: &vt100::Screen,
+    document: &document::HsstDocument,
+) -> HashMap<(u16, u16), crate::format::TextStyle> {
+    let runs = document::formatting_runs(document);
+    if runs.is_empty() || document.body.is_empty() {
+        return HashMap::new();
+    }
+
+    let mut lines = Vec::new();
+    let mut absolute = 0usize;
+    for raw in document.body.split_inclusive('\n') {
+        let no_lf = raw.strip_suffix('\n').unwrap_or(raw);
+        let line = no_lf.strip_suffix('\r').unwrap_or(no_lf);
+        lines.push((absolute, line));
+        absolute += raw.len();
+    }
+    if document.body.ends_with('\n') {
+        lines.push((document.body.len(), ""));
+    }
+    if lines.is_empty() {
+        lines.push((0, document.body.as_str()));
+    }
+
+    let (rows, _) = screen.size();
+    let mut overlay = HashMap::new();
+    let mut active_line = None::<usize>;
+    let mut consumed = 0usize;
+
+    for row in 0..rows {
+        if let Some(line) = screen_line_number(screen, row, lines.len()) {
+            active_line = Some(line);
+            consumed = 0;
+        }
+        let Some(line_index) = active_line else {
+            continue;
+        };
+        let Some((line_start, line)) = lines.get(line_index).copied() else {
+            continue;
+        };
+        if consumed >= line.len() || !line.is_char_boundary(consumed) {
+            continue;
+        }
+        let remaining = &line[consumed..];
+        let Some((_, matched)) = match_source_row(screen, row, remaining) else {
+            continue;
+        };
+
+        let mut new_consumed = consumed;
+        for (col, local_start, local_end) in matched {
+            let offset = line_start + consumed + local_start;
+            let mut style = crate::format::TextStyle::default();
+            for (start, end, run_style) in &runs {
+                if *start <= offset && offset < *end {
+                    style.bold |= run_style.bold;
+                    style.italic |= run_style.italic;
+                    style.underline |= run_style.underline;
+                    if run_style.foreground.is_some() {
+                        style.foreground = run_style.foreground;
+                    }
+                    if run_style.background.is_some() {
+                        style.background = run_style.background;
+                    }
+                }
+            }
+            if style != crate::format::TextStyle::default() {
+                overlay.insert((row, col), style);
+            }
+            new_consumed = consumed + local_end;
+        }
+        consumed = new_consumed;
+    }
+    overlay
 }
 
 fn terminal_color(value: vt100::Color, default: Rgb) -> Rgb {
