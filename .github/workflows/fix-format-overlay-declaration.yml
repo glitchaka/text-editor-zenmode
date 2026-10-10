@@ -1,0 +1,38 @@
+name: Finish visible format overlay wiring
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fix-format-overlay-declaration.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wire overlay into renderer
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/app.rs')
+          t=p.read_text(encoding='utf-8')
+          needle='''        let screen = self.parser.screen();\n        let (rows, cols) = screen.size();\n        let cursor = screen.cursor_position();'''
+          replacement='''        let screen = self.parser.screen();\n        let format_overlay = self\n            .current_file\n            .as_ref()\n            .filter(|path| document::is_native_path(path))\n            .and_then(|path| document::read(path).ok())\n            .map(|document| native_format_overlay(screen, &document))\n            .unwrap_or_default();\n        let (rows, cols) = screen.size();\n        let cursor = screen.cursor_position();'''
+          if needle not in t:
+              raise SystemExit('render insertion target missing')
+          t=t.replace(needle,replacement,1)
+          p.write_text(t,encoding='utf-8',newline='\n')
+          PY
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name glitchaka
+          git config user.email 82622846+glitchaka@users.noreply.github.com
+          git add src/app.rs
+          git commit -m 'fix: wire HSST format overlay into renderer'
+          git push origin HEAD:main
