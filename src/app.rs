@@ -44,8 +44,6 @@ const CELL_WIDTH: f32 = 8.0;
 const CELL_HEIGHT: f32 = 18.0;
 const FONT_SIZE: f32 = 14.0;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
-const ISLAND_HEIGHT: f32 = 34.0;
-const CONTENT_TOP_GAP: f32 = 8.0;
 const POMODORO_WRITE_SECS: u64 = 25 * 60;
 const POMODORO_BREAK_SECS: u64 = 5 * 60;
 

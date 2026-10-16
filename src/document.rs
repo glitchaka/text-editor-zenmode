@@ -82,29 +82,6 @@ fn sidecar_path(path: &Path) -> PathBuf {
     path.with_file_name(format!("{name}.zen.json"))
 }
 
-pub fn is_supported_text_path(path: &Path) -> bool {
-    if path.is_dir() {
-        return true;
-    }
-
-    matches!(
-        path.extension()
-            .and_then(|extension| extension.to_str())
-            .map(str::to_ascii_lowercase)
-            .as_deref(),
-        Some("hsst" | "txt" | "text" | "md" | "markdown" | "rst") | None
-    )
-}
-
-pub fn native_path_for_name(directory: &Path, requested_name: &str) -> PathBuf {
-    let trimmed = requested_name.trim();
-    let mut path = directory.join(trimmed);
-    if !is_native_path(&path) {
-        path.set_extension(EXTENSION);
-    }
-    path
-}
-
 pub fn default_path_for_name(directory: &Path, requested_name: &str) -> PathBuf {
     let trimmed = requested_name.trim();
     let mut path = directory.join(trimmed);
@@ -1086,76 +1063,6 @@ fn normalized_runs_for_selection(
         }
     }
     result
-}
-
-fn line_column_to_byte(body: &str, line: usize, column: usize) -> usize {
-    let target_line = line.saturating_sub(1);
-    let target_column = column.saturating_sub(1);
-    let mut line_start = 0usize;
-    for (index, segment) in body.split_inclusive('\n').enumerate() {
-        if index == target_line {
-            let line_body = segment.strip_suffix('\n').unwrap_or(segment);
-            let relative = line_body
-                .char_indices()
-                .nth(target_column)
-                .map(|(offset, _)| offset)
-                .unwrap_or(line_body.len());
-            return line_start + relative;
-        }
-        line_start += segment.len();
-    }
-    body.len()
-}
-
-pub fn apply_format_selection(
-    path: &Path,
-    selected_text: &str,
-    cursor_line: usize,
-    cursor_column: usize,
-    action: &str,
-    value: &str,
-) -> Result<bool> {
-    if !is_native_path(path) || selected_text.is_empty() {
-        return Ok(false);
-    }
-    let mut document = read(path)?;
-    let cursor = line_column_to_byte(&document.body, cursor_line, cursor_column);
-
-    let mut best: Option<(usize, usize, usize)> = None;
-    for (start, _) in document.body.match_indices(selected_text) {
-        let end = start + selected_text.len();
-        let distance = cursor.abs_diff(start).min(cursor.abs_diff(end));
-        if best.is_none_or(|(_, _, current)| distance < current) {
-            best = Some((start, end, distance));
-        }
-    }
-    let Some((start, end, _)) = best else {
-        return Ok(false);
-    };
-
-    let next = if action == "alignment" {
-        let Some(alignment) = crate::format::ParagraphAlignment::parse(value) else {
-            return Ok(false);
-        };
-        apply_paragraph_alignment(&document.body, &document.formatting, start, end, alignment)
-    } else {
-        let runs = normalized_runs_for_selection(
-            &document.body,
-            &document.formatting,
-            start,
-            end,
-            action,
-            value,
-        );
-        let paragraphs = decode_paragraph_alignments(&document.formatting);
-        encode_formatting_parts(&runs, &paragraphs)
-    };
-    if next == document.formatting {
-        return Ok(false);
-    }
-    document.formatting = next;
-    write(path, &document)?;
-    Ok(true)
 }
 
 fn utf16_position_to_byte(body: &str, line: usize, character: usize) -> usize {

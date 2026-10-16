@@ -30,16 +30,6 @@ impl PaperSize {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Letter => "CARTA",
-            Self::Oficio => "OFICIO",
-            Self::Legal => "LEGAL",
-            Self::A4 => "A4",
-            Self::A5 => "A5",
-        }
-    }
-
     /// Physical dimensions in tenths of a millimetre, portrait orientation.
     pub fn dimensions_tenth_mm(self) -> (u16, u16) {
         match self {
@@ -72,13 +62,6 @@ impl PageOrientation {
         match self {
             Self::Portrait => "portrait",
             Self::Landscape => "landscape",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Portrait => "VERTICAL",
-            Self::Landscape => "HORIZONTAL",
         }
     }
 }
@@ -115,32 +98,8 @@ impl PageProfile {
         }
     }
 
-    pub fn content_size_tenth_mm(self) -> (u16, u16) {
-        let (width, height) = self.page_size_tenth_mm();
-        let horizontal = self
-            .margin_left_mm
-            .saturating_add(self.margin_right_mm)
-            .saturating_mul(10);
-        let vertical = self
-            .margin_top_mm
-            .saturating_add(self.margin_bottom_mm)
-            .saturating_mul(10);
-        (
-            width.saturating_sub(horizontal).max(200),
-            height.saturating_sub(vertical).max(200),
-        )
-    }
-
     /// Logical hard-wrap width derived from the printable page width.
     /// Letter portrait with 25 mm side margins is the reference profile: 88 columns.
-    pub fn text_columns(self) -> usize {
-        const LETTER_PRINTABLE_TENTH_MM: u32 = 1_659;
-        const LETTER_REFERENCE_COLUMNS: u32 = 88;
-        let printable = u32::from(self.content_size_tenth_mm().0);
-        let columns = (printable * LETTER_REFERENCE_COLUMNS + LETTER_PRINTABLE_TENTH_MM / 2)
-            / LETTER_PRINTABLE_TENTH_MM;
-        columns.clamp(24, 180) as usize
-    }
 
     pub fn cycle_margin(value: u16) -> u16 {
         const VALUES: [u16; 7] = [10, 15, 20, 25, 30, 35, 40];

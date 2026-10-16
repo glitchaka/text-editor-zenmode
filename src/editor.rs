@@ -254,17 +254,6 @@ impl EditorSession {
         self.write_reply(&bytes)
     }
 
-    pub fn yank_selection_to_clipboard(&self) -> Result<()> {
-        let win32 = self.win32_input();
-        let mut bytes = Vec::new();
-        for code in [KeyCode::Char(' '), KeyCode::Char('y')] {
-            if let Some(encoded) = encode_input(KeyEvent::new(code, KeyModifiers::NONE), win32) {
-                bytes.extend_from_slice(&encoded);
-            }
-        }
-        self.write_reply(&bytes)
-    }
-
     pub fn save_buffer_for_formatting(&self) -> Result<()> {
         self.send_key(
             KeyEvent::new(KeyCode::F(20), KeyModifiers::NONE),
