@@ -1,0 +1,104 @@
+name: Add native formatting undo support
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fix-format-undo.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Implement undo and redo for sidecar formatting
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/app.rs')
+          s=p.read_text(encoding='utf-8')
+
+          marker='''struct TerminalModel {'''
+          snapshot='''#[derive(Clone, Debug)]\nstruct StyleSnapshot {\n    formatting: serde_json::Value,\n    page: crate::page::PageProfile,\n}\n\nimpl StyleSnapshot {\n    fn from_document(document: &document::HsstDocument) -> Self {\n        Self {\n            formatting: document.formatting.clone(),\n            page: document.metadata.page,\n        }\n    }\n}\n\n'''
+          if 'struct StyleSnapshot' not in s:
+              if marker not in s: raise SystemExit('TerminalModel marker missing')
+              s=s.replace(marker,snapshot+marker,1)
+
+          fields='''    page_profile: crate::page::PageProfile,\n}'''
+          replacement='''    page_profile: crate::page::PageProfile,\n    pending_style_snapshot: Option<StyleSnapshot>,\n    style_undo: Vec<StyleSnapshot>,\n    style_redo: Vec<StyleSnapshot>,\n}'''
+          if 'pending_style_snapshot:' not in s:
+              if fields not in s: raise SystemExit('TerminalModel fields marker missing')
+              s=s.replace(fields,replacement,1)
+
+          init='''            page_profile: crate::page::PageProfile::default(),\n        };'''
+          init_new='''            page_profile: crate::page::PageProfile::default(),\n            pending_style_snapshot: None,\n            style_undo: Vec::new(),\n            style_redo: Vec::new(),\n        };'''
+          if 'style_undo: Vec::new()' not in s:
+              if init not in s: raise SystemExit('TerminalModel init marker missing')
+              s=s.replace(init,init_new,1)
+
+          # Helpers before open_editor.
+          marker='''    fn open_editor(&mut self, file: PathBuf) -> Result<()> {'''
+          helpers='''    fn current_style_snapshot(&self) -> Option<StyleSnapshot> {\n        let path = self.current_file.as_ref()?;\n        if !document::is_native_path(path) {\n            return None;\n        }\n        document::read(path)\n            .ok()\n            .map(|document| StyleSnapshot::from_document(&document))\n    }\n\n    fn restore_style_snapshot(&mut self, snapshot: StyleSnapshot, redo: bool) -> bool {\n        let Some(path) = self.current_file.clone() else {\n            return false;\n        };\n        if !document::is_native_path(&path) {\n            return false;\n        }\n        let Ok(mut current_document) = document::read(&path) else {\n            return false;\n        };\n        let current = StyleSnapshot::from_document(&current_document);\n        current_document.formatting = snapshot.formatting.clone();\n        current_document.metadata.page = snapshot.page;\n        if document::write(&path, &current_document).is_err() {\n            return false;\n        }\n        if redo {\n            self.style_undo.push(current);\n        } else {\n            self.style_redo.push(current);\n        }\n        self.page_profile = snapshot.page;\n        self.source_modified = fs::metadata(&path)\n            .and_then(|metadata| metadata.modified())\n            .ok();\n        self.pending_style_snapshot = None;\n        self.dirty = true;\n        true\n    }\n\n    fn undo_style_change(&mut self) -> bool {\n        if self.helix_is_modified() {\n            return false;\n        }\n        let Some(snapshot) = self.style_undo.pop() else {\n            return false;\n        };\n        if self.restore_style_snapshot(snapshot.clone(), false) {\n            true\n        } else {\n            self.style_undo.push(snapshot);\n            false\n        }\n    }\n\n    fn redo_style_change(&mut self) -> bool {\n        if self.helix_is_modified() {\n            return false;\n        }\n        let Some(snapshot) = self.style_redo.pop() else {\n            return false;\n        };\n        if self.restore_style_snapshot(snapshot.clone(), true) {\n            true\n        } else {\n            self.style_redo.push(snapshot);\n            false\n        }\n    }\n\n'''
+          if 'fn current_style_snapshot(&self)' not in s:
+              if marker not in s: raise SystemExit('open_editor marker missing')
+              s=s.replace(marker,helpers+marker,1)
+
+          # Reset style history when changing documents.
+          open_reset='''        self.command_capture = None;\n        if self.pomodoro_requested {'''
+          open_reset_new='''        self.command_capture = None;\n        self.pending_style_snapshot = None;\n        self.style_undo.clear();\n        self.style_redo.clear();\n        if self.pomodoro_requested {'''
+          if open_reset in s:
+              s=s.replace(open_reset,open_reset_new,1)
+
+          # If body changed after a style action, Helix owns undo from this point.
+          old='''                if body_changed {\n                    self.source_modified = modified;\n                } else if modified.is_some() && modified != self.source_modified {'''
+          new='''                if body_changed {\n                    self.source_modified = modified;\n                    self.pending_style_snapshot = None;\n                    self.style_undo.clear();\n                    self.style_redo.clear();\n                } else if modified.is_some() && modified != self.source_modified {'''
+          if old not in s: raise SystemExit('tick body_changed marker missing')
+          s=s.replace(old,new,1)
+
+          # Record completed F2 formatting/page action on external source modification.
+          old='''                    if let Some(metadata) = document::read_metadata(source) {\n                        self.page_profile = metadata.page;\n                    }\n                    // F2 may change formatting.json or page metadata without terminal text.\n                    self.dirty = true;'''
+          new='''                    if let Ok(changed_document) = document::read(source) {\n                        self.page_profile = changed_document.metadata.page;\n                        if let Some(before) = self.pending_style_snapshot.take() {\n                            let after = StyleSnapshot::from_document(&changed_document);\n                            if before.formatting != after.formatting || before.page != after.page {\n                                self.style_undo.push(before);\n                                self.style_redo.clear();\n                            }\n                        }\n                    }\n                    // F2 may change formatting.json or page metadata without terminal text.\n                    self.dirty = true;'''
+          if old not in s: raise SystemExit('tick F2 metadata marker missing')
+          s=s.replace(old,new,1)
+
+          # Capture pre-F2 style after body synchronization, immediately before opening actions.
+          old='''                let _ = editor.send_key(key, editor.win32_input());\n            }\n            return;\n        }'''
+          new='''                if native {\n                    self.pending_style_snapshot = self.current_style_snapshot();\n                }\n                let _ = editor.send_key(key, editor.win32_input());\n            }\n            return;\n        }'''
+          if old not in s: raise SystemExit('F2 send marker missing')
+          s=s.replace(old,new,1)
+
+          # Native sidecar formatting participates in Ctrl+Z/Ctrl+Y without stealing Helix text undo.
+          marker='''        let ctrl_v = key.modifiers.contains(KeyModifiers::CONTROL)'''
+          shortcuts='''        let ctrl_z = key.modifiers.contains(KeyModifiers::CONTROL)\n            && !key.modifiers.contains(KeyModifiers::ALT)\n            && matches!(key.code, KeyCode::Char('z') | KeyCode::Char('Z'));\n        let ctrl_y = key.modifiers.contains(KeyModifiers::CONTROL)\n            && !key.modifiers.contains(KeyModifiers::ALT)\n            && matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y'));\n        let ctrl_shift_z = ctrl_z && key.modifiers.contains(KeyModifiers::SHIFT);\n        if ctrl_shift_z {\n            if self.redo_style_change() {\n                return;\n            }\n        } else if ctrl_z {\n            if self.undo_style_change() {\n                return;\n            }\n        } else if ctrl_y && self.redo_style_change() {\n            return;\n        }\n\n'''
+          if 'let ctrl_shift_z = ctrl_z' not in s:
+              if marker not in s: raise SystemExit('ctrl_v marker missing')
+              s=s.replace(marker,shortcuts+marker,1)
+
+          # Chapter switches invalidate sidecar undo history.
+          s=s.replace(
+              '''        self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));\n        self.launcher.message = Some(format!("{} ← {}", previous_metadata.title, metadata.title));''',
+              '''        self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));\n        self.pending_style_snapshot = None;\n        self.style_undo.clear();\n        self.style_redo.clear();\n        self.launcher.message = Some(format!("{} ← {}", previous_metadata.title, metadata.title));''',
+              1,
+          )
+          s=s.replace(
+              '''        self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));\n        self.launcher.message = Some(format!("{} → {}", metadata.title, next_metadata.title));''',
+              '''        self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));\n        self.pending_style_snapshot = None;\n        self.style_undo.clear();\n        self.style_redo.clear();\n        self.launcher.message = Some(format!("{} → {}", metadata.title, next_metadata.title));''',
+              1,
+          )
+
+          p.write_text(s,encoding='utf-8',newline='\n')
+          PY
+          cargo fmt --all
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: make F2 formatting participate in undo and redo"
+          git pull --rebase origin main
+          git push origin HEAD:main
