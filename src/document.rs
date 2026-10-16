@@ -100,6 +100,275 @@ pub fn create_native(path: &Path, title: &str) -> Result<()> {
     write(path, &document)
 }
 
+
+pub fn is_importable_path(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("txt" | "text" | "md" | "markdown" | "docx")
+    )
+}
+
+pub fn import_to_native(source: &Path, directory: &Path) -> Result<PathBuf> {
+    if !source.is_file() || !is_importable_path(source) {
+        anyhow::bail!("Formato no importable: {}", source.display());
+    }
+    fs::create_dir_all(directory)?;
+    let title = source
+        .file_stem()
+        .or_else(|| source.file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or("Documento")
+        .to_owned();
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    let (body, formatting) = if extension == "docx" {
+        import_docx_body(source)?
+    } else {
+        let raw = fs::read_to_string(source)
+            .with_context(|| format!("No se pudo importar {} como UTF-8", source.display()))?;
+        if matches!(extension.as_str(), "md" | "markdown") {
+            formatting_payload(&raw)
+        } else {
+            (raw, empty_formatting())
+        }
+    };
+
+    let safe_title = safe_import_name(&title);
+    let mut target = native_path_for_name(directory, &safe_title);
+    if target.exists() {
+        for index in 2..10_000 {
+            let candidate = native_path_for_name(directory, &format!("{safe_title} ({index})"));
+            if !candidate.exists() {
+                target = candidate;
+                break;
+            }
+        }
+    }
+
+    let document = HsstDocument {
+        metadata: DocumentMetadata::new(title),
+        body,
+        formatting,
+    };
+    write(&target, &document)?;
+    Ok(target)
+}
+
+fn safe_import_name(value: &str) -> String {
+    let cleaned = value
+        .chars()
+        .map(|ch| match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            _ => ch,
+        })
+        .collect::<String>();
+    let cleaned = cleaned.trim().trim_end_matches('.');
+    if cleaned.is_empty() {
+        "Documento".into()
+    } else {
+        cleaned.into()
+    }
+}
+
+fn import_docx_body(path: &Path) -> Result<(String, Value)> {
+    let file = fs::File::open(path)?;
+    let mut archive = ZipArchive::new(file)
+        .with_context(|| format!("{} no es un DOCX válido", path.display()))?;
+    let mut xml = String::new();
+    archive
+        .by_name("word/document.xml")
+        .context("El DOCX no contiene word/document.xml")?
+        .read_to_string(&mut xml)?;
+
+    let mut rich = String::new();
+    let mut cursor = 0usize;
+    while let Some(relative) = xml[cursor..].find("<w:p") {
+        let start = cursor + relative;
+        let Some(open_end_rel) = xml[start..].find('>') else {
+            break;
+        };
+        let open_end = start + open_end_rel + 1;
+        let Some(end_rel) = xml[open_end..].find("</w:p>") else {
+            break;
+        };
+        let end = open_end + end_rel;
+        let paragraph = &xml[start..end];
+        if !rich.is_empty() {
+            rich.push('\n');
+        }
+
+        let paragraph_style =
+            xml_attr_after(paragraph, "<w:pStyle", "w:val").unwrap_or_default();
+        if paragraph_style.eq_ignore_ascii_case("Heading1")
+            || paragraph_style.eq_ignore_ascii_case("Title")
+        {
+            rich.push_str("# ");
+        } else if paragraph_style.eq_ignore_ascii_case("Heading2") {
+            rich.push_str("## ");
+        } else if paragraph_style.eq_ignore_ascii_case("Heading3") {
+            rich.push_str("### ");
+        }
+
+        let mut run_cursor = 0usize;
+        while let Some(run_rel) = paragraph[run_cursor..].find("<w:r") {
+            let run_start = run_cursor + run_rel;
+            let Some(run_open_rel) = paragraph[run_start..].find('>') else {
+                break;
+            };
+            let run_open = run_start + run_open_rel + 1;
+            let Some(run_end_rel) = paragraph[run_open..].find("</w:r>") else {
+                break;
+            };
+            let run_end = run_open + run_end_rel;
+            let run = &paragraph[run_start..run_end];
+            let text = docx_run_text(run);
+            if !text.is_empty() {
+                let foreground = xml_attr_after(run, "<w:color", "w:val")
+                    .as_deref()
+                    .and_then(docx_foreground_color);
+                let background = xml_attr_after(run, "<w:highlight", "w:val")
+                    .as_deref()
+                    .and_then(docx_highlight_color);
+                let style = crate::format::TextStyle {
+                    bold: has_enabled_word_tag(run, "w:b"),
+                    italic: has_enabled_word_tag(run, "w:i"),
+                    underline: has_enabled_word_tag(run, "w:u"),
+                    strikethrough: has_enabled_word_tag(run, "w:strike"),
+                    foreground,
+                    background,
+                };
+                rich.push_str(&encode_styled_segment(&text, style));
+            }
+            run_cursor = run_end + "</w:r>".len();
+        }
+        cursor = end + "</w:p>".len();
+    }
+
+    Ok(formatting_payload(&rich))
+}
+
+fn xml_attr_after(segment: &str, tag: &str, attr: &str) -> Option<String> {
+    let start = segment.find(tag)?;
+    let tail = &segment[start..];
+    let tag_end = tail.find('>')?;
+    let opening = &tail[..tag_end];
+    let key = format!("{attr}=\"");
+    let value_start = opening.find(&key)? + key.len();
+    let value_end = opening[value_start..].find('"')? + value_start;
+    Some(xml_unescape(&opening[value_start..value_end]))
+}
+
+fn has_enabled_word_tag(segment: &str, tag: &str) -> bool {
+    let needle = format!("<{tag}");
+    let Some(start) = segment.find(&needle) else {
+        return false;
+    };
+    let tail = &segment[start..];
+    let Some(end) = tail.find('>') else {
+        return true;
+    };
+    let opening = &tail[..=end];
+    !opening.contains("w:val=\"0\"")
+        && !opening.contains("w:val=\"false\"")
+        && !opening.contains("w:val=\"none\"")
+}
+
+fn docx_run_text(run: &str) -> String {
+    let mut result = String::new();
+    let mut cursor = 0usize;
+    loop {
+        let text_pos = run[cursor..].find("<w:t").map(|value| cursor + value);
+        let tab_pos = run[cursor..].find("<w:tab").map(|value| cursor + value);
+        let br_pos = run[cursor..].find("<w:br").map(|value| cursor + value);
+        let next = [
+            text_pos.map(|value| (value, 0u8)),
+            tab_pos.map(|value| (value, 1u8)),
+            br_pos.map(|value| (value, 2u8)),
+        ]
+        .into_iter()
+        .flatten()
+        .min_by_key(|(value, _)| *value);
+        let Some((position, kind)) = next else {
+            break;
+        };
+        match kind {
+            0 => {
+                let Some(open_rel) = run[position..].find('>') else {
+                    break;
+                };
+                let content_start = position + open_rel + 1;
+                let Some(close_rel) = run[content_start..].find("</w:t>") else {
+                    break;
+                };
+                let content_end = content_start + close_rel;
+                result.push_str(&xml_unescape(&run[content_start..content_end]));
+                cursor = content_end + "</w:t>".len();
+            }
+            1 => {
+                result.push('\t');
+                cursor = run[position..]
+                    .find('>')
+                    .map(|value| position + value + 1)
+                    .unwrap_or(run.len());
+            }
+            _ => {
+                result.push('\n');
+                cursor = run[position..]
+                    .find('>')
+                    .map(|value| position + value + 1)
+                    .unwrap_or(run.len());
+            }
+        }
+    }
+    result
+}
+
+fn xml_unescape(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+fn docx_foreground_color(value: &str) -> Option<crate::format::PaletteColor> {
+    use crate::format::PaletteColor as C;
+    match value.trim_start_matches('#').to_ascii_uppercase().as_str() {
+        "FFFFFF" | "EBDBB2" => Some(C::White),
+        "FF0000" | "FB4934" => Some(C::Red),
+        "FF8000" | "FE8019" => Some(C::Orange),
+        "FFFF00" | "FABD2F" => Some(C::Yellow),
+        "00FF00" | "B8BB26" => Some(C::Green),
+        "00FFFF" | "8EC07C" => Some(C::Cyan),
+        "0000FF" | "83A598" => Some(C::Blue),
+        "800080" | "FF00FF" | "D3869B" => Some(C::Purple),
+        "808080" | "928374" => Some(C::Gray),
+        _ => None,
+    }
+}
+
+fn docx_highlight_color(value: &str) -> Option<crate::format::PaletteColor> {
+    use crate::format::PaletteColor as C;
+    match value.to_ascii_lowercase().as_str() {
+        "yellow" => Some(C::Yellow),
+        "green" => Some(C::Green),
+        "cyan" | "turquoise" => Some(C::Cyan),
+        "blue" => Some(C::Blue),
+        "magenta" | "purple" => Some(C::Purple),
+        "red" => Some(C::Red),
+        "darkgray" | "lightgray" | "gray" => Some(C::Gray),
+        _ => None,
+    }
+}
+
 pub fn read(path: &Path) -> Result<HsstDocument> {
     let bytes = fs::read(path).with_context(|| format!("No se pudo leer {}", path.display()))?;
     if bytes.starts_with(b"PK\x03\x04") {

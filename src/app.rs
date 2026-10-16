@@ -577,7 +577,22 @@ impl Launcher {
         entries.sort_by(|a, b| {
             b.directory
                 .cmp(&a.directory)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                .then_with(|| match (&a.metadata, &b.metadata) {
+                    (Some(a), Some(b)) => a
+                        .project
+                        .to_lowercase()
+                        .cmp(&b.project.to_lowercase())
+                        .then_with(|| a.order.cmp(&b.order))
+                        .then_with(|| {
+                            a.chapter
+                                .unwrap_or(u32::MAX)
+                                .cmp(&b.chapter.unwrap_or(u32::MAX))
+                        })
+                        .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                })
         });
         self.entries = entries;
         self.selected = self.selected.min(self.entries.len() + 2);
@@ -1328,7 +1343,7 @@ impl TerminalModel {
             }
             return;
         }
-        if self.try_continue_to_next_chapter(key) {
+        if self.try_continue_to_previous_chapter(key) || self.try_continue_to_next_chapter(key) {
             return;
         }
         let zen_toggle = matches!(key.code, KeyCode::Char('z') | KeyCode::Char('Z'))
@@ -1366,6 +1381,84 @@ impl TerminalModel {
             }
             let _ = editor.send_key(key, editor.win32_input());
         }
+    }
+
+    fn try_continue_to_previous_chapter(&mut self, key: KeyEvent) -> bool {
+        if key.code != KeyCode::Up
+            || !key.modifiers.is_empty()
+            || !self.helix_is_normal_mode()
+            || self.helix_is_modified()
+            || self
+                .chapter_switch_until
+                .is_some_and(|until| Instant::now() < until)
+        {
+            return false;
+        }
+
+        let Some(current) = self.current_file.clone() else {
+            return false;
+        };
+        let Some(metadata) = document::read_metadata(&current) else {
+            return false;
+        };
+        if !metadata.kind.eq_ignore_ascii_case("chapter")
+            || metadata.chapter.is_none()
+            || metadata.project.trim().is_empty()
+            || self.helix_current_line().unwrap_or(usize::MAX) > 1
+        {
+            return false;
+        }
+
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.flush_native();
+        }
+        let Ok(chapters) = document::project_chapters(&self.library.documents, &metadata.project)
+        else {
+            return false;
+        };
+        let Some(index) = chapters
+            .iter()
+            .position(|(path, _)| paths_equivalent(path, &current))
+        else {
+            return false;
+        };
+        let Some((previous, previous_metadata)) =
+            index.checked_sub(1).and_then(|index| chapters.get(index))
+        else {
+            return false;
+        };
+        let Ok(previous_document) = document::read(previous) else {
+            return false;
+        };
+        let last_line = previous_document
+            .body
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
+        let Some(editor) = self.editor.as_mut() else {
+            return false;
+        };
+        if editor.open_source(previous).is_err()
+            || editor.send_command(&format!(":goto {last_line}")).is_err()
+        {
+            return false;
+        }
+
+        self.current_file = Some(previous.clone());
+        self.source_modified = fs::metadata(previous)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        self.page_profile = previous_metadata.page;
+        let (cols, rows) = self.terminal_size();
+        self.parser.screen_mut().set_size(rows, cols);
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.resize(cols, rows);
+        }
+        self.glyphs.clear();
+        self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));
+        self.launcher.message = Some(format!("{} ← {}", previous_metadata.title, metadata.title));
+        true
     }
 
     fn try_continue_to_next_chapter(&mut self, key: KeyEvent) -> bool {
@@ -1433,6 +1526,9 @@ impl TerminalModel {
         }
 
         self.current_file = Some(next.clone());
+        self.source_modified = fs::metadata(next)
+            .and_then(|metadata| metadata.modified())
+            .ok();
         self.page_profile = next_metadata.page;
         let (cols, rows) = self.terminal_size();
         self.parser.screen_mut().set_size(rows, cols);
@@ -1582,6 +1678,33 @@ impl TerminalModel {
         false
     }
 
+    fn import_selected(&mut self) -> bool {
+        let Some(entry) = self.launcher.selected_entry().cloned() else {
+            self.launcher.message = Some("Selecciona un TXT, Markdown o DOCX para importar.".into());
+            return false;
+        };
+        if entry.directory || !document::is_importable_path(&entry.path) {
+            self.launcher.message = Some("Formato importable: TXT, Markdown o DOCX.".into());
+            return false;
+        }
+        match document::import_to_native(&entry.path, &self.library.documents) {
+            Ok(target) => {
+                self.launcher.message = Some(format!("Importado: {}", target.display()));
+                self.launcher.cwd = self.library.documents.clone();
+                self.launcher.refresh();
+                if let Err(error) = self.open_editor(target) {
+                    self.launcher.message = Some(error.to_string());
+                    return false;
+                }
+                true
+            }
+            Err(error) => {
+                self.launcher.message = Some(format!("No se pudo importar: {error}"));
+                false
+            }
+        }
+    }
+
     fn launcher_key(&mut self, key: KeyEvent) {
         if let Some(source) = self.launcher.exporting.clone() {
             match key.code {
@@ -1697,6 +1820,11 @@ impl TerminalModel {
                 self.launcher.message = None;
             }
             KeyCode::Char('r') | KeyCode::Char('R') => self.launcher.refresh(),
+            KeyCode::Char('i') | KeyCode::Char('I') => {
+                if self.import_selected() {
+                    return;
+                }
+            }
 
             KeyCode::Char('e') | KeyCode::Char('E') => {
                 if let Some(entry) = self.launcher.selected_entry().cloned()
@@ -1747,6 +1875,13 @@ impl TerminalModel {
                             self.launcher.selected = 0;
                             self.launcher.message = None;
                             self.launcher.refresh();
+                        } else if entry
+                            .path
+                            .extension()
+                            .and_then(|value| value.to_str())
+                            .is_some_and(|value| value.eq_ignore_ascii_case("docx"))
+                        {
+                            let _ = self.import_selected();
                         } else if let Err(error) = self.open_editor(entry.path) {
                             self.launcher.message = Some(error.to_string());
                         }
@@ -2032,7 +2167,7 @@ impl TerminalModel {
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  E exportar  Z modo  Backspace subir  R refrescar\x1b[0m",
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  I importar  E exportar  Z modo  Backspace subir  R refrescar\x1b[0m",
                     inner_width,
                     "38;5;244",
                 ),
