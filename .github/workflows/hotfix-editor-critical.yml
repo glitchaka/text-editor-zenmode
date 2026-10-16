@@ -1,0 +1,62 @@
+name: Apply critical editor hotfixes
+
+on:
+  push:
+    paths:
+      - '.github/workflows/hotfix-editor-critical.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Patch editor and prose LSP
+        shell: python
+        run: |
+          from pathlib import Path
+
+          editor = Path('src/editor.rs')
+          text = editor.read_text(encoding='utf-8')
+          text = text.replace(
+              'yank = {{ command = "{exe}", args = ["--clipboard-get"] }}\npaste = {{ command = "{exe}", args = ["--clipboard-set"] }}',
+              'yank = {{ command = "{exe}", args = ["--clipboard-set"] }}\npaste = {{ command = "{exe}", args = ["--clipboard-get"] }}',
+              1,
+          )
+          old_refresh = '''    pub fn refresh_after_formatting(&self) -> Result<()> {\n        // Helix 25.07.1 no implementa workspace/semanticTokens/refresh.\n        // Reload forces the unchanged shadow buffer through the normal document\n        // refresh path, then restarting the LSP makes it reread HSST formatting.\n        // Reapplying the theme finally forces a terminal redraw of the new SGR\n        // attributes (bold/italic/underline) without modifying the prose buffer.\n        self.send_command(":reload")?;\n        std::thread::sleep(Duration::from_millis(30));\n        self.send_command(":lsp-restart")?;\n        std::thread::sleep(Duration::from_millis(90));\n        self.send_command(":theme helix-sst-zen")\n    }\n'''
+          new_refresh = '''    pub fn refresh_after_formatting(&self) -> Result<()> {\n        // HSST formatting is rendered by the native overlay in app.rs.\n        // Do not reload the buffer or restart the LSP: those operations destroy\n        // the live selection and can leave stale popup/semantic-token paint behind.\n        Ok(())\n    }\n'''
+          if old_refresh not in text:
+              raise SystemExit('refresh_after_formatting block not found')
+          text = text.replace(old_refresh, new_refresh, 1)
+          editor.write_text(text, encoding='utf-8')
+
+          spell = Path('src/spell.rs')
+          text = spell.read_text(encoding='utf-8')
+          text = text.replace('''                                "completionProvider": {\n                                    "triggerCharacters": []\n                                },\n''', '', 1)
+          text = text.replace('''                                "semanticTokensProvider": {\n                                    "legend": {\n                                        "tokenTypes": crate::format::SEMANTIC_TOKEN_TYPES,\n                                        "tokenModifiers": []\n                                    },\n                                    "full": true\n                                },\n''', '', 1)
+          start = text.find('            "textDocument/completion" => {')
+          if start != -1:
+              end = text.find('            "workspace/executeCommand" => {', start)
+              if end == -1:
+                  raise SystemExit('workspace/executeCommand marker not found')
+              block = text[start:end]
+              # Keep code actions, remove only completion + semantic token branches.
+              code_action = block.find('            "textDocument/codeAction" => {')
+              if code_action == -1:
+                  raise SystemExit('code action branch not found')
+              text = text[:start] + block[code_action:] + text[end:]
+          spell.write_text(text, encoding='utf-8')
+
+      - name: Commit source fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/editor.rs src/spell.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: stop completion artifacts and stabilize rich formatting"
+          git push
