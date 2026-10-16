@@ -25,20 +25,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Apply F2 borrow repair
-        shell: pwsh
-        run: |
-          python .github/scripts/fix_f2_borrow.py
-          cargo fmt --all
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/app.rs
-          git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git commit -m "fix: resolve F2 formatting borrow conflict"
-            git push origin HEAD:main
-          }
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
