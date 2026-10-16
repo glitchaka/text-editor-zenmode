@@ -1,0 +1,56 @@
+name: Fix window surface and native corners
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fix-window-surface-native-corners.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Patch window surface
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/app.rs')
+          s = p.read_text(encoding='utf-8')
+
+          s = s.replace('const PAD_X: f32 = 14.0;\nconst PAD_Y: f32 = 12.0;', 'const PAD_X: f32 = 0.0;\nconst PAD_Y: f32 = 0.0;', 1)
+          s = s.replace('const BG: Rgb = Rgb(0x11, 0x16, 0x19);', 'const BG: Rgb = Rgb(0x28, 0x28, 0x28);', 1)
+
+          old_drag = '''        // Dedicated frameless titlebar handled by Slint/Winit.\n        window-drag-strip := WindowMoveArea {\n            x: 7px;\n            y: 7px;\n            width: root.width - 14px;\n            height: 24px;\n            enabled: !root.zen-active\n                && !root.symbols-open\n                && !root.page-menu-open;\n        }\n'''
+          new_drag = '''        // The complete client surface is the native move area. Controls declared\n        // later stay above it and remain clickable. No fake titlebar or inset is reserved.\n        window-drag-surface := WindowMoveArea {\n            x: 0px;\n            y: 0px;\n            width: root.width;\n            height: root.height;\n            enabled: !root.zen-active;\n        }\n'''
+          if old_drag not in s:
+              raise SystemExit('current drag block not found')
+          s = s.replace(old_drag, new_drag, 1)
+
+          marker = '''#[cfg(windows)]\nfn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {\n'''
+          native = '''#[cfg(windows)]\n#[link(name = "dwmapi")]\nunsafe extern "system" {\n    fn DwmSetWindowAttribute(\n        hwnd: HWND,\n        attribute: u32,\n        value: *const std::ffi::c_void,\n        value_size: u32,\n    ) -> i32;\n}\n\n#[cfg(windows)]\nunsafe fn enable_native_rounded_corners(hwnd: HWND) {\n    // Windows 11 DWM: DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND.\n    const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;\n    const DWMWCP_ROUND: u32 = 2;\n    let preference = DWMWCP_ROUND;\n    unsafe {\n        let _ = DwmSetWindowAttribute(\n            hwnd,\n            DWMWA_WINDOW_CORNER_PREFERENCE,\n            (&preference as *const u32).cast(),\n            std::mem::size_of::<u32>() as u32,\n        );\n    }\n}\n\n#[cfg(windows)]\nfn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {\n'''
+          if marker not in s:
+              raise SystemExit('HWND marker not found')
+          s = s.replace(marker, native, 1)
+
+          show = '''    ui.show()?;\n\n    let weak = ui.as_weak();\n'''
+          show_new = '''    ui.show()?;\n\n    #[cfg(windows)]\n    if let Some(hwnd) = slint_hwnd(&ui) {\n        unsafe {\n            enable_native_rounded_corners(hwnd);\n        }\n    }\n\n    let weak = ui.as_weak();\n'''
+          if show not in s:
+              raise SystemExit('ui.show marker not found')
+          s = s.replace(show, show_new, 1)
+
+          p.write_text(s, encoding='utf-8', newline='\n')
+          PY
+          cargo fmt --all
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: restore full draggable surface and native Windows corners"
+          git push origin HEAD:main
