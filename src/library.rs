@@ -31,13 +31,25 @@ pub fn default_root() -> PathBuf {
         return path;
     }
 
-    if let Ok(executable) = std::env::current_exe()
-        && let Some(parent) = executable.parent()
+    #[cfg(windows)]
+    if let Some(profile) = std::env::var_os("USERPROFILE")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
     {
-        return parent.to_path_buf();
+        return profile.join("Documents").join("Helix SST");
     }
 
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    #[cfg(not(windows))]
+    if let Some(home) = std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+    {
+        return home.join("Documents").join("Helix SST");
+    }
+
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("Helix SST")
 }
 
 #[cfg(test)]
