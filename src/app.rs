@@ -1735,7 +1735,7 @@ impl TerminalModel {
                     if name.is_empty() {
                         self.launcher.message = Some("Escribe un nombre de archivo.".into());
                     } else {
-                        let path = document::native_path_for_name(&self.launcher.cwd, &name);
+                        let path = document::default_path_for_name(&self.launcher.cwd, &name);
                         if path.is_dir() {
                             self.launcher.message =
                                 Some("Ese nombre corresponde a un directorio.".into());
@@ -1747,7 +1747,12 @@ impl TerminalModel {
                                 .and_then(|value| value.to_str())
                                 .unwrap_or("Documento")
                                 .to_owned();
-                            match document::create_native(&path, &title) {
+                            let create_result = if document::is_native_path(&path) {
+                                document::create_native(&path, &title)
+                            } else {
+                                document::create_plain_text(&path)
+                            };
+                            match create_result {
                                 Ok(()) => {
                                     self.launcher.creating = false;
                                     self.launcher.new_name.clear();

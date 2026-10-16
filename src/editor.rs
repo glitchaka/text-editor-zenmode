@@ -608,7 +608,7 @@ true-color = true
 cursorline = true
 bufferline = "multiple"
 color-modes = true
-auto-completion = false
+auto-completion = true
 end-of-line-diagnostics = "disable"
 
 [editor.soft-wrap]
@@ -1377,8 +1377,8 @@ mod tests {
             editor_table
                 .get("auto-completion")
                 .and_then(toml::Value::as_bool),
-            Some(false),
-            "el autocompletado emergente debe permanecer desactivado"
+            Some(true),
+            "el autocompletado debe permanecer habilitado"
         );
 
         let keys = parsed

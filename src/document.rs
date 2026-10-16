@@ -12,6 +12,7 @@ use zip::{ZipArchive, ZipWriter, write::FileOptions};
 use crate::page::{PageOrientation, PageProfile, PaperSize};
 
 pub const EXTENSION: &str = "hsst";
+pub const DEFAULT_TEXT_EXTENSION: &str = "txt";
 pub const FORMAT_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -85,6 +86,24 @@ pub fn native_path_for_name(directory: &Path, requested_name: &str) -> PathBuf {
         path.set_extension(EXTENSION);
     }
     path
+}
+
+pub fn default_path_for_name(directory: &Path, requested_name: &str) -> PathBuf {
+    let trimmed = requested_name.trim();
+    let mut path = directory.join(trimmed);
+    if path.extension().is_none() {
+        path.set_extension(DEFAULT_TEXT_EXTENSION);
+    }
+    path
+}
+
+pub fn create_plain_text(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, b"")
+        .with_context(|| format!("No se pudo crear {}", path.display()))?;
+    Ok(())
 }
 
 pub fn create_native(path: &Path, title: &str) -> Result<()> {
