@@ -1,0 +1,100 @@
+name: Move page settings into F2
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/f2-page-settings.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Implement F2 page settings and remove hidden palette
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          # LSP actions own page configuration now, keeping the bottom island compact.
+          p=Path('src/spell.rs')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace(
+              'const FORMAT_COMMAND: &str = "helix-sst.formatSelection";',
+              'const FORMAT_COMMAND: &str = "helix-sst.formatSelection";\nconst PAGE_COMMAND: &str = "helix-sst.pageSetting";',
+              1,
+          )
+          s=s.replace(
+              '"commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]',
+              '"commands": [ADD_WORD_COMMAND, FORMAT_COMMAND, PAGE_COMMAND]',
+              1,
+          )
+          s=s.replace(
+              '''                    Some(FORMAT_COMMAND) => {\n                        changed = server.apply_format_command(\n                            message.pointer("/params/arguments").unwrap_or(&Value::Null),\n                        )?;\n                    }''',
+              '''                    Some(FORMAT_COMMAND) => {\n                        changed = server.apply_format_command(\n                            message.pointer("/params/arguments").unwrap_or(&Value::Null),\n                        )?;\n                    }\n                    Some(PAGE_COMMAND) => {\n                        changed = server.apply_page_command(\n                            message.pointer("/params/arguments").unwrap_or(&Value::Null),\n                        )?;\n                    }''',
+              1,
+          )
+
+          marker='''        if let Some(source) = self.source_file.as_ref()\n            && crate::document::is_native_path(source)\n            && let Some(range) = params.get("range").cloned()'''
+          page_actions='''        if let Some(source) = self.source_file.as_ref()\n            && crate::document::is_native_path(source)\n        {\n            let mut push_page = |title: &str, action: &str, value: &str| {\n                actions.push(json!({\n                    "title": title,\n                    "kind": "refactor.rewrite",\n                    "command": {\n                        "title": title,\n                        "command": PAGE_COMMAND,\n                        "arguments": [action, value]\n                    }\n                }));\n            };\n            for (label, value) in [("Carta", "letter"), ("Oficio", "oficio"), ("Legal", "legal"), ("A4", "a4"), ("A5", "a5")] {\n                push_page(&format!("Página · Papel · {label}"), "paper", value);\n            }\n            push_page("Página · Orientación · Vertical", "orientation", "portrait");\n            push_page("Página · Orientación · Horizontal", "orientation", "landscape");\n            push_page("Página · Margen izquierdo · siguiente", "margin-left", "cycle");\n            push_page("Página · Margen derecho · siguiente", "margin-right", "cycle");\n            push_page("Página · Margen superior · siguiente", "margin-top", "cycle");\n            push_page("Página · Margen inferior · siguiente", "margin-bottom", "cycle");\n        }\n\n'''
+          if 'Página · Papel ·' not in s:
+              if marker not in s: raise SystemExit('code actions native marker missing')
+              s=s.replace(marker,page_actions+marker,1)
+
+          marker='''    fn add_user_word(&mut self, word: &str) -> Result<bool> {'''
+          method='''    fn apply_page_command(&self, arguments: &Value) -> Result<bool> {\n        let Some(source) = self.source_file.as_deref() else {\n            return Ok(false);\n        };\n        if !crate::document::is_native_path(source) {\n            return Ok(false);\n        }\n        let action = arguments.get(0).and_then(Value::as_str).unwrap_or("");\n        let value = arguments.get(1).and_then(Value::as_str).unwrap_or("");\n        let Some(metadata) = crate::document::read_metadata(source) else {\n            return Ok(false);\n        };\n        let mut page = metadata.page;\n        match action {\n            "paper" => {\n                let Some(paper) = crate::page::PaperSize::parse(value) else { return Ok(false); };\n                page.paper = paper;\n            }\n            "orientation" => {\n                let Some(orientation) = crate::page::PageOrientation::parse(value) else { return Ok(false); };\n                page.orientation = orientation;\n            }\n            "margin-left" => page.margin_left_mm = crate::page::PageProfile::cycle_margin(page.margin_left_mm),\n            "margin-right" => page.margin_right_mm = crate::page::PageProfile::cycle_margin(page.margin_right_mm),\n            "margin-top" => page.margin_top_mm = crate::page::PageProfile::cycle_margin(page.margin_top_mm),\n            "margin-bottom" => page.margin_bottom_mm = crate::page::PageProfile::cycle_margin(page.margin_bottom_mm),\n            _ => return Ok(false),\n        }\n        if page == metadata.page {\n            return Ok(false);\n        }\n        crate::document::set_page_profile(source, page)?;\n        Ok(true)\n    }\n\n'''
+          if 'fn apply_page_command' not in s:
+              if marker not in s: raise SystemExit('add_user_word marker missing')
+              s=s.replace(marker,method+marker,1)
+          p.write_text(s,encoding='utf-8',newline='\n')
+
+          # Remove the permanently-hidden page palette and its redundant Slint callback.
+          p=Path('src/app.rs')
+          s=p.read_text(encoding='utf-8')
+          s=re.sub(r'\n        page-palette := Rectangle \{.*?\n        \}\nRectangle \{\n  visible: root\.pomodoro-prompt;', '\nRectangle {\n  visible: root.pomodoro-prompt;', s, count=1, flags=re.S)
+          s=s.replace('        callback page-action(string, string);\n','')
+          for prop in [
+              '        in property <string> page-label: "CARTA";\n',
+              '        in property <string> page-orientation-text: "VERTICAL";\n',
+              '        in property <string> margin-left-text: "25";\n',
+              '        in property <string> margin-right-text: "25";\n',
+              '        in property <string> margin-top-text: "25";\n',
+              '        in property <string> margin-bottom-text: "25";\n',
+          ]:
+              s=s.replace(prop,'')
+          s=re.sub(r'\n    \{\n        let model = model\.clone\(\);\n        ui\.on_page_action\(move \|action, value\| \{.*?\n    \}\n', '\n', s, count=1, flags=re.S)
+          s=re.sub(r'\n    fn update_page\(&mut self, action: &str, value: &str\) \{.*?\n    \}\n\n    fn insert_symbol', '\n\n    fn insert_symbol', s, count=1, flags=re.S)
+          for line in [
+              '        ui.set_page_label(model.page_profile.paper.label().into());\n',
+              '        ui.set_page_orientation_text(model.page_profile.orientation.label().into());\n',
+              '        ui.set_margin_left_text(model.page_profile.margin_left_mm.to_string().into());\n',
+              '        ui.set_margin_right_text(model.page_profile.margin_right_mm.to_string().into());\n',
+              '        ui.set_margin_top_text(model.page_profile.margin_top_mm.to_string().into());\n',
+              '        ui.set_margin_bottom_text(model.page_profile.margin_bottom_mm.to_string().into());\n',
+              '            ui.set_page_label(model.page_profile.paper.label().into());\n',
+              '            ui.set_page_orientation_text(model.page_profile.orientation.label().into());\n',
+              '            ui.set_margin_left_text(model.page_profile.margin_left_mm.to_string().into());\n',
+              '            ui.set_margin_right_text(model.page_profile.margin_right_mm.to_string().into());\n',
+              '            ui.set_margin_top_text(model.page_profile.margin_top_mm.to_string().into());\n',
+              '            ui.set_margin_bottom_text(model.page_profile.margin_bottom_mm.to_string().into());\n',
+          ]:
+              s=s.replace(line,'')
+
+          # When F2 changes page metadata, reload the profile immediately.
+          old='''                } else if modified.is_some() && modified != self.source_modified {\n                    self.source_modified = modified;\n                    // F2 changes formatting.json without necessarily changing terminal text.\n                    // Force the HSST overlay to be rebuilt immediately.\n                    self.dirty = true;'''
+          new='''                } else if modified.is_some() && modified != self.source_modified {\n                    self.source_modified = modified;\n                    if let Some(metadata) = document::read_metadata(source) {\n                        self.page_profile = metadata.page;\n                    }\n                    // F2 may change formatting.json or page metadata without terminal text.\n                    self.dirty = true;'''
+          if old not in s: raise SystemExit('source modified watcher marker missing')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8',newline='\n')
+          PY
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/spell.rs src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: move page settings to F2 and remove hidden page palette"
+          git pull --rebase origin main
+          git push origin HEAD:main
