@@ -21,11 +21,18 @@ fn main() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
 
     if args.iter().any(|arg| arg == "--version" || arg == "-V") {
-        println!("helix-sst {} (Helix {})", env!("CARGO_PKG_VERSION"), editor::HELIX_UPSTREAM_VERSION);
+        println!(
+            "Zen Editor {} (Helix {})",
+            env!("CARGO_PKG_VERSION"),
+            editor::HELIX_UPSTREAM_VERSION
+        );
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--credits" || arg == "--about") {
-        println!("Helix-SST Zen — standalone writing shell built on Helix {}.", editor::HELIX_UPSTREAM_VERSION);
+        println!(
+            "Zen Editor — standalone distraction-free editor built on Helix {}.",
+            editor::HELIX_UPSTREAM_VERSION
+        );
         println!("Helix editor: https://helix-editor.com/ — MPL-2.0");
         return Ok(());
     }
