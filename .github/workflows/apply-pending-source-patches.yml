@@ -1,0 +1,39 @@
+name: Apply pending editor source patches
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/apply-pending-source-patches.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply alignment and mouse bridge patches
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def execute_embedded(path: str):
+              text = Path(path).read_text(encoding='utf-8')
+              block = text.split('        run: |\n', 1)[1]
+              block = block.split('\n      - name: Commit source changes', 1)[0]
+              lines = block.splitlines()
+              code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+              exec(compile(code, path, 'exec'), {'__name__': '__main__'})
+
+          execute_embedded('.github/workflows/add-paragraph-alignment.yml')
+          execute_embedded('.github/workflows/add-terminal-mouse-bridge.yml')
+          PY
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs src/document.rs src/format.rs src/spell.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: finish F2 paragraph alignment and terminal mouse bridge"
+          git pull --rebase origin main
+          git push origin HEAD:main
