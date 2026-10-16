@@ -146,25 +146,15 @@ slint::slint! {
             }
         }
 
-        // Native drag target: do not rely on Slint WindowMoveArea for the frameless Win32 window.
-        window-drag-strip := TouchArea {
+        // Dedicated frameless titlebar handled by Slint/Winit.
+        window-drag-strip := WindowMoveArea {
             x: 7px;
             y: 7px;
             width: root.width - 14px;
-            height: 22px;
+            height: 24px;
             enabled: !root.zen-active
-                && !root.font-palette-open
-                && !root.highlight-palette-open
                 && !root.symbols-open
                 && !root.page-menu-open;
-            pointer-event(event) => {
-                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
-                    root.begin-window-drag();
-                    EventResult.accept
-                } else {
-                    EventResult.reject
-                }
-            }
         }
 
         bottom-reveal := TouchArea {
@@ -1240,6 +1230,9 @@ impl TerminalModel {
                     self.source_modified = modified;
                 } else if modified.is_some() && modified != self.source_modified {
                     self.source_modified = modified;
+                    // F2 changes formatting.json without necessarily changing terminal text.
+                    // Force the HSST overlay to be rebuilt immediately.
+                    self.dirty = true;
                     if let Err(error) = editor.refresh_after_formatting() {
                         self.launcher.message =
                             Some(format!("No se pudo refrescar el formato: {error}"));
