@@ -28,7 +28,10 @@ fn main() -> Result<()> {
         );
         return Ok(());
     }
-    if args.iter().any(|arg| arg == "--credits" || arg == "--about") {
+    if args
+        .iter()
+        .any(|arg| arg == "--credits" || arg == "--about")
+    {
         println!(
             "Zen Editor — standalone distraction-free editor built on Helix {}.",
             editor::HELIX_UPSTREAM_VERSION

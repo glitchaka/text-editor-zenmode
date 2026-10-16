@@ -21,8 +21,8 @@ use windows_sys::Win32::{
     UI::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
-            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsZoomed,
-            HWND_NOTOPMOST, HWND_TOPMOST, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SWP_NOACTIVATE,
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
+            HWND_TOPMOST, IsZoomed, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SWP_NOACTIVATE,
             SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow, SetWindowPos, ShowWindow,
         },
     },
@@ -409,6 +409,11 @@ impl Launcher {
         let mut entries = match fs::read_dir(&self.cwd) {
             Ok(read_dir) => read_dir
                 .flatten()
+                .filter(|entry| {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    !name.to_ascii_lowercase().ends_with(".zen.json")
+                })
                 .map(|entry| {
                     let path = entry.path();
                     let directory = path.is_dir();
@@ -879,7 +884,9 @@ impl TerminalModel {
                 let _ = session.send_command(":theme helix-sst-zen");
             }
             Err(error) => {
-                self.launcher.message = Some(format!("No se pudo preparar el tema HSST: {error}"));
+                self.launcher.message = Some(format!(
+                    "No se pudo preparar el tema de Zen Editor: {error}"
+                ));
             }
         }
 
@@ -898,102 +905,6 @@ impl TerminalModel {
         self.dirty = true;
         Ok(())
     }
-
-    fn apply_format(&mut self, action: &str, value: &str) {
-        if self.pomodoro_break {
-            return;
-        }
-        let Some(current) = self.current_file.clone() else {
-            return;
-        };
-        if !document::is_native_path(&current) {
-            return;
-        }
-        let (cursor_line, cursor_column) = self.helix_cursor_position().unwrap_or((1, 1));
-        let leave_insert = self.helix_is_insert_mode();
-        let Some(editor) = self.editor.as_mut() else {
-            return;
-        };
-
-        if leave_insert {
-            let _ = editor.send_key(
-                KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
-                editor.win32_input(),
-            );
-        }
-
-        if let Err(error) = editor.save_buffer_for_formatting() {
-            self.launcher.message = Some(format!("No se pudo guardar antes de formatear: {error}"));
-            return;
-        }
-        for _ in 0..12 {
-            std::thread::sleep(Duration::from_millis(15));
-            if editor.sync_native().unwrap_or(false) {
-                break;
-            }
-        }
-
-        let sentinel = format!("__HSST_SELECTION_{}_{}__", std::process::id(), cursor_line);
-        let mut clipboard = match arboard::Clipboard::new() {
-            Ok(clipboard) => clipboard,
-            Err(error) => {
-                self.launcher.message = Some(format!("No se pudo abrir el portapapeles: {error}"));
-                return;
-            }
-        };
-        let previous_clipboard = clipboard.get_text().ok();
-        let _ = clipboard.set_text(sentinel.clone());
-        if let Err(error) = editor.yank_selection_to_clipboard() {
-            if let Some(previous) = previous_clipboard {
-                let _ = clipboard.set_text(previous);
-            }
-            self.launcher.message = Some(format!("No se pudo leer la selección: {error}"));
-            return;
-        }
-
-        let mut selected = None;
-        for _ in 0..20 {
-            std::thread::sleep(Duration::from_millis(10));
-            if let Ok(text) = clipboard.get_text()
-                && text != sentinel
-            {
-                selected = Some(text);
-                break;
-            }
-        }
-        if let Some(previous) = previous_clipboard {
-            let _ = clipboard.set_text(previous);
-        }
-        let Some(selected) = selected.filter(|text| !text.is_empty()) else {
-            self.launcher.message = Some("Selecciona texto antes de aplicar formato.".into());
-            return;
-        };
-
-        match document::apply_format_selection(
-            &current,
-            &selected,
-            cursor_line,
-            cursor_column,
-            action,
-            value,
-        ) {
-            Ok(true) => {
-                self.source_modified = fs::metadata(&current)
-                    .and_then(|metadata| metadata.modified())
-                    .ok();
-                let _ = editor.refresh_after_formatting();
-                self.dirty = true;
-            }
-            Ok(false) => {
-                self.launcher.message =
-                    Some("No se pudo localizar la selección en el documento.".into());
-            }
-            Err(error) => {
-                self.launcher.message = Some(format!("No se pudo aplicar formato: {error}"));
-            }
-        }
-    }
-
 
     fn insert_symbol(&mut self, symbol: &str) {
         if self.pomodoro_break || symbol.is_empty() {
@@ -1020,7 +931,8 @@ impl TerminalModel {
             let body_changed = match editor.sync_native() {
                 Ok(changed) => changed,
                 Err(error) => {
-                    self.launcher.message = Some(format!("No se pudo sincronizar HSST: {error}"));
+                    self.launcher.message =
+                        Some(format!("No se pudo sincronizar el documento: {error}"));
                     false
                 }
             };
@@ -1150,7 +1062,6 @@ impl TerminalModel {
             self.toggle_editor_zen();
             return;
         }
-
 
         let ctrl_v = key.modifiers.contains(KeyModifiers::CONTROL)
             && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'));
@@ -1476,7 +1387,8 @@ impl TerminalModel {
 
     fn import_selected(&mut self) -> bool {
         let Some(entry) = self.launcher.selected_entry().cloned() else {
-            self.launcher.message = Some("Selecciona un TXT, Markdown o DOCX para importar.".into());
+            self.launcher.message =
+                Some("Selecciona un TXT, Markdown o DOCX para importar.".into());
             return false;
         };
         if entry.directory || !document::is_importable_path(&entry.path) {
@@ -1515,10 +1427,17 @@ impl TerminalModel {
                 }
                 KeyCode::Enter => {
                     let chapter = self.launcher.project_chapter.trim().parse::<u32>().ok();
-                    match document::set_project_assignment(&path, &self.launcher.project_name, chapter) {
+                    match document::set_project_assignment(
+                        &path,
+                        &self.launcher.project_name,
+                        chapter,
+                    ) {
                         Ok(()) => {
                             self.launcher.message = Some(if let Some(chapter) = chapter {
-                                format!("Proyecto: {} · capítulo {chapter}", self.launcher.project_name.trim())
+                                format!(
+                                    "Proyecto: {} · capítulo {chapter}",
+                                    self.launcher.project_name.trim()
+                                )
                             } else {
                                 format!("Proyecto: {}", self.launcher.project_name.trim())
                             });
@@ -1528,7 +1447,10 @@ impl TerminalModel {
                             self.launcher.project_stage = 0;
                             self.launcher.refresh();
                         }
-                        Err(error) => self.launcher.message = Some(format!("No se pudo guardar proyecto: {error}")),
+                        Err(error) => {
+                            self.launcher.message =
+                                Some(format!("No se pudo guardar proyecto: {error}"))
+                        }
                     }
                 }
                 KeyCode::Backspace => {
@@ -1689,12 +1611,16 @@ impl TerminalModel {
                         ..DocumentMetadata::default()
                     });
                     self.launcher.project_name = metadata.project;
-                    self.launcher.project_chapter = metadata.chapter.map(|value| value.to_string()).unwrap_or_default();
+                    self.launcher.project_chapter = metadata
+                        .chapter
+                        .map(|value| value.to_string())
+                        .unwrap_or_default();
                     self.launcher.project_stage = 0;
                     self.launcher.project_editing = Some(entry.path);
                     self.launcher.message = None;
                 } else {
-                    self.launcher.message = Some("Selecciona un documento .hsst para asignar proyecto.".into());
+                    self.launcher.message =
+                        Some("Selecciona un documento TXT o HSST para asignar proyecto.".into());
                 }
             }
             KeyCode::Char('e') | KeyCode::Char('E') => {
@@ -1943,7 +1869,10 @@ impl TerminalModel {
                         "38;5;244",
                     ),
                 );
-                push_line(&mut out, &framed_left("Enter: capítulo  ·  Esc cancelar", inner_width, "38;5;244"));
+                push_line(
+                    &mut out,
+                    &framed_left("Enter: capítulo  ·  Esc cancelar", inner_width, "38;5;244"),
+                );
             } else {
                 push_line(
                     &mut out,
@@ -1956,7 +1885,10 @@ impl TerminalModel {
                         "38;5;244",
                     ),
                 );
-                push_line(&mut out, &framed_left("Enter: guardar  ·  Esc cancelar", inner_width, "38;5;244"));
+                push_line(
+                    &mut out,
+                    &framed_left("Enter: guardar  ·  Esc cancelar", inner_width, "38;5;244"),
+                );
             }
         } else if self.launcher.creating {
             push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
@@ -2095,7 +2027,7 @@ impl TerminalModel {
         let py = y * scale;
         let (left, top, cell_width, cell_height) = self.geometry();
         if px < left || py < top || cell_width <= 0.0 || cell_height <= 0.0 {
-  return None;
+            return None;
         }
         let col = ((px - left) / cell_width).floor() as u16;
         let row = ((py - top) / cell_height).floor() as u16;
@@ -2105,31 +2037,31 @@ impl TerminalModel {
 
     fn terminal_cell_has_text(&self, x: f32, y: f32) -> bool {
         let Some((row, col)) = self.terminal_cell_at(x, y) else {
-  return false;
+            return false;
         };
         self.parser
-  .screen()
-  .cell(row, col)
-  .is_some_and(|cell| !cell.is_wide_continuation() && !cell.contents().is_empty())
+            .screen()
+            .cell(row, col)
+            .is_some_and(|cell| !cell.is_wide_continuation() && !cell.contents().is_empty())
     }
 
     fn terminal_pointer(&mut self, x: f32, y: f32, kind: i32) {
         if self.pomodoro_break {
-  return;
+            return;
         }
         let Some((row, col)) = self.terminal_cell_at(x, y) else {
-  return;
+            return;
         };
         let Some(editor) = self.editor.as_ref() else {
-  return;
+            return;
         };
         let column = col as usize + 1;
         let line = row as usize + 1;
         let report = match kind {
-  0 => format!("\x1b[<0;{column};{line}M"),
-  1 => format!("\x1b[<0;{column};{line}m"),
-  2 => format!("\x1b[<32;{column};{line}M"),
-  _ => return,
+            0 => format!("\x1b[<0;{column};{line}M"),
+            1 => format!("\x1b[<0;{column};{line}m"),
+            2 => format!("\x1b[<32;{column};{line}M"),
+            _ => return,
         };
         let _ = editor.write_reply(report.as_bytes());
         self.dirty = true;
@@ -2137,10 +2069,10 @@ impl TerminalModel {
 
     fn terminal_scroll(&mut self, x: f32, y: f32, delta_y: f32) {
         let Some((row, col)) = self.terminal_cell_at(x, y) else {
-  return;
+            return;
         };
         let Some(editor) = self.editor.as_ref() else {
-  return;
+            return;
         };
         let button = if delta_y < 0.0 { 64 } else { 65 };
         let column = col as usize + 1;
@@ -2437,7 +2369,6 @@ fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
     Some(win32.hwnd.get() as HWND)
 }
 
-
 #[cfg(windows)]
 unsafe fn focus_native_window(hwnd: HWND) {
     unsafe {
@@ -2619,7 +2550,7 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             ui.set_pomodoro_prompt(model.pomodoro_offer);
             ui.set_pomodoro_break(model.pomodoro_break);
             ui.set_pomodoro_text(model.pomodoro_label().into());
-                                    ui.set_zen_active(zen);
+            ui.set_zen_active(zen);
             if zen != last_zen.get() {
                 ui.set_zen_active(zen);
                 ui.window().set_fullscreen(zen);
@@ -2741,7 +2672,6 @@ fn handle_key(model: &mut TerminalModel, text: &str, ctrl: bool, alt: bool, shif
     }
 
     let ctrl = control_pressed(ctrl);
-
 
     // AltGr is represented as Alt (and on Windows often Control+Alt) by winit.
     // Keep Alt+D intact and add AltGr/Alt + '-' as the natural em-dash shortcut.
@@ -3144,59 +3074,86 @@ fn native_alignment_offsets(
     let mut consumed = 0usize;
     for row in 0..rows {
         if let Some(line) = screen_line_number(screen, row, lines.len()) {
-  active_line = Some(line);
-  consumed = 0;
+            active_line = Some(line);
+            consumed = 0;
         }
-        let Some(line_index) = active_line else { continue; };
-        let Some((line_start, line)) = lines.get(line_index).copied() else { continue; };
-        if consumed >= line.len() || !line.is_char_boundary(consumed) { continue; }
+        let Some(line_index) = active_line else {
+            continue;
+        };
+        let Some((line_start, line)) = lines.get(line_index).copied() else {
+            continue;
+        };
+        if consumed >= line.len() || !line.is_char_boundary(consumed) {
+            continue;
+        }
         let line_end = line_start + line.len();
         let alignment = alignments
-  .iter()
-  .find(|(start, end, _)| *start <= line_start && line_end <= *end)
-  .or_else(|| alignments.iter().find(|(start, end, _)| *start <= line_start && line_start <= *end))
-  .map(|(_, _, alignment)| *alignment)
-  .unwrap_or_default();
-        if alignment == crate::format::ParagraphAlignment::Left { continue; }
+            .iter()
+            .find(|(start, end, _)| *start <= line_start && line_end <= *end)
+            .or_else(|| {
+                alignments
+                    .iter()
+                    .find(|(start, end, _)| *start <= line_start && line_start <= *end)
+            })
+            .map(|(_, _, alignment)| *alignment)
+            .unwrap_or_default();
+        if alignment == crate::format::ParagraphAlignment::Left {
+            continue;
+        }
         let remaining = &line[consumed..];
-        let Some((_, matched)) = match_source_row(screen, row, remaining) else { continue; };
-        if matched.is_empty() { continue; }
+        let Some((_, matched)) = match_source_row(screen, row, remaining) else {
+            continue;
+        };
+        if matched.is_empty() {
+            continue;
+        }
         let right_edge = matched
-  .iter()
-  .map(|(col, _, _)| *col as usize + 1)
-  .max()
-  .unwrap_or(0);
+            .iter()
+            .map(|(col, _, _)| *col as usize + 1)
+            .max()
+            .unwrap_or(0);
         let spare = (cols as usize).saturating_sub(right_edge + 1);
         match alignment {
-  crate::format::ParagraphAlignment::Left => {}
-  crate::format::ParagraphAlignment::Center | crate::format::ParagraphAlignment::Right => {
-      let shift = if alignment == crate::format::ParagraphAlignment::Center {
-          spare as f32 / 2.0
-      } else {
-          spare as f32
-      };
-      for (col, _, _) in &matched {
-          offsets.insert((row, *col), shift);
-      }
-  }
-  crate::format::ParagraphAlignment::Justify => {
-      let spaces = matched
-          .iter()
-          .filter(|(_, local_start, local_end)| remaining[*local_start..*local_end].chars().all(char::is_whitespace))
-          .count();
-      if spaces > 0 && spare > 0 && consumed + matched.last().map(|(_, _, end)| *end).unwrap_or(0) < line.len() {
-          let mut seen = 0usize;
-          for (col, local_start, local_end) in &matched {
-              offsets.insert((row, *col), spare as f32 * seen as f32 / spaces as f32);
-              if remaining[*local_start..*local_end].chars().all(char::is_whitespace) {
-                  seen += 1;
-              }
-          }
-      }
-  }
+            crate::format::ParagraphAlignment::Left => {}
+            crate::format::ParagraphAlignment::Center
+            | crate::format::ParagraphAlignment::Right => {
+                let shift = if alignment == crate::format::ParagraphAlignment::Center {
+                    spare as f32 / 2.0
+                } else {
+                    spare as f32
+                };
+                for (col, _, _) in &matched {
+                    offsets.insert((row, *col), shift);
+                }
+            }
+            crate::format::ParagraphAlignment::Justify => {
+                let spaces = matched
+                    .iter()
+                    .filter(|(_, local_start, local_end)| {
+                        remaining[*local_start..*local_end]
+                            .chars()
+                            .all(char::is_whitespace)
+                    })
+                    .count();
+                if spaces > 0
+                    && spare > 0
+                    && consumed + matched.last().map(|(_, _, end)| *end).unwrap_or(0) < line.len()
+                {
+                    let mut seen = 0usize;
+                    for (col, local_start, local_end) in &matched {
+                        offsets.insert((row, *col), spare as f32 * seen as f32 / spaces as f32);
+                        if remaining[*local_start..*local_end]
+                            .chars()
+                            .all(char::is_whitespace)
+                        {
+                            seen += 1;
+                        }
+                    }
+                }
+            }
         }
         if let Some((_, _, last_end)) = matched.last() {
-  consumed += *last_end;
+            consumed += *last_end;
         }
     }
     offsets

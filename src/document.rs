@@ -118,8 +118,7 @@ pub fn create_plain_text(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, b"")
-        .with_context(|| format!("No se pudo crear {}", path.display()))?;
+    fs::write(path, b"").with_context(|| format!("No se pudo crear {}", path.display()))?;
     Ok(())
 }
 
@@ -135,7 +134,6 @@ pub fn create_native(path: &Path, title: &str) -> Result<()> {
     };
     write(path, &document)
 }
-
 
 pub fn is_importable_path(path: &Path) -> bool {
     matches!(
@@ -249,8 +247,7 @@ fn import_docx_body(path: &Path) -> Result<(String, Value)> {
             .and_then(crate::format::ParagraphAlignment::parse)
             .unwrap_or_default();
 
-        let paragraph_style =
-            xml_attr_after(paragraph, "<w:pStyle", "w:val").unwrap_or_default();
+        let paragraph_style = xml_attr_after(paragraph, "<w:pStyle", "w:val").unwrap_or_default();
         if paragraph_style.eq_ignore_ascii_case("Heading1")
             || paragraph_style.eq_ignore_ascii_case("Title")
         {
@@ -299,7 +296,11 @@ fn import_docx_body(path: &Path) -> Result<(String, Value)> {
         }
         let paragraph_plain_end = paragraph_plain_start + paragraph_plain_len;
         if paragraph_alignment != crate::format::ParagraphAlignment::Left {
-            paragraph_alignments.push((paragraph_plain_start, paragraph_plain_end, paragraph_alignment));
+            paragraph_alignments.push((
+                paragraph_plain_start,
+                paragraph_plain_end,
+                paragraph_alignment,
+            ));
         }
         plain_offset = paragraph_plain_end;
         cursor = end + "</w:p>".len();
@@ -790,19 +791,19 @@ fn decode_paragraph_alignments(
         .into_iter()
         .flatten()
         .filter_map(|value| {
-  let start = value
-      .get("start")?
-      .as_u64()
-      .and_then(|n| usize::try_from(n).ok())?;
-  let end = value
-      .get("end")?
-      .as_u64()
-      .and_then(|n| usize::try_from(n).ok())?;
-  let alignment = value
-      .get("alignment")?
-      .as_str()
-      .and_then(crate::format::ParagraphAlignment::parse)?;
-  (start <= end).then_some((start, end, alignment))
+            let start = value
+                .get("start")?
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())?;
+            let end = value
+                .get("end")?
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())?;
+            let alignment = value
+                .get("alignment")?
+                .as_str()
+                .and_then(crate::format::ParagraphAlignment::parse)?;
+            (start <= end).then_some((start, end, alignment))
         })
         .collect::<Vec<_>>();
     ranges.sort_by_key(|(start, end, _)| (*start, *end));
@@ -816,13 +817,15 @@ fn encode_formatting_parts(
     let mut value = encode_formatting_runs(runs);
     let encoded = paragraphs
         .iter()
-        .filter(|(start, end, alignment)| start <= end && *alignment != crate::format::ParagraphAlignment::Left)
+        .filter(|(start, end, alignment)| {
+            start <= end && *alignment != crate::format::ParagraphAlignment::Left
+        })
         .map(|(start, end, alignment)| {
-  json!({
-      "start": start,
-      "end": end,
-      "alignment": alignment.name()
-  })
+            json!({
+                "start": start,
+                "end": end,
+                "alignment": alignment.name()
+            })
         })
         .collect::<Vec<_>>();
     if let Some(object) = value.as_object_mut() {
@@ -833,7 +836,10 @@ fn encode_formatting_parts(
 
 fn paragraph_bounds(body: &str, offset: usize) -> (usize, usize) {
     let offset = offset.min(body.len());
-    let start = body[..offset].rfind('\n').map(|index| index + 1).unwrap_or(0);
+    let start = body[..offset]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0);
     let end = body[offset..]
         .find('\n')
         .map(|index| offset + index)
@@ -851,16 +857,15 @@ fn normalize_paragraph_alignments(
         let line_end = line_start + segment.strip_suffix('\n').unwrap_or(segment).len();
         let probe = line_start.min(body.len().saturating_sub(1));
         let alignment = ranges
-  .iter()
-  .rev()
-  .find(|(start, end, _)| {
-      (*start <= probe && probe <= *end)
-          || (line_start <= *start && *start <= line_end)
-  })
-  .map(|(_, _, alignment)| *alignment)
-  .unwrap_or_default();
+            .iter()
+            .rev()
+            .find(|(start, end, _)| {
+                (*start <= probe && probe <= *end) || (line_start <= *start && *start <= line_end)
+            })
+            .map(|(_, _, alignment)| *alignment)
+            .unwrap_or_default();
         if alignment != crate::format::ParagraphAlignment::Left {
-  result.push((line_start, line_end, alignment));
+            result.push((line_start, line_end, alignment));
         }
         line_start += segment.len();
     }
@@ -869,13 +874,13 @@ fn normalize_paragraph_alignments(
     }
     if !body.ends_with('\n') && line_start < body.len() {
         let alignment = ranges
-  .iter()
-  .rev()
-  .find(|(start, end, _)| *start <= line_start && line_start <= *end)
-  .map(|(_, _, alignment)| *alignment)
-  .unwrap_or_default();
+            .iter()
+            .rev()
+            .find(|(start, end, _)| *start <= line_start && line_start <= *end)
+            .map(|(_, _, alignment)| *alignment)
+            .unwrap_or_default();
         if alignment != crate::format::ParagraphAlignment::Left {
-  result.push((line_start, body.len(), alignment));
+            result.push((line_start, body.len(), alignment));
         }
     }
     result
@@ -897,18 +902,18 @@ fn apply_paragraph_alignment(
         let line = segment.strip_suffix('\n').unwrap_or(segment);
         let line_end = line_start + line.len();
         let current = existing
-  .iter()
-  .rev()
-  .find(|(start, end, _)| *start <= line_start && line_start <= *end)
-  .map(|(_, _, value)| *value)
-  .unwrap_or_default();
+            .iter()
+            .rev()
+            .find(|(start, end, _)| *start <= line_start && line_start <= *end)
+            .map(|(_, _, value)| *value)
+            .unwrap_or_default();
         let next = if line_start <= last && line_end >= first {
-  alignment
+            alignment
         } else {
-  current
+            current
         };
         if next != crate::format::ParagraphAlignment::Left {
-  output.push((line_start, line_end, next));
+            output.push((line_start, line_end, next));
         }
         line_start += segment.len();
     }
@@ -1357,11 +1362,7 @@ pub fn serialize(document: &HsstDocument) -> String {
     )
 }
 
-pub fn set_project_assignment(
-    path: &Path,
-    project: &str,
-    chapter: Option<u32>,
-) -> Result<()> {
+pub fn set_project_assignment(path: &Path, project: &str, chapter: Option<u32>) -> Result<()> {
     if !is_native_path(path) {
         return Ok(());
     }
@@ -1377,9 +1378,8 @@ pub fn set_project_assignment(
     } else if document.metadata.kind.eq_ignore_ascii_case("chapter") {
         document.metadata.kind = "document".into();
     }
-    write(path, &document).with_context(|| {
-        format!("No se pudo actualizar el proyecto de {}", path.display())
-    })
+    write(path, &document)
+        .with_context(|| format!("No se pudo actualizar el proyecto de {}", path.display()))
 }
 
 pub fn set_page_profile(path: &Path, page: PageProfile) -> Result<()> {

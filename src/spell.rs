@@ -14,7 +14,7 @@ const ES_CL_DIC: &str = include_str!(concat!(env!("OUT_DIR"), "/helix-sst-es-CL.
 pub const DICTIONARY_LICENSE: &str =
     include_str!(concat!(env!("OUT_DIR"), "/helix-sst-es-CL.LICENSE"));
 
-const SOURCE: &str = "Helix-SST ortografía";
+const SOURCE: &str = "Zen Editor ortografía";
 const ADD_WORD_COMMAND: &str = "helix-sst.addWord";
 const FORMAT_COMMAND: &str = "helix-sst.formatSelection";
 const PAGE_COMMAND: &str = "helix-sst.pageSetting";
@@ -54,7 +54,7 @@ pub fn run_lsp(
                                 }
                             },
                             "serverInfo": {
-                                "name": "helix-sst-spell",
+                                "name": "zen-editor-spell",
                                 "version": "0.1.0"
                             }
                         }),
@@ -372,15 +372,41 @@ impl SpellServer {
                     }
                 }));
             };
-            for (label, value) in [("Carta", "letter"), ("Oficio", "oficio"), ("Legal", "legal"), ("A4", "a4"), ("A5", "a5")] {
+            for (label, value) in [
+                ("Carta", "letter"),
+                ("Oficio", "oficio"),
+                ("Legal", "legal"),
+                ("A4", "a4"),
+                ("A5", "a5"),
+            ] {
                 push_page(&format!("Página · Papel · {label}"), "paper", value);
             }
             push_page("Página · Orientación · Vertical", "orientation", "portrait");
-            push_page("Página · Orientación · Horizontal", "orientation", "landscape");
-            push_page("Página · Margen izquierdo · siguiente", "margin-left", "cycle");
-            push_page("Página · Margen derecho · siguiente", "margin-right", "cycle");
-            push_page("Página · Margen superior · siguiente", "margin-top", "cycle");
-            push_page("Página · Margen inferior · siguiente", "margin-bottom", "cycle");
+            push_page(
+                "Página · Orientación · Horizontal",
+                "orientation",
+                "landscape",
+            );
+            push_page(
+                "Página · Margen izquierdo · siguiente",
+                "margin-left",
+                "cycle",
+            );
+            push_page(
+                "Página · Margen derecho · siguiente",
+                "margin-right",
+                "cycle",
+            );
+            push_page(
+                "Página · Margen superior · siguiente",
+                "margin-top",
+                "cycle",
+            );
+            push_page(
+                "Página · Margen inferior · siguiente",
+                "margin-bottom",
+                "cycle",
+            );
         }
 
         if let Some(source) = self.source_file.as_ref()
@@ -650,17 +676,30 @@ impl SpellServer {
         let mut page = metadata.page;
         match action {
             "paper" => {
-                let Some(paper) = crate::page::PaperSize::parse(value) else { return Ok(false); };
+                let Some(paper) = crate::page::PaperSize::parse(value) else {
+                    return Ok(false);
+                };
                 page.paper = paper;
             }
             "orientation" => {
-                let Some(orientation) = crate::page::PageOrientation::parse(value) else { return Ok(false); };
+                let Some(orientation) = crate::page::PageOrientation::parse(value) else {
+                    return Ok(false);
+                };
                 page.orientation = orientation;
             }
-            "margin-left" => page.margin_left_mm = crate::page::PageProfile::cycle_margin(page.margin_left_mm),
-            "margin-right" => page.margin_right_mm = crate::page::PageProfile::cycle_margin(page.margin_right_mm),
-            "margin-top" => page.margin_top_mm = crate::page::PageProfile::cycle_margin(page.margin_top_mm),
-            "margin-bottom" => page.margin_bottom_mm = crate::page::PageProfile::cycle_margin(page.margin_bottom_mm),
+            "margin-left" => {
+                page.margin_left_mm = crate::page::PageProfile::cycle_margin(page.margin_left_mm)
+            }
+            "margin-right" => {
+                page.margin_right_mm = crate::page::PageProfile::cycle_margin(page.margin_right_mm)
+            }
+            "margin-top" => {
+                page.margin_top_mm = crate::page::PageProfile::cycle_margin(page.margin_top_mm)
+            }
+            "margin-bottom" => {
+                page.margin_bottom_mm =
+                    crate::page::PageProfile::cycle_margin(page.margin_bottom_mm)
+            }
             _ => return Ok(false),
         }
         if page == metadata.page {
