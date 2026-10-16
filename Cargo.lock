@@ -1673,25 +1673,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "helix-sst-zen"
-version = "0.2.16"
-dependencies = [
- "anyhow",
- "arboard",
- "crossterm",
- "fontdue",
- "portable-pty",
- "raw-window-handle",
- "serde_json",
- "slint",
- "spellbook",
- "toml 0.5.11",
- "vt100",
- "windows-sys 0.61.2",
- "zip",
-]
-
-[[package]]
 name = "hermit-abi"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5739,6 +5720,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1afec51604565183aeb5c54c20aeab286120d4e4460f7f76e3e8bb8c0d99473"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "zen-editor"
+version = "0.2.16"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "crossterm",
+ "fontdue",
+ "portable-pty",
+ "raw-window-handle",
+ "serde_json",
+ "slint",
+ "spellbook",
+ "toml 0.5.11",
+ "vt100",
+ "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]
