@@ -1,0 +1,50 @@
+name: Clean dead editor code
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/cleanup-dead-code.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Remove obsolete helpers
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p=Path('src/app.rs'); s=p.read_text()
+          s=s.replace('const ISLAND_HEIGHT: f32 = 34.0;\n','').replace('const CONTENT_TOP_GAP: f32 = 8.0;\n','')
+          p.write_text(s)
+
+          p=Path('src/document.rs'); s=p.read_text()
+          s=re.sub(r'\npub fn is_supported_text_path\(path: &Path\) -> bool \{.*?\n\}\n\npub fn native_path_for_name\(directory: &Path, requested_name: &str\) -> PathBuf \{.*?\n\}\n','\n',s,count=1,flags=re.S)
+          s=re.sub(r'\nfn line_column_to_byte\(body: &str, line: usize, column: usize\) -> usize \{.*?\n\}\n\npub fn apply_format_selection\(.*?\n\}\n','\n',s,count=1,flags=re.S)
+          p.write_text(s)
+
+          p=Path('src/editor.rs'); s=p.read_text()
+          s=re.sub(r'\n    pub fn yank_selection_to_clipboard\(&self\) -> Result<\(\)> \{.*?\n    \}\n','\n',s,count=1,flags=re.S)
+          p.write_text(s)
+
+          p=Path('src/page.rs'); s=p.read_text()
+          s=re.sub(r'\n    pub fn label\(self\) -> &\x27static str \{.*?\n    \}\n','\n',s,count=2,flags=re.S)
+          s=re.sub(r'\n    pub fn content_size_tenth_mm\(self\) -> \(u16, u16\) \{.*?\n    \}\n','\n',s,count=1,flags=re.S)
+          s=re.sub(r'\n    pub fn text_columns\(self\) -> usize \{.*?\n    \}\n','\n',s,count=1,flags=re.S)
+          p.write_text(s)
+      - name: Format and commit
+        shell: bash
+        run: |
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs src/document.rs src/editor.rs src/page.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: remove obsolete editor code"
+          git pull --rebase origin main
+          git push origin HEAD:main
