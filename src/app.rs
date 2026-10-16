@@ -98,7 +98,6 @@ slint::slint! {
         in property <bool> pomodoro-break: false;
         in property <string> pomodoro-text: "";
         property <bool> symbols-open: false;
-        property <bool> page-menu-open: false;
         callback key-input(string, bool, bool, bool);
         callback terminal-cell-has-text(float, float) -> bool;
         callback terminal-pointer(float, float, int);
@@ -258,7 +257,6 @@ slint::slint! {
                     mouse-cursor: pointer;
                     clicked => {
                         root.symbols-open = !root.symbols-open;
-                        root.page-menu-open = false;
                     }
                 }
             }
@@ -1026,6 +1024,49 @@ impl TerminalModel {
         }
         if key.code == KeyCode::F(4) && key.modifiers.is_empty() {
             self.start_pomodoro();
+            return;
+        }
+        if key.code == KeyCode::F(2) && key.modifiers.is_empty() {
+            let native = self
+                .current_file
+                .as_ref()
+                .is_some_and(|path| document::is_native_path(path));
+            if let Some(editor) = self.editor.as_mut() {
+                if native {
+                    // Helix edits a clean shadow file for native TXT/HSST documents.
+                    // Persist that live buffer and copy it back before asking the LSP
+                    // to mutate sidecar/container formatting. Otherwise F2 can act on
+                    // stale source offsets and appear to do nothing.
+                    if let Err(error) = editor.save_buffer_for_formatting() {
+                        self.launcher.message =
+                            Some(format!("No se pudo guardar antes de F2: {error}"));
+                        return;
+                    }
+                    let mut synced = false;
+                    for _ in 0..20 {
+                        std::thread::sleep(Duration::from_millis(10));
+                        match editor.sync_native() {
+                            Ok(true) => {
+                                synced = true;
+                                break;
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                self.launcher.message = Some(format!(
+                                    "No se pudo sincronizar el documento antes de F2: {error}"
+                                ));
+                                return;
+                            }
+                        }
+                    }
+                    if synced && let Some(source) = self.current_file.as_ref() {
+                        self.source_modified = fs::metadata(source)
+                            .and_then(|metadata| metadata.modified())
+                            .ok();
+                    }
+                }
+                let _ = editor.send_key(key, editor.win32_input());
+            }
             return;
         }
         if self.capture_pd_command(key) {
