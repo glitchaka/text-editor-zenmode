@@ -1,0 +1,70 @@
+name: Fix current Zen Editor build
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-current-build.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fix compiler errors and warnings
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('src/app.rs')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('                            accept\n', '                            EventResult.accept\n')
+          s = s.replace('                            reject\n', '                            EventResult.reject\n')
+          s = s.replace('                        accept\n', '                        EventResult.accept\n')
+          s = s.replace('                        reject\n', '                        EventResult.reject\n')
+          s = s.replace(
+              '            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsZoomed,\n'
+              '            HWND_NOTOPMOST, HWND_TOPMOST, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SWP_NOACTIVATE,\n'
+              '            SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow, SetWindowPos, ShowWindow,\n',
+              '            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,\n'
+              '            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,\n'
+              '            SetWindowPos,\n'
+          )
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/document.rs')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace(
+              'document.metadata.order = chapter.saturating_mul(10);',
+              'document.metadata.order = i64::from(chapter).saturating_mul(10);'
+          )
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/export.rs')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace(
+              'use crate::{document, format::{ParagraphAlignment, StyledRun, TextStyle}, page::PageProfile};',
+              'use crate::{document, format::{ParagraphAlignment, TextStyle}, page::PageProfile};'
+          )
+          s = s.replace(
+              '.find(|(start, end, _)| offset <= *start && *start <= line_end))',
+              '.find(|(start, _end, _)| offset <= *start && *start <= line_end))'
+          )
+          p.write_text(s, encoding='utf-8')
+
+      - name: Format
+        run: cargo fmt --all
+
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs src/document.rs src/export.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: restore compilable Zen Editor main"
+          git push origin HEAD:main
