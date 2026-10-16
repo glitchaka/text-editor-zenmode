@@ -541,7 +541,17 @@ impl TerminalModel {
         };
 
         if let Some(file) = file_to_open {
-            this.open_editor(file)?;
+            let direct_file = if file
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("docx"))
+            {
+                document::import_to_native(&file, &this.library.documents)
+                    .with_context(|| format!("No se pudo importar {}", file.display()))?
+            } else {
+                file
+            };
+            this.open_editor(direct_file)?;
         } else {
             this.render_splash();
         }
