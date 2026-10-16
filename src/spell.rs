@@ -371,6 +371,7 @@ impl SpellServer {
             push_format("Formato · Negrita", "bold", "");
             push_format("Formato · Cursiva", "italic", "");
             push_format("Formato · Subrayado", "underline", "");
+            push_format("Formato · Tachado", "strikethrough", "");
             for (label, value) in [
                 ("Blanco", "white"),
                 ("Rojo", "red"),

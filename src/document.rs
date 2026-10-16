@@ -313,6 +313,9 @@ fn formatting_payload(body: &str) -> (String, Value) {
         if run.style.underline {
             object.insert("underline".into(), json!(true));
         }
+        if run.style.strikethrough {
+            object.insert("strikethrough".into(), json!(true));
+        }
         if let Some(color) = run.style.foreground {
             object.insert("foreground".into(), json!(color.name()));
         }
@@ -365,6 +368,10 @@ fn decode_formatting_runs(formatting: &Value) -> Vec<(usize, usize, crate::forma
                     .get("underline")
                     .and_then(Value::as_bool)
                     .unwrap_or(false),
+                strikethrough: value
+                    .get("strikethrough")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
                 foreground: value
                     .get("foreground")
                     .and_then(Value::as_str)
@@ -399,6 +406,9 @@ fn encode_formatting_runs(runs: &[(usize, usize, crate::format::TextStyle)]) -> 
         }
         if style.underline {
             object.insert("underline".into(), json!(true));
+        }
+        if style.strikethrough {
+            object.insert("strikethrough".into(), json!(true));
         }
         if let Some(color) = style.foreground {
             object.insert("foreground".into(), json!(color.name()));
@@ -465,6 +475,9 @@ fn encode_styled_segment(segment: &str, style: crate::format::TextStyle) -> Stri
     if style.underline {
         output = format!("__{output}__");
     }
+    if style.strikethrough {
+        output = format!("~~{output}~~");
+    }
     if style.italic {
         output = format!("*{output}*");
     }
@@ -495,6 +508,7 @@ fn apply_style_action(style: &mut crate::format::TextStyle, action: &str, value:
         "bold" => style.bold = !style.bold,
         "italic" => style.italic = !style.italic,
         "underline" => style.underline = !style.underline,
+        "strikethrough" => style.strikethrough = !style.strikethrough,
         "highlight" => {
             style.background = if style.background == Some(crate::format::PaletteColor::Yellow) {
                 None

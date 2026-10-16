@@ -156,9 +156,9 @@ slint::slint! {
         }
 
         bottom-reveal := TouchArea {
-            x: root.width - 224px;
+            x: root.width - 468px;
             y: root.height - 10px;
-            width: 224px;
+            width: 468px;
             height: 10px;
             enabled: root.zen-active;
         }
@@ -167,7 +167,10 @@ slint::slint! {
             visible: !root.zen-active
                 || bottom-reveal.has-hover
                 || island-hover.has-hover
-                || root.symbols-open;
+                || root.symbols-open
+                || root.font-palette-open
+                || root.highlight-palette-open
+                || root.page-menu-open;
             width: 196px;
             height: 34px;
             x: root.width - self.width - 14px;
@@ -248,10 +251,41 @@ slint::slint! {
                 }
             }
         }
+
+        format-island := Rectangle {
+            visible: root.editor-active && (
+                !root.zen-active
+                || bottom-reveal.has-hover
+                || format-hover.has-hover
+                || root.font-palette-open
+                || root.highlight-palette-open
+                || root.page-menu-open
+            );
+            width: 236px;
+            height: 34px;
+            x: island.x - self.width - 6px;
+            y: island.y;
+            border-radius: 13px;
+            background: rgba(10, 13, 20, 0.96);
+            border-width: 1px;
+            border-color: #2b3547;
+
+            format-hover := TouchArea { x: 0; y: 0; width: parent.width; height: parent.height; }
+            format-move := WindowMoveArea { x: 0; y: 0; width: parent.width; height: parent.height; enabled: !root.zen-active; }
+
+            Rectangle { x: 4px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: bold-touch.pressed ? #29384b : bold-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "B"; color: #dfe8ef; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; } bold-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("bold", ""); terminal-focus.focus(); } } }
+            Rectangle { x: 37px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: italic-touch.pressed ? #29384b : italic-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "I"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } italic-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("italic", ""); terminal-focus.focus(); } } }
+            Rectangle { x: 70px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: underline-touch.pressed ? #29384b : underline-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "U"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } underline-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("underline", ""); terminal-focus.focus(); } } }
+            Rectangle { x: 103px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: strike-touch.pressed ? #29384b : strike-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "S̶"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } strike-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("strikethrough", ""); terminal-focus.focus(); } } }
+            Rectangle { x: 136px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: font-touch.pressed ? #29384b : font-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "A"; color: #e8cc83; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } font-touch := TouchArea { mouse-cursor: pointer; clicked => { root.font-palette-open = !root.font-palette-open; root.highlight-palette-open = false; root.page-menu-open = false; root.symbols-open = false; } } }
+            Rectangle { x: 169px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: highlight-touch.pressed ? #29384b : highlight-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "▰"; color: #fabd2f; horizontal-alignment: center; vertical-alignment: center; } highlight-touch := TouchArea { mouse-cursor: pointer; clicked => { root.highlight-palette-open = !root.highlight-palette-open; root.font-palette-open = false; root.page-menu-open = false; root.symbols-open = false; } } }
+            Rectangle { x: 202px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: page-touch.pressed ? #29384b : page-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "▣"; color: #8db9bb; horizontal-alignment: center; vertical-alignment: center; } page-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-menu-open = !root.page-menu-open; root.font-palette-open = false; root.highlight-palette-open = false; root.symbols-open = false; } } }
+        }
+
         font-palette := Rectangle {
             visible: root.editor-active && root.font-palette-open;
-            x: island.x + 270px;
-            y: island.y + island.height + 5px;
+            x: format-island.x + 4px;
+            y: format-island.y - self.height - 5px;
             width: 226px;
             height: 32px;
             border-radius: 9px;
@@ -278,8 +312,8 @@ slint::slint! {
 
         highlight-palette := Rectangle {
             visible: root.editor-active && root.highlight-palette-open;
-            x: island.x + 308px;
-            y: island.y + island.height + 5px;
+            x: format-island.x + 4px;
+            y: format-island.y - self.height - 5px;
             width: 226px;
             height: 32px;
             border-radius: 9px;
@@ -333,8 +367,8 @@ slint::slint! {
 
         page-palette := Rectangle {
             visible: root.editor-active && root.page-menu-open;
-            x: island.x + island.width - 430px;
-            y: island.y + island.height + 5px;
+            x: format-island.x + format-island.width - self.width;
+            y: format-island.y - self.height - 5px;
             width: 420px;
             height: 100px;
             border-radius: 9px;
@@ -2228,6 +2262,11 @@ impl TerminalModel {
                     let underline_y = (baseline + thickness).min(y + h - thickness);
                     fill_rect(pixels, (width, height), (x, underline_y, w, thickness), fg);
                 }
+                if overlay_style.strikethrough {
+                    let thickness = scale.round().max(1.0) as i32;
+                    let strike_y = y + (cell_height * 0.48).round() as i32;
+                    fill_rect(pixels, (width, height), (x, strike_y, w, thickness), fg);
+                }
             }
         }
 
@@ -3011,6 +3050,7 @@ fn native_format_overlay(
                     style.bold |= run_style.bold;
                     style.italic |= run_style.italic;
                     style.underline |= run_style.underline;
+                    style.strikethrough |= run_style.strikethrough;
                     if run_style.foreground.is_some() {
                         style.foreground = run_style.foreground;
                     }

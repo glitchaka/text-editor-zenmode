@@ -101,6 +101,7 @@ pub enum MarkKind {
     Bold,
     Italic,
     Underline,
+    Strikethrough,
     LegacyHighlight,
     Foreground(PaletteColor),
     Background(PaletteColor),
@@ -120,6 +121,7 @@ impl StyleRange {
             MarkKind::LegacyHighlight => 3,
             MarkKind::Italic => 4,
             MarkKind::Underline => 5,
+            MarkKind::Strikethrough => 2,
             MarkKind::Foreground(color) => match color {
                 PaletteColor::White => 6,
                 PaletteColor::Red => 7,
@@ -148,6 +150,7 @@ pub struct TextStyle {
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
+    pub strikethrough: bool,
     pub foreground: Option<PaletteColor>,
     pub background: Option<PaletteColor>,
 }
@@ -164,6 +167,7 @@ pub fn apply_to_selection(input: &str, action: &str, value: &str) -> String {
         "bold" => toggle_delimited(input, "**", "**"),
         "italic" => toggle_delimited(input, "*", "*"),
         "underline" => toggle_delimited(input, "__", "__"),
+        "strikethrough" => toggle_delimited(input, "~~", "~~"),
         "highlight" => toggle_delimited(input, "==", "=="),
         "font-color" => set_tagged(input, "fg", value),
         "highlight-color" => set_tagged(input, "bg", value),
@@ -303,6 +307,12 @@ pub fn styled_runs(input: &str) -> Vec<StyledRun> {
             index += 2;
             continue;
         }
+        if tail.starts_with("~~") {
+            flush(&mut runs, &mut current, style);
+            style.strikethrough = !style.strikethrough;
+            index += 2;
+            continue;
+        }
         if tail.starts_with("==") {
             flush(&mut runs, &mut current, style);
             style.background = if style.background == Some(PaletteColor::Yellow) {
@@ -370,6 +380,7 @@ pub fn style_ranges(line: &str) -> Vec<StyleRange> {
     let mut ranges = Vec::new();
     push_delimited_ranges(line, "**", MarkKind::Bold, &mut ranges);
     push_delimited_ranges(line, "__", MarkKind::Underline, &mut ranges);
+    push_delimited_ranges(line, "~~", MarkKind::Strikethrough, &mut ranges);
     push_delimited_ranges(line, "==", MarkKind::LegacyHighlight, &mut ranges);
     push_single_asterisk_ranges(line, &mut ranges);
     push_tagged_ranges(line, "fg", true, &mut ranges);

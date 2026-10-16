@@ -275,6 +275,7 @@ fn rich_paragraph_xml(line: &str) -> String {
         if style.bold
             || style.italic
             || style.underline
+            || style.strikethrough
             || style.foreground.is_some()
             || style.background.is_some()
         {
@@ -287,6 +288,9 @@ fn rich_paragraph_xml(line: &str) -> String {
             }
             if style.underline {
                 xml.push_str(r#"<w:u w:val="single"/>"#);
+            }
+            if style.strikethrough {
+                xml.push_str("<w:strike/>");
             }
             if let Some(color) = style.foreground {
                 xml.push_str(&format!(r#"<w:color w:val="{}"/>"#, color.hex()));
