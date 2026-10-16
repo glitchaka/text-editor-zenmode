@@ -905,7 +905,7 @@ impl TerminalModel {
         push_line(
             &mut out,
             &centered_frame_line(
-                "\x1b[1;38;5;222m██  HELIX SST  ██\x1b[0m",
+                "\x1b[1;38;5;222m██  ZEN EDITOR  ██\x1b[0m",
                 width,
                 frame_width,
             ),
@@ -913,7 +913,7 @@ impl TerminalModel {
         push_line(
             &mut out,
             &centered_frame_line(
-                &format!("\x1b[38;5;109mTERMINAL EDITOR SYSTEM · v{APP_VERSION}\x1b[0m"),
+                &format!("\x1b[38;5;109mZEN EDITOR SYSTEM · v{APP_VERSION}\x1b[0m"),
                 width,
                 frame_width,
             ),

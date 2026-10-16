@@ -1,12 +1,12 @@
-# Helix-SST Zenmode
+# Zen Editor
 
-**Helix-SST Zenmode** es un editor de escritura para Windows construido alrededor de **Helix 25.07.1**. No reemplaza Helix con un editor propio: ejecuta el editor real dentro de una PTY y añade una interfaz Rust/Slint orientada a escritura larga, formato enriquecido, documentos `.hsst`, corrección ortográfica en español de Chile, geometría de página, proyectos y exportación.
+**Zen Editor** es un editor de escritura para Windows construido sobre **Helix 25.07.1**. Mantiene Helix como motor real de edición dentro de una PTY y añade una interfaz Rust/Slint orientada a escritura larga, formato enriquecido no destructivo, documentos `.hsst`, corrección ortográfica en español de Chile, proyectos, importación y exportación.
 
-Versión actual: **0.2.8**.
+Versión actual: la indicada por `Cargo.toml`.
 
 ## Qué es
 
-Helix-SST combina dos usos:
+Zen Editor combina dos usos:
 
 - conservar **Helix como editor completo**, capaz de abrir archivos de código y texto normales;
 - añadir un modo de escritura con documentos `.hsst` capaces de guardar formato, metadatos, página y estructura de proyecto sin meter esas marcas dentro del texto visible.
@@ -15,11 +15,11 @@ La interfaz exterior está escrita en Rust con Slint 1.18.1 y FemtoVG. Helix sig
 
 ## Carpeta de trabajo
 
-Al ejecutar `helix-sst-zen.exe` sin una ruta explícita, el programa crea y abre una carpeta `Documentos` junto al ejecutable:
+Al ejecutar `zen-editor.exe` sin una ruta explícita, el programa crea y abre una carpeta `Documentos` junto al ejecutable:
 
 ```text
 Helix-SST/
-├── helix-sst-zen.exe
+├── zen-editor.exe
 ├── Documentos/
 ├── exports/
 ├── config/
@@ -112,8 +112,10 @@ Actualmente puede representar:
 - negrita;
 - cursiva;
 - subrayado;
+- tachado;
 - color de texto;
-- color de destacador/fondo.
+- color de destacador/fondo;
+- alineación de párrafo.
 
 Los rangos usan posiciones sobre el texto limpio. Helix no necesita insertar etiquetas visibles para conservar el formato.
 
@@ -129,20 +131,18 @@ Los `.hsst` anteriores basados en texto plano y marcado embebido siguen pudiendo
 
 ## Formato enriquecido
 
-La isla superior dispone de controles para documentos `.hsst`:
+El formato enriquecido se aplica **solo desde `F2`** sobre una selección. No existe una segunda barra B/I/U ni controles de formato en la isla inferior.
 
-```text
-B · I · U · A▾ · ▰▾ · Ω
-```
+Las acciones disponibles incluyen:
 
-- `B`: negrita;
-- `I`: cursiva;
-- `U`: subrayado;
-- `A▾`: color de texto;
-- `▰▾`: destacador/color de fondo;
-- `Ω`: símbolos especiales.
+- negrita, cursiva, subrayado y tachado;
+- color de texto;
+- color de destacador/fondo;
+- alineación de párrafo: izquierda, centrada, derecha y justificada.
 
-El formato se aplica a la selección y se guarda en `formatting.json`, no dentro de `content.txt`.
+El formato se guarda en `formatting.json` y nunca se inserta como marcas dentro de `content.txt`.
+
+La isla inferior se mantiene deliberadamente compacta: **Pomodoro · Ω símbolos · cerrar**.
 
 ## Página, márgenes y salto de línea
 
@@ -164,15 +164,7 @@ También se almacena:
 - margen inferior;
 - margen izquierdo.
 
-El ancho útil de escritura se calcula a partir de:
-
-```text
-ancho físico de página - margen izquierdo - margen derecho
-```
-
-Al superar ese ancho, Helix-SST produce un **salto de línea real**, no un `soft-wrap`. Por eso la numeración avanza por líneas reales y no trata un párrafo entero como una única línea lógica.
-
-El perfil de referencia es Carta vertical con márgenes laterales de 25 mm, equivalente a 88 columnas lógicas. Los demás tamaños, orientaciones y márgenes ajustan ese valor proporcionalmente.
+La presentación usa **soft-wrap no destructivo**: una línea larga se adapta al ancho visible sin insertar saltos físicos en `content.txt`. Un párrafo continúa siendo un párrafo aunque ocupe varias filas visuales. Los saltos que sí escribe el autor se conservan literalmente.
 
 ## Pegado desde Word y otros editores
 
@@ -188,7 +180,7 @@ Se reconocen:
 - `U+2028`;
 - `U+2029`.
 
-Los saltos explícitos del texto pegado se conservan. Las líneas largas se refluyean al ancho útil definido por el perfil de página.
+Los saltos explícitos del texto pegado se conservan. Las líneas largas se muestran mediante soft-wrap; el pegado no reescribe el texto para ajustarlo al ancho de la ventana.
 
 ## Corrector ortográfico
 
@@ -204,7 +196,7 @@ Funciones actuales:
 - sugerencias ortográficas;
 - tokens semánticos utilizados por el formato enriquecido.
 
-Los `.hsst`, `.txt` y archivos de texto sin extensión pueden usar el lenguaje administrado `prose`. Markdown mantiene su soporte de Helix y añade el corrector de Helix-SST.
+Los `.hsst`, `.txt` y archivos de texto sin extensión pueden usar el lenguaje administrado `prose`. Markdown mantiene su soporte de Helix y añade el corrector de Zen Editor.
 
 ## Proyectos y capítulos
 
@@ -217,7 +209,17 @@ chapter
 order
 ```
 
-No es obligatorio distribuir cada proyecto en carpetas separadas. Helix-SST puede ordenar capítulos por metadatos y exportar un documento individual o el proyecto completo.
+No es obligatorio distribuir cada proyecto en carpetas separadas. Zen Editor puede ordenar capítulos por metadatos y exportar un documento individual o el proyecto completo.
+
+## Importación
+
+Desde el launcher, `I` importa a `.hsst`:
+
+- TXT y texto plano;
+- Markdown;
+- DOCX.
+
+La importación DOCX conserva texto y, cuando están presentes, negrita, cursiva, subrayado, tachado, color, resaltado y alineación de párrafo.
 
 ## Exportación
 
@@ -229,7 +231,7 @@ Formatos disponibles:
 - **DOCX**: Word/OpenXML generado directamente, sin requerir Microsoft Word;
 - **PDF**: documento de lectura/entrega.
 
-DOCX y PDF usan el tamaño de papel, orientación y márgenes guardados en el documento.
+DOCX y PDF usan el tamaño de papel, orientación y márgenes guardados en el documento. Ambos reconstruyen el formato enriquecido; DOCX y PDF conservan también la alineación de párrafo.
 
 Los archivos generados se escriben en:
 
@@ -266,6 +268,7 @@ El resaltado de sintaxis, los modos y las capacidades propias del editor siguen 
 | `↑ / ↓` | mover selección |
 | `Enter` | abrir archivo o directorio |
 | `N` | crear un `.hsst` nuevo |
+| `I` | importar TXT, Markdown o DOCX |
 | `E` | exportar |
 | `Z` | alternar modo normal / Zenmode |
 | `R` | refrescar directorio |
@@ -286,7 +289,7 @@ El resaltado de sintaxis, los modos y las capacidades propias del editor siguen 
 | `Ctrl+Z` | deshacer |
 | `Ctrl+Y` o `Ctrl+Shift+Z` | rehacer |
 | `Ctrl+A` | seleccionar todo |
-| `F2` | corrección ortográfica |
+| `F2` | corrección ortográfica y formato de la selección |
 | `Alt+D` | insertar raya `—` |
 | `Ctrl+G` | insertar raya `—` |
 | `AltGr+-` | insertar raya `—` |
@@ -295,14 +298,14 @@ La selección y navegación se implementan mediante el keymap de Helix; no exist
 
 ## Abrir un archivo directamente
 
-En Windows se puede arrastrar un archivo sobre el ejecutable. Helix-SST recibe la ruta y lo abre directamente.
+En Windows se puede arrastrar un archivo sobre el ejecutable. Zen Editor recibe la ruta y lo abre directamente.
 
 También puede hacerse desde consola:
 
 ```powershell
-helix-sst-zen "C:\ruta\archivo.txt"
-helix-sst-zen "C:\ruta\Capítulo 1.hsst"
-helix-sst-zen --zen "C:\ruta\Capítulo 1.hsst"
+zen-editor "C:\ruta\archivo.txt"
+zen-editor "C:\ruta\Capítulo 1.hsst"
+zen-editor --zen "C:\ruta\Capítulo 1.hsst"
 ```
 
 ## Arquitectura
@@ -311,7 +314,7 @@ helix-sst-zen --zen "C:\ruta\Capítulo 1.hsst"
 Slint / FemtoVG
       │
       ▼
-Helix-SST UI + launcher + perfiles de página
+Zen Editor UI + launcher + perfiles de página
       │
       ▼
 PTY / protocolo de terminal
