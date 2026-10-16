@@ -1145,6 +1145,7 @@ impl TerminalModel {
                 .current_file
                 .as_ref()
                 .is_some_and(|path| document::is_native_path(path));
+            let pending_style_snapshot = native.then(|| self.current_style_snapshot());
             if let Some(editor) = self.editor.as_mut() {
                 if native {
                     // Helix edits a clean shadow file for native TXT/HSST documents.
@@ -1179,8 +1180,8 @@ impl TerminalModel {
                             .ok();
                     }
                 }
-                if native {
-                    self.pending_style_snapshot = self.current_style_snapshot();
+                if let Some(snapshot) = pending_style_snapshot {
+                    self.pending_style_snapshot = snapshot;
                 }
                 let _ = editor.send_key(key, editor.win32_input());
             }
