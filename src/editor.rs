@@ -273,16 +273,10 @@ impl EditorSession {
     }
 
     pub fn refresh_after_formatting(&self) -> Result<()> {
-        // Helix 25.07.1 no implementa workspace/semanticTokens/refresh.
-        // Reload forces the unchanged shadow buffer through the normal document
-        // refresh path, then restarting the LSP makes it reread HSST formatting.
-        // Reapplying the theme finally forces a terminal redraw of the new SGR
-        // attributes (bold/italic/underline) without modifying the prose buffer.
-        self.send_command(":reload")?;
-        std::thread::sleep(Duration::from_millis(30));
-        self.send_command(":lsp-restart")?;
-        std::thread::sleep(Duration::from_millis(90));
-        self.send_command(":theme helix-sst-zen")
+        // HSST formatting is rendered by the native overlay in app.rs.
+        // Do not reload the buffer or restart the LSP: those operations destroy
+        // the live selection and can leave stale popup/semantic-token paint behind.
+        Ok(())
     }
 
     pub fn sync_native(&mut self) -> Result<bool> {
@@ -632,8 +626,8 @@ insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · Esc: comando
 select = "SELECCIÓN · Esc: normal"
 
 [editor.clipboard-provider.custom]
-yank = {{ command = "{exe}", args = ["--clipboard-get"] }}
-paste = {{ command = "{exe}", args = ["--clipboard-set"] }}
+yank = {{ command = "{exe}", args = ["--clipboard-set"] }}
+paste = {{ command = "{exe}", args = ["--clipboard-get"] }}
 
 [keys.normal]
 F20 = ":write"

@@ -48,16 +48,6 @@ pub fn run_lsp(
                                 "positionEncoding": "utf-16",
                                 "textDocumentSync": 1,
                                 "codeActionProvider": true,
-                                "completionProvider": {
-                                    "triggerCharacters": []
-                                },
-                                "semanticTokensProvider": {
-                                    "legend": {
-                                        "tokenTypes": crate::format::SEMANTIC_TOKEN_TYPES,
-                                        "tokenModifiers": []
-                                    },
-                                    "full": true
-                                },
                                 "executeCommandProvider": {
                                     "commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]
                                 }
@@ -115,19 +105,6 @@ pub fn run_lsp(
                         "textDocument/publishDiagnostics",
                         json!({ "uri": uri, "diagnostics": [] }),
                     )?;
-                }
-            }
-            "textDocument/completion" => {
-                if let Some(id) = id {
-                    let items = server.completions(message.get("params").unwrap_or(&Value::Null));
-                    send_response(&mut output, id, Value::Array(items))?;
-                }
-            }
-            "textDocument/semanticTokens/full" => {
-                if let Some(id) = id {
-                    let data =
-                        server.semantic_tokens(message.get("params").unwrap_or(&Value::Null));
-                    send_response(&mut output, id, json!({ "data": data }))?;
                 }
             }
             "textDocument/codeAction" => {
