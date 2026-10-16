@@ -62,7 +62,24 @@ impl DocumentMetadata {
 pub fn is_native_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case(EXTENSION)
+                || extension.eq_ignore_ascii_case(DEFAULT_TEXT_EXTENSION)
+        })
+}
+
+pub fn is_legacy_container_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case(EXTENSION))
+}
+
+fn sidecar_path(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("document.txt");
+    path.with_file_name(format!("{name}.zen.json"))
 }
 
 pub fn is_supported_text_path(path: &Path) -> bool {
@@ -160,10 +177,10 @@ pub fn import_to_native(source: &Path, directory: &Path) -> Result<PathBuf> {
     };
 
     let safe_title = safe_import_name(&title);
-    let mut target = native_path_for_name(directory, &safe_title);
+    let mut target = default_path_for_name(directory, &safe_title);
     if target.exists() {
         for index in 2..10_000 {
-            let candidate = native_path_for_name(directory, &format!("{safe_title} ({index})"));
+            let candidate = default_path_for_name(directory, &format!("{safe_title} ({index})"));
             if !candidate.exists() {
                 target = candidate;
                 break;
@@ -413,13 +430,26 @@ pub fn read(path: &Path) -> Result<HsstDocument> {
     if bytes.starts_with(b"PK\x03\x04") {
         return read_container(path);
     }
-    let raw = String::from_utf8(bytes).with_context(|| {
-        format!(
-            "{} no es UTF-8 ni un contenedor HSST válido",
-            path.display()
-        )
-    })?;
-    Ok(parse(&raw, path))
+    let raw = String::from_utf8(bytes)
+        .with_context(|| format!("{} no es un archivo de texto UTF-8 válido", path.display()))?;
+    let mut document = parse(&raw, path);
+
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(DEFAULT_TEXT_EXTENSION))
+        && let Ok(sidecar_raw) = fs::read_to_string(sidecar_path(path))
+        && let Ok(sidecar) = serde_json::from_str::<Value>(&sidecar_raw)
+    {
+        if let Some(manifest) = sidecar.get("manifest") {
+            document.metadata = metadata_from_manifest(manifest, path);
+        }
+        if let Some(formatting) = sidecar.get("formatting") {
+            document.formatting = sanitize_formatting(formatting, document.body.len());
+        }
+    }
+
+    Ok(document)
 }
 
 pub fn write(path: &Path, document: &HsstDocument) -> Result<()> {
@@ -430,6 +460,22 @@ pub fn write(path: &Path, document: &HsstDocument) -> Result<()> {
     let plain = &document.body;
     let formatting = sanitize_formatting(&document.formatting, document.body.len());
     let manifest = manifest_json(&document.metadata);
+
+    if !is_legacy_container_path(path) {
+        fs::write(path, plain.as_bytes())
+            .with_context(|| format!("No se pudo guardar {}", path.display()))?;
+        let sidecar = json!({
+            "version": FORMAT_VERSION,
+            "manifest": manifest,
+            "formatting": formatting
+        });
+        fs::write(
+            sidecar_path(path),
+            serde_json::to_string_pretty(&sidecar)?.as_bytes(),
+        )?;
+        return Ok(());
+    }
+
     let temporary = path.with_extension("hsst.tmp");
     let backup = path.with_extension("hsst.bak");
 

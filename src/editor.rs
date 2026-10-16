@@ -609,6 +609,7 @@ cursorline = true
 bufferline = "multiple"
 color-modes = true
 auto-completion = true
+auto-info = false
 end-of-line-diagnostics = "disable"
 
 [editor.soft-wrap]
