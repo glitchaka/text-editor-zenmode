@@ -25,39 +25,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Repair F2 borrow conflict
+      - name: Apply F2 borrow repair
         shell: pwsh
         run: |
-          $path = "src/app.rs"
-          $text = Get-Content $path -Raw
-          $oldStart = @'
-            if let Some(editor) = self.editor.as_mut() {
-                if native {
-'@
-          $newStart = @'
-            let pending_style_snapshot = native.then(|| self.current_style_snapshot());
-            if let Some(editor) = self.editor.as_mut() {
-                if native {
-'@
-          if ($text.Contains($oldStart)) {
-            $text = $text.Replace($oldStart, $newStart)
-          }
-          $oldEnd = @'
-                if native {
-                    self.pending_style_snapshot = self.current_style_snapshot();
-                }
-                let _ = editor.send_key(key, editor.win32_input());
-'@
-          $newEnd = @'
-                if let Some(snapshot) = pending_style_snapshot {
-                    self.pending_style_snapshot = snapshot;
-                }
-                let _ = editor.send_key(key, editor.win32_input());
-'@
-          if ($text.Contains($oldEnd)) {
-            $text = $text.Replace($oldEnd, $newEnd)
-          }
-          Set-Content -Path $path -Value $text -NoNewline -Encoding utf8
+          python .github/scripts/fix_f2_borrow.py
           cargo fmt --all
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
