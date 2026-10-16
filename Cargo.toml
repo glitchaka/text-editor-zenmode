@@ -2,7 +2,11 @@
 name = "helix-sst-zen"
 version = "0.2.16"
 edition = "2024"
-description = "Helix-SST standalone distraction-free editor"
+description = "Zen Editor standalone distraction-free editor built on Helix"
+
+[[bin]]
+name = "zen-editor"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
@@ -32,4 +36,3 @@ codegen-units = 1
 panic = "abort"
 strip = true
 opt-level = 3
-
