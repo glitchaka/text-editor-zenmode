@@ -1,0 +1,40 @@
+name: Align soft-wrap regression tests
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fix-softwrap-tests.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Fix stale soft-wrap test
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/editor.rs')
+          s=p.read_text(encoding='utf-8')
+          old='''        assert!(\n            editor_table.get("soft-wrap").is_none(),\n            "Zenmode no debe partir visualmente cada párrafo como si fuera una sola línea"\n        );'''
+          new='''        let soft_wrap = editor_table\n            .get("soft-wrap")\n            .and_then(toml::Value::as_table)\n            .expect("Zen Editor debe usar soft-wrap global no destructivo");\n        assert_eq!(\n            soft_wrap.get("enable").and_then(toml::Value::as_bool),\n            Some(true)\n        );\n        assert_eq!(\n            soft_wrap\n                .get("wrap-at-text-width")\n                .and_then(toml::Value::as_bool),\n            Some(false)\n        );\n        assert_eq!(\n            soft_wrap\n                .get("wrap-indicator")\n                .and_then(toml::Value::as_str),\n            Some("")\n        );'''
+          count=s.count(old)
+          if count == 0: raise SystemExit('stale soft-wrap assertion not found')
+          s=s.replace(old,new)
+          p.write_text(s,encoding='utf-8',newline='\n')
+          PY
+          cargo fmt --all
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/editor.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "test: assert non-destructive soft-wrap configuration"
+          git pull --rebase origin main
+          git push origin HEAD:main
