@@ -1,0 +1,75 @@
+name: Add project metadata editor
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/project-metadata-editor.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add launcher project assignment flow
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p=Path('src/document.rs')
+          s=p.read_text(encoding='utf-8')
+          marker='''pub fn set_page_profile(path: &Path, page: PageProfile) -> Result<()> {'''
+          helper='''pub fn set_project_assignment(\n    path: &Path,\n    project: &str,\n    chapter: Option<u32>,\n) -> Result<()> {\n    if !is_native_path(path) {\n        return Ok(());\n    }\n    let mut document = read(path)?;\n    let project = project.trim().to_owned();\n    document.metadata.project = project;\n    document.metadata.chapter = chapter;\n    if let Some(chapter) = chapter {\n        document.metadata.kind = "chapter".into();\n        if document.metadata.order == 0 {\n            document.metadata.order = chapter.saturating_mul(10);\n        }\n    } else if document.metadata.kind.eq_ignore_ascii_case("chapter") {\n        document.metadata.kind = "document".into();\n    }\n    write(path, &document).with_context(|| {\n        format!("No se pudo actualizar el proyecto de {}", path.display())\n    })\n}\n\n'''
+          if 'pub fn set_project_assignment' not in s:
+              if marker not in s: raise SystemExit('page profile marker missing')
+              s=s.replace(marker,helper+marker,1)
+          p.write_text(s,encoding='utf-8',newline='\n')
+
+          p=Path('src/app.rs')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace(
+              '''    exporting: Option<PathBuf>,\n    export_selected: usize,\n    message: Option<String>,''',
+              '''    exporting: Option<PathBuf>,\n    export_selected: usize,\n    project_editing: Option<PathBuf>,\n    project_name: String,\n    project_chapter: String,\n    project_stage: u8,\n    message: Option<String>,''',
+              1,
+          )
+          s=s.replace(
+              '''            exporting: None,\n            export_selected: 0,\n            message: None,''',
+              '''            exporting: None,\n            export_selected: 0,\n            project_editing: None,\n            project_name: String::new(),\n            project_chapter: String::new(),\n            project_stage: 0,\n            message: None,''',
+              1,
+          )
+
+          # Render project prompt before new-file prompt.
+          marker='''        } else if self.launcher.creating {'''
+          render='''        } else if self.launcher.project_editing.is_some() {\n            push_line(&mut out, &framed_left("", inner_width, "38;5;244"));\n            push_line(\n                &mut out,\n                &framed_left(\n                    "\\x1b[1;38;5;222mPROYECTO / CAPÍTULO\\x1b[0m",\n                    inner_width,\n                    "38;5;244",\n                ),\n            );\n            if self.launcher.project_stage == 0 {\n                push_line(\n                    &mut out,\n                    &framed_left(\n                        &format!(\n                            "\\x1b[38;5;250mProyecto:\\x1b[0m {}\\x1b[?25h",\n                            self.launcher.project_name\n                        ),\n                        inner_width,\n                        "38;5;244",\n                    ),\n                );\n                push_line(&mut out, &framed_left("Enter: capítulo  ·  Esc cancelar", inner_width, "38;5;244"));\n            } else {\n                push_line(\n                    &mut out,\n                    &framed_left(\n                        &format!(\n                            "\\x1b[38;5;250mCapítulo (vacío = documento):\\x1b[0m {}\\x1b[?25h",\n                            self.launcher.project_chapter\n                        ),\n                        inner_width,\n                        "38;5;244",\n                    ),\n                );\n                push_line(&mut out, &framed_left("Enter: guardar  ·  Esc cancelar", inner_width, "38;5;244"));\n            }\n'''
+          if 'PROYECTO / CAPÍTULO' not in s:
+              if marker not in s: raise SystemExit('creating render marker missing')
+              s=s.replace(marker,render+marker,1)
+
+          # Handle project edit before export/create modes.
+          marker='''    fn launcher_key(&mut self, key: KeyEvent) {\n        if let Some(source) = self.launcher.exporting.clone() {'''
+          handler='''    fn launcher_key(&mut self, key: KeyEvent) {\n        if let Some(path) = self.launcher.project_editing.clone() {\n            match key.code {\n                KeyCode::Esc => {\n                    self.launcher.project_editing = None;\n                    self.launcher.project_name.clear();\n                    self.launcher.project_chapter.clear();\n                    self.launcher.project_stage = 0;\n                }\n                KeyCode::Enter if self.launcher.project_stage == 0 => {\n                    self.launcher.project_stage = 1;\n                }\n                KeyCode::Enter => {\n                    let chapter = self.launcher.project_chapter.trim().parse::<u32>().ok();\n                    match document::set_project_assignment(&path, &self.launcher.project_name, chapter) {\n                        Ok(()) => {\n                            self.launcher.message = Some(if let Some(chapter) = chapter {\n                                format!("Proyecto: {} · capítulo {chapter}", self.launcher.project_name.trim())\n                            } else {\n                                format!("Proyecto: {}", self.launcher.project_name.trim())\n                            });\n                            self.launcher.project_editing = None;\n                            self.launcher.project_name.clear();\n                            self.launcher.project_chapter.clear();\n                            self.launcher.project_stage = 0;\n                            self.launcher.refresh();\n                        }\n                        Err(error) => self.launcher.message = Some(format!("No se pudo guardar proyecto: {error}")),\n                    }\n                }\n                KeyCode::Backspace => {\n                    if self.launcher.project_stage == 0 {\n                        self.launcher.project_name.pop();\n                    } else {\n                        self.launcher.project_chapter.pop();\n                    }\n                }\n                KeyCode::Char(ch)\n                    if !key.modifiers.contains(KeyModifiers::CONTROL)\n                        && !key.modifiers.contains(KeyModifiers::ALT) =>\n                {\n                    if self.launcher.project_stage == 0 {\n                        self.launcher.project_name.push(ch);\n                    } else if ch.is_ascii_digit() {\n                        self.launcher.project_chapter.push(ch);\n                    }\n                }\n                _ => {}\n            }\n            self.render_launcher();\n            return;\n        }\n\n        if let Some(source) = self.launcher.exporting.clone() {'''
+          if 'if let Some(path) = self.launcher.project_editing.clone()' not in s:
+              if marker not in s: raise SystemExit('launcher_key marker missing')
+              s=s.replace(marker,handler,1)
+
+          # P starts project assignment on selected native document.
+          marker='''            KeyCode::Char('e') | KeyCode::Char('E') => {'''
+          project_key='''            KeyCode::Char('p') | KeyCode::Char('P') => {\n                if let Some(entry) = self.launcher.selected_entry().cloned()\n                    && !entry.directory\n                    && document::is_native_path(&entry.path)\n                {\n                    let metadata = entry.metadata.unwrap_or_else(|| DocumentMetadata {\n                        title: entry.name.clone(),\n                        ..DocumentMetadata::default()\n                    });\n                    self.launcher.project_name = metadata.project;\n                    self.launcher.project_chapter = metadata.chapter.map(|value| value.to_string()).unwrap_or_default();\n                    self.launcher.project_stage = 0;\n                    self.launcher.project_editing = Some(entry.path);\n                    self.launcher.message = None;\n                } else {\n                    self.launcher.message = Some("Selecciona un documento .hsst para asignar proyecto.".into());\n                }\n            }\n'''
+          if "KeyCode::Char('p') | KeyCode::Char('P')" not in s:
+              if marker not in s: raise SystemExit('export key marker missing')
+              s=s.replace(marker,project_key+marker,1)
+
+          # Launcher hint advertises project assignment.
+          s=s.replace('I importar  ·  E exportar', 'I importar  ·  P proyecto  ·  E exportar')
+          p.write_text(s,encoding='utf-8',newline='\n')
+          PY
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/document.rs src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: assign projects and chapter numbers from launcher"
+          git pull --rebase origin main
+          git push origin HEAD:main
