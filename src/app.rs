@@ -23,7 +23,7 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{
             BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
             HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
-            SetWindowPos, WM_NCLBUTTONDOWN,
+            SetWindowPos,
         },
     },
 };
