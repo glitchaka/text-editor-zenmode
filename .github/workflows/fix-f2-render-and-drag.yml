@@ -1,0 +1,91 @@
+name: Fix F2 render and drag
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fix-f2-render-and-drag.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch functional issues
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/app.rs')
+          s = p.read_text(encoding='utf-8')
+
+          old_drag = '''        // Native drag target: do not rely on Slint WindowMoveArea for the frameless Win32 window.
+        window-drag-strip := TouchArea {
+            x: 7px;
+            y: 7px;
+            width: root.width - 14px;
+            height: 22px;
+            enabled: !root.zen-active
+                && !root.font-palette-open
+                && !root.highlight-palette-open
+                && !root.symbols-open
+                && !root.page-menu-open;
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    root.begin-window-drag();
+                    EventResult.accept
+                } else {
+                    EventResult.reject
+                }
+            }
+        }
+'''
+          new_drag = '''        // Dedicated frameless titlebar. Slint/Winit owns the drag gesture directly;
+        // this avoids routing a mouse-down through the terminal FocusScope or Win32 messages.
+        window-drag-strip := WindowMoveArea {
+            x: 7px;
+            y: 7px;
+            width: root.width - 14px;
+            height: 24px;
+            enabled: !root.zen-active
+                && !root.symbols-open
+                && !root.page-menu-open;
+        }
+'''
+          if old_drag not in s:
+              raise SystemExit('drag block not found')
+          s = s.replace(old_drag, new_drag, 1)
+
+          old_tick = '''                } else if modified.is_some() && modified != self.source_modified {
+                    self.source_modified = modified;
+                    if let Err(error) = editor.refresh_after_formatting() {
+                        self.launcher.message =
+                            Some(format!("No se pudo refrescar el formato: {error}"));
+                    }
+                }
+'''
+          new_tick = '''                } else if modified.is_some() && modified != self.source_modified {
+                    self.source_modified = modified;
+                    // F2 formatting is applied by the prose LSP directly to the HSST
+                    // container. The terminal text itself does not necessarily change,
+                    // so force our renderer to rebuild the native-format overlay now.
+                    self.dirty = true;
+                    if let Err(error) = editor.refresh_after_formatting() {
+                        self.launcher.message =
+                            Some(format!("No se pudo refrescar el formato: {error}"));
+                    }
+                }
+'''
+          if old_tick not in s:
+              raise SystemExit('tick block not found')
+          s = s.replace(old_tick, new_tick, 1)
+
+          p.write_text(s, encoding='utf-8')
+      - name: Format
+        run: cargo fmt --all
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: redraw F2 formatting and restore window dragging"
+          git push
