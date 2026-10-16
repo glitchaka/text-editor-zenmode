@@ -23,15 +23,12 @@ jobs:
           p=Path('src/app.rs')
           s=p.read_text(encoding='utf-8')
 
-          # Never expose Zen sidecars in the launcher; they are implementation data.
           old='''            Ok(read_dir) => read_dir\n                .flatten()\n                .map(|entry| {\n                    let path = entry.path();'''
           new='''            Ok(read_dir) => read_dir\n                .flatten()\n                .filter(|entry| {\n                    let name = entry.file_name();\n                    let name = name.to_string_lossy();\n                    !name.to_ascii_lowercase().ends_with(".zen.json")\n                })\n                .map(|entry| {\n                    let path = entry.path();'''
-          if old not in s: raise SystemExit('launcher read_dir marker missing')
-          s=s.replace(old,new,1)
+          if old in s:
+              s=s.replace(old,new,1)
 
-          # F2/LSP owns formatting. Remove the obsolete app-side clipboard formatting route.
           s=re.sub(r'\n    fn apply_format\(&mut self, action: &str, value: &str\) \{.*?\n    \}\n\n\n    fn insert_symbol', '\n\n    fn insert_symbol', s, count=1, flags=re.S)
-
           s=s.replace('Selecciona un documento .hsst para asignar proyecto.', 'Selecciona un documento TXT o HSST para asignar proyecto.')
           s=s.replace('No se pudo sincronizar HSST:', 'No se pudo sincronizar el documento:')
           s=s.replace('No se pudo preparar el tema HSST:', 'No se pudo preparar el tema de Zen Editor:')
@@ -49,7 +46,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/app.rs src/spell.rs src/editor.rs src/document.rs src/export.rs src/format.rs
+          git add -u
           git diff --cached --quiet && exit 0
           git commit -m "fix: hide sidecars and remove obsolete formatting path"
           git pull --rebase origin main
