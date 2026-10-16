@@ -99,12 +99,6 @@ slint::slint! {
         in property <string> pomodoro-text: "";
         property <bool> symbols-open: false;
         property <bool> page-menu-open: false;
-        in property <string> page-label: "CARTA";
-        in property <string> page-orientation-text: "VERTICAL";
-        in property <string> margin-left-text: "25";
-        in property <string> margin-right-text: "25";
-        in property <string> margin-top-text: "25";
-        in property <string> margin-bottom-text: "25";
         callback key-input(string, bool, bool, bool);
         callback terminal-cell-has-text(float, float) -> bool;
         callback terminal-pointer(float, float, int);
@@ -114,7 +108,6 @@ slint::slint! {
         callback close-window();
         callback start-pomodoro();
         callback insert-symbol(string);
-        callback page-action(string, string);
 
         Image {
             x: 0;
@@ -304,135 +297,6 @@ slint::slint! {
             Rectangle { x: 157px; y: 33px; width: 26px; height: 23px; border-radius: 5px; background: sym13.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "°"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } sym13 := TouchArea { mouse-cursor: pointer; clicked => { root.insert-symbol("°"); root.symbols-open = false; terminal-focus.focus(); } } }
         }
 
-        page-palette := Rectangle {
-            visible: false;
-            x: island.x + island.width - self.width;
-            y: island.y - self.height - 5px;
-            width: 420px;
-            height: 100px;
-            border-radius: 9px;
-            border-width: 1px;
-            border-color: #354052;
-            background: rgba(10, 13, 20, 0.98);
-
-            Text {
-                x: 10px; y: 5px; width: 50px; height: 24px;
-                text: "PAPEL"; color: #7f8b9b; font-size: 10px; vertical-alignment: center;
-            }
-            Rectangle {
-                x: 62px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
-                background: paper-carta.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "Carta"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                paper-carta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("paper", "letter"); }
-                }
-            }
-            Rectangle {
-                x: 128px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
-                background: paper-oficio.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "Oficio"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                paper-oficio := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("paper", "oficio"); }
-                }
-            }
-            Rectangle {
-                x: 194px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
-                background: paper-legal.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "Legal"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                paper-legal := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("paper", "legal"); }
-                }
-            }
-            Rectangle {
-                x: 260px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
-                background: paper-a4.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "A4"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                paper-a4 := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("paper", "a4"); }
-                }
-            }
-            Rectangle {
-                x: 326px; y: 5px; width: 62px; height: 24px; border-radius: 5px;
-                background: paper-a5.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "A5"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                paper-a5 := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("paper", "a5"); }
-                }
-            }
-
-            Text {
-                x: 10px; y: 35px; width: 50px; height: 24px;
-                text: "ORIENT."; color: #7f8b9b; font-size: 10px; vertical-alignment: center;
-            }
-            Rectangle {
-                x: 62px; y: 35px; width: 92px; height: 24px; border-radius: 5px;
-                background: portrait-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "Vertical"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                portrait-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("orientation", "portrait"); }
-                }
-            }
-            Rectangle {
-                x: 158px; y: 35px; width: 100px; height: 24px; border-radius: 5px;
-                background: landscape-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "Horizontal"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                landscape-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("orientation", "landscape"); }
-                }
-            }
-            Text {
-                x: 268px; y: 35px; width: 140px; height: 24px;
-                text: root.page-orientation-text; color: #b8bb26; font-size: 9px; vertical-alignment: center;
-            }
-
-            Text {
-                x: 10px; y: 65px; width: 50px; height: 24px;
-                text: "MARGEN"; color: #7f8b9b; font-size: 10px; vertical-alignment: center;
-            }
-            Rectangle {
-                x: 62px; y: 65px; width: 76px; height: 24px; border-radius: 5px;
-                background: margin-left-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "I " + root.margin-left-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                margin-left-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("margin-left", "cycle"); }
-                }
-            }
-            Rectangle {
-                x: 142px; y: 65px; width: 76px; height: 24px; border-radius: 5px;
-                background: margin-right-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "D " + root.margin-right-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                margin-right-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("margin-right", "cycle"); }
-                }
-            }
-            Rectangle {
-                x: 222px; y: 65px; width: 76px; height: 24px; border-radius: 5px;
-                background: margin-top-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "S " + root.margin-top-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                margin-top-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("margin-top", "cycle"); }
-                }
-            }
-            Rectangle {
-                x: 302px; y: 65px; width: 76px; height: 24px; border-radius: 5px;
-                background: margin-bottom-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "B " + root.margin-bottom-text + " mm"; color: #dfe8ef; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                margin-bottom-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.page-action("margin-bottom", "cycle"); }
-                }
-            }
-        }
 Rectangle {
   visible: root.pomodoro-prompt;
   x: 0; y: 0; width: 100%; height: 100%;
@@ -1113,66 +977,6 @@ impl TerminalModel {
         }
     }
 
-    fn update_page(&mut self, action: &str, value: &str) {
-        let Some(current) = self.current_file.clone() else {
-            return;
-        };
-        if !document::is_native_path(&current) {
-            return;
-        }
-
-        let mut page = self.page_profile;
-        match action {
-            "paper" => {
-                let Some(paper) = crate::page::PaperSize::parse(value) else {
-                    return;
-                };
-                page.paper = paper;
-            }
-            "orientation" => {
-                let Some(orientation) = crate::page::PageOrientation::parse(value) else {
-                    return;
-                };
-                page.orientation = orientation;
-            }
-            "margin-left" => {
-                page.margin_left_mm = crate::page::PageProfile::cycle_margin(page.margin_left_mm)
-            }
-            "margin-right" => {
-                page.margin_right_mm = crate::page::PageProfile::cycle_margin(page.margin_right_mm)
-            }
-            "margin-top" => {
-                page.margin_top_mm = crate::page::PageProfile::cycle_margin(page.margin_top_mm)
-            }
-            "margin-bottom" => {
-                page.margin_bottom_mm =
-                    crate::page::PageProfile::cycle_margin(page.margin_bottom_mm)
-            }
-            _ => return,
-        }
-        if page == self.page_profile {
-            return;
-        }
-        if let Err(error) = document::set_page_profile(&current, page) {
-            self.launcher.message =
-                Some(format!("No se pudo guardar el perfil de página: {error}"));
-            return;
-        }
-        self.source_modified = fs::metadata(&current)
-            .and_then(|metadata| metadata.modified())
-            .ok();
-        self.page_profile = page;
-        let (cols, rows) = self.terminal_size();
-        self.parser.screen_mut().set_size(rows, cols);
-        if let Some(editor) = self.editor.as_mut()
-            && let Err(error) = editor.resize(cols, rows)
-        {
-            self.launcher.message =
-                Some(format!("No se pudo aplicar el tamaño de página: {error}"));
-        }
-        self.glyphs.clear();
-        self.dirty = true;
-    }
 
     fn insert_symbol(&mut self, symbol: &str) {
         if self.pomodoro_break || symbol.is_empty() {
@@ -1211,8 +1015,10 @@ impl TerminalModel {
                     self.source_modified = modified;
                 } else if modified.is_some() && modified != self.source_modified {
                     self.source_modified = modified;
-                    // F2 changes formatting.json without necessarily changing terminal text.
-                    // Force the HSST overlay to be rebuilt immediately.
+                    if let Some(metadata) = document::read_metadata(source) {
+                        self.page_profile = metadata.page;
+                    }
+                    // F2 may change formatting.json or page metadata without terminal text.
                     self.dirty = true;
                     if let Err(error) = editor.refresh_after_formatting() {
                         self.launcher.message =
@@ -2638,14 +2444,6 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         });
     }
     {
-        let model = model.clone();
-        ui.on_page_action(move |action, value| {
-            model
-                .borrow_mut()
-                .update_page(action.as_str(), value.as_str());
-        });
-    }
-    {
         let weak = ui.as_weak();
         ui.on_close_window(move || {
             if let Some(ui) = weak.upgrade() {
@@ -2663,12 +2461,6 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         ui.set_pomodoro_prompt(model.pomodoro_offer);
         ui.set_pomodoro_break(model.pomodoro_break);
         ui.set_pomodoro_text(model.pomodoro_label().into());
-        ui.set_page_label(model.page_profile.paper.label().into());
-        ui.set_page_orientation_text(model.page_profile.orientation.label().into());
-        ui.set_margin_left_text(model.page_profile.margin_left_mm.to_string().into());
-        ui.set_margin_right_text(model.page_profile.margin_right_mm.to_string().into());
-        ui.set_margin_top_text(model.page_profile.margin_top_mm.to_string().into());
-        ui.set_margin_bottom_text(model.page_profile.margin_bottom_mm.to_string().into());
         ui.window().set_fullscreen(zen);
     }
 
@@ -2703,13 +2495,7 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             ui.set_pomodoro_prompt(model.pomodoro_offer);
             ui.set_pomodoro_break(model.pomodoro_break);
             ui.set_pomodoro_text(model.pomodoro_label().into());
-            ui.set_page_label(model.page_profile.paper.label().into());
-            ui.set_page_orientation_text(model.page_profile.orientation.label().into());
-            ui.set_margin_left_text(model.page_profile.margin_left_mm.to_string().into());
-            ui.set_margin_right_text(model.page_profile.margin_right_mm.to_string().into());
-            ui.set_margin_top_text(model.page_profile.margin_top_mm.to_string().into());
-            ui.set_margin_bottom_text(model.page_profile.margin_bottom_mm.to_string().into());
-            ui.set_zen_active(zen);
+                                    ui.set_zen_active(zen);
             if zen != last_zen.get() {
                 ui.set_zen_active(zen);
                 ui.window().set_fullscreen(zen);

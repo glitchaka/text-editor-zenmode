@@ -17,6 +17,7 @@ pub const DICTIONARY_LICENSE: &str =
 const SOURCE: &str = "Helix-SST ortografía";
 const ADD_WORD_COMMAND: &str = "helix-sst.addWord";
 const FORMAT_COMMAND: &str = "helix-sst.formatSelection";
+const PAGE_COMMAND: &str = "helix-sst.pageSetting";
 
 pub fn run_lsp(
     user_dictionary: PathBuf,
@@ -49,7 +50,7 @@ pub fn run_lsp(
                                 "textDocumentSync": 1,
                                 "codeActionProvider": true,
                                 "executeCommandProvider": {
-                                    "commands": [ADD_WORD_COMMAND, FORMAT_COMMAND]
+                                    "commands": [ADD_WORD_COMMAND, FORMAT_COMMAND, PAGE_COMMAND]
                                 }
                             },
                             "serverInfo": {
@@ -128,6 +129,11 @@ pub fn run_lsp(
                     }
                     Some(FORMAT_COMMAND) => {
                         changed = server.apply_format_command(
+                            message.pointer("/params/arguments").unwrap_or(&Value::Null),
+                        )?;
+                    }
+                    Some(PAGE_COMMAND) => {
+                        changed = server.apply_page_command(
                             message.pointer("/params/arguments").unwrap_or(&Value::Null),
                         )?;
                     }
@@ -352,6 +358,31 @@ impl SpellServer {
                 }
             }));
         }
+        if let Some(source) = self.source_file.as_ref()
+            && crate::document::is_native_path(source)
+        {
+            let mut push_page = |title: &str, action: &str, value: &str| {
+                actions.push(json!({
+                    "title": title,
+                    "kind": "refactor.rewrite",
+                    "command": {
+                        "title": title,
+                        "command": PAGE_COMMAND,
+                        "arguments": [action, value]
+                    }
+                }));
+            };
+            for (label, value) in [("Carta", "letter"), ("Oficio", "oficio"), ("Legal", "legal"), ("A4", "a4"), ("A5", "a5")] {
+                push_page(&format!("Página · Papel · {label}"), "paper", value);
+            }
+            push_page("Página · Orientación · Vertical", "orientation", "portrait");
+            push_page("Página · Orientación · Horizontal", "orientation", "landscape");
+            push_page("Página · Margen izquierdo · siguiente", "margin-left", "cycle");
+            push_page("Página · Margen derecho · siguiente", "margin-right", "cycle");
+            push_page("Página · Margen superior · siguiente", "margin-top", "cycle");
+            push_page("Página · Margen inferior · siguiente", "margin-bottom", "cycle");
+        }
+
         if let Some(source) = self.source_file.as_ref()
             && crate::document::is_native_path(source)
             && let Some(range) = params.get("range").cloned()
@@ -602,6 +633,41 @@ impl SpellServer {
             previous_start = start;
         }
         data
+    }
+
+    fn apply_page_command(&self, arguments: &Value) -> Result<bool> {
+        let Some(source) = self.source_file.as_deref() else {
+            return Ok(false);
+        };
+        if !crate::document::is_native_path(source) {
+            return Ok(false);
+        }
+        let action = arguments.get(0).and_then(Value::as_str).unwrap_or("");
+        let value = arguments.get(1).and_then(Value::as_str).unwrap_or("");
+        let Some(metadata) = crate::document::read_metadata(source) else {
+            return Ok(false);
+        };
+        let mut page = metadata.page;
+        match action {
+            "paper" => {
+                let Some(paper) = crate::page::PaperSize::parse(value) else { return Ok(false); };
+                page.paper = paper;
+            }
+            "orientation" => {
+                let Some(orientation) = crate::page::PageOrientation::parse(value) else { return Ok(false); };
+                page.orientation = orientation;
+            }
+            "margin-left" => page.margin_left_mm = crate::page::PageProfile::cycle_margin(page.margin_left_mm),
+            "margin-right" => page.margin_right_mm = crate::page::PageProfile::cycle_margin(page.margin_right_mm),
+            "margin-top" => page.margin_top_mm = crate::page::PageProfile::cycle_margin(page.margin_top_mm),
+            "margin-bottom" => page.margin_bottom_mm = crate::page::PageProfile::cycle_margin(page.margin_bottom_mm),
+            _ => return Ok(false),
+        }
+        if page == metadata.page {
+            return Ok(false);
+        }
+        crate::document::set_page_profile(source, page)?;
+        Ok(true)
     }
 
     fn add_user_word(&mut self, word: &str) -> Result<bool> {
