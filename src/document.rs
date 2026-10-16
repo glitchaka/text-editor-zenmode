@@ -599,7 +599,8 @@ fn formatting_payload(body: &str) -> (String, Value) {
         json!({
             "version": 1,
             "unit": "utf8-byte",
-            "runs": ranges
+            "runs": ranges,
+            "paragraphs": []
         }),
     )
 }
@@ -608,7 +609,8 @@ fn empty_formatting() -> Value {
     json!({
         "version": 1,
         "unit": "utf8-byte",
-        "runs": []
+        "runs": [],
+        "paragraphs": []
     })
 }
 
@@ -694,12 +696,160 @@ fn encode_formatting_runs(runs: &[(usize, usize, crate::format::TextStyle)]) -> 
     })
 }
 
+fn decode_paragraph_alignments(
+    formatting: &Value,
+) -> Vec<(usize, usize, crate::format::ParagraphAlignment)> {
+    let mut ranges = formatting
+        .get("paragraphs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+  let start = value
+      .get("start")?
+      .as_u64()
+      .and_then(|n| usize::try_from(n).ok())?;
+  let end = value
+      .get("end")?
+      .as_u64()
+      .and_then(|n| usize::try_from(n).ok())?;
+  let alignment = value
+      .get("alignment")?
+      .as_str()
+      .and_then(crate::format::ParagraphAlignment::parse)?;
+  (start <= end).then_some((start, end, alignment))
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_by_key(|(start, end, _)| (*start, *end));
+    ranges
+}
+
+fn encode_formatting_parts(
+    runs: &[(usize, usize, crate::format::TextStyle)],
+    paragraphs: &[(usize, usize, crate::format::ParagraphAlignment)],
+) -> Value {
+    let mut value = encode_formatting_runs(runs);
+    let encoded = paragraphs
+        .iter()
+        .filter(|(start, end, alignment)| start <= end && *alignment != crate::format::ParagraphAlignment::Left)
+        .map(|(start, end, alignment)| {
+  json!({
+      "start": start,
+      "end": end,
+      "alignment": alignment.name()
+  })
+        })
+        .collect::<Vec<_>>();
+    if let Some(object) = value.as_object_mut() {
+        object.insert("paragraphs".into(), Value::Array(encoded));
+    }
+    value
+}
+
+fn paragraph_bounds(body: &str, offset: usize) -> (usize, usize) {
+    let offset = offset.min(body.len());
+    let start = body[..offset].rfind('\n').map(|index| index + 1).unwrap_or(0);
+    let end = body[offset..]
+        .find('\n')
+        .map(|index| offset + index)
+        .unwrap_or(body.len());
+    (start, end)
+}
+
+fn normalize_paragraph_alignments(
+    body: &str,
+    ranges: &[(usize, usize, crate::format::ParagraphAlignment)],
+) -> Vec<(usize, usize, crate::format::ParagraphAlignment)> {
+    let mut result = Vec::new();
+    let mut line_start = 0usize;
+    for segment in body.split_inclusive('\n') {
+        let line_end = line_start + segment.strip_suffix('\n').unwrap_or(segment).len();
+        let probe = line_start.min(body.len().saturating_sub(1));
+        let alignment = ranges
+  .iter()
+  .rev()
+  .find(|(start, end, _)| {
+      (*start <= probe && probe <= *end)
+          || (line_start <= *start && *start <= line_end)
+  })
+  .map(|(_, _, alignment)| *alignment)
+  .unwrap_or_default();
+        if alignment != crate::format::ParagraphAlignment::Left {
+  result.push((line_start, line_end, alignment));
+        }
+        line_start += segment.len();
+    }
+    if body.is_empty() {
+        return result;
+    }
+    if !body.ends_with('\n') && line_start < body.len() {
+        let alignment = ranges
+  .iter()
+  .rev()
+  .find(|(start, end, _)| *start <= line_start && line_start <= *end)
+  .map(|(_, _, alignment)| *alignment)
+  .unwrap_or_default();
+        if alignment != crate::format::ParagraphAlignment::Left {
+  result.push((line_start, body.len(), alignment));
+        }
+    }
+    result
+}
+
+fn apply_paragraph_alignment(
+    body: &str,
+    formatting: &Value,
+    selection_start: usize,
+    selection_end: usize,
+    alignment: crate::format::ParagraphAlignment,
+) -> Value {
+    let existing = decode_paragraph_alignments(formatting);
+    let first = paragraph_bounds(body, selection_start).0;
+    let last = paragraph_bounds(body, selection_end.saturating_sub(1)).1;
+    let mut output = Vec::new();
+    let mut line_start = 0usize;
+    for segment in body.split_inclusive('\n') {
+        let line = segment.strip_suffix('\n').unwrap_or(segment);
+        let line_end = line_start + line.len();
+        let current = existing
+  .iter()
+  .rev()
+  .find(|(start, end, _)| *start <= line_start && line_start <= *end)
+  .map(|(_, _, value)| *value)
+  .unwrap_or_default();
+        let next = if line_start <= last && line_end >= first {
+  alignment
+        } else {
+  current
+        };
+        if next != crate::format::ParagraphAlignment::Left {
+  output.push((line_start, line_end, next));
+        }
+        line_start += segment.len();
+    }
+    let runs = decode_formatting_runs(formatting);
+    encode_formatting_parts(&runs, &output)
+}
+
+pub fn paragraph_alignments(
+    document: &HsstDocument,
+) -> Vec<(usize, usize, crate::format::ParagraphAlignment)> {
+    normalize_paragraph_alignments(
+        &document.body,
+        &decode_paragraph_alignments(&document.formatting),
+    )
+}
+
 fn sanitize_formatting(formatting: &Value, content_len: usize) -> Value {
     let runs = decode_formatting_runs(formatting)
         .into_iter()
         .filter(|(start, end, _)| *start < *end && *end <= content_len)
         .collect::<Vec<_>>();
-    encode_formatting_runs(&runs)
+    let paragraphs = decode_paragraph_alignments(formatting)
+        .into_iter()
+        .filter(|(start, end, _)| *start <= *end && *end <= content_len)
+        .collect::<Vec<_>>();
+    encode_formatting_parts(&runs, &paragraphs)
 }
 
 pub fn formatting_runs(document: &HsstDocument) -> Vec<(usize, usize, crate::format::TextStyle)> {
@@ -893,15 +1043,23 @@ pub fn apply_format_selection(
         return Ok(false);
     };
 
-    let runs = normalized_runs_for_selection(
-        &document.body,
-        &document.formatting,
-        start,
-        end,
-        action,
-        value,
-    );
-    let next = encode_formatting_runs(&runs);
+    let next = if action == "alignment" {
+        let Some(alignment) = crate::format::ParagraphAlignment::parse(value) else {
+            return Ok(false);
+        };
+        apply_paragraph_alignment(&document.body, &document.formatting, start, end, alignment)
+    } else {
+        let runs = normalized_runs_for_selection(
+            &document.body,
+            &document.formatting,
+            start,
+            end,
+            action,
+            value,
+        );
+        let paragraphs = decode_paragraph_alignments(&document.formatting);
+        encode_formatting_parts(&runs, &paragraphs)
+    };
     if next == document.formatting {
         return Ok(false);
     }
@@ -961,15 +1119,23 @@ pub fn apply_format_lsp_range(
     {
         return Ok(false);
     }
-    let runs = normalized_runs_for_selection(
-        &document.body,
-        &document.formatting,
-        start,
-        end,
-        action,
-        value,
-    );
-    let next = encode_formatting_runs(&runs);
+    let next = if action == "alignment" {
+        let Some(alignment) = crate::format::ParagraphAlignment::parse(value) else {
+            return Ok(false);
+        };
+        apply_paragraph_alignment(&document.body, &document.formatting, start, end, alignment)
+    } else {
+        let runs = normalized_runs_for_selection(
+            &document.body,
+            &document.formatting,
+            start,
+            end,
+            action,
+            value,
+        );
+        let paragraphs = decode_paragraph_alignments(&document.formatting);
+        encode_formatting_parts(&runs, &paragraphs)
+    };
     if next == document.formatting {
         return Ok(false);
     }
@@ -1029,7 +1195,24 @@ pub fn remap_formatting(formatting: &Value, old: &str, new: &str) -> Value {
             && new.is_char_boundary(*start)
             && new.is_char_boundary(*end)
     });
-    encode_formatting_runs(&remapped)
+
+    let mut remapped_paragraphs = Vec::new();
+    for (start, end, alignment) in decode_paragraph_alignments(formatting) {
+        let mapped = if end <= prefix {
+            Some((start, end, alignment))
+        } else if start >= old_edit_end {
+            Some((shift(start), shift(end), alignment))
+        } else if start <= prefix && end >= old_edit_end {
+            Some((start, shift(end), alignment))
+        } else {
+            Some((start.min(new.len()), shift(end).min(new.len()), alignment))
+        };
+        if let Some(range) = mapped {
+            remapped_paragraphs.push(range);
+        }
+    }
+    let remapped_paragraphs = normalize_paragraph_alignments(new, &remapped_paragraphs);
+    encode_formatting_parts(&remapped, &remapped_paragraphs)
 }
 
 pub fn read_metadata(path: &Path) -> Option<DocumentMetadata> {

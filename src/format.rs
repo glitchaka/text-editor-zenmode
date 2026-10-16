@@ -96,6 +96,36 @@ impl PaletteColor {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ParagraphAlignment {
+    #[default]
+    Left,
+    Center,
+    Right,
+    Justify,
+}
+
+impl ParagraphAlignment {
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value.to_ascii_lowercase().as_str() {
+            "left" | "izquierda" => Self::Left,
+            "center" | "centre" | "centrada" | "centrado" => Self::Center,
+            "right" | "derecha" => Self::Right,
+            "justify" | "justified" | "justificada" | "justificado" => Self::Justify,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Center => "center",
+            Self::Right => "right",
+            Self::Justify => "justify",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MarkKind {
     Bold,

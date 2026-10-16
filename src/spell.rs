@@ -342,7 +342,7 @@ impl SpellServer {
                 }));
             }
             actions.push(json!({
-                "title": format!("Aceptar «{word}» en Helix-SST"),
+                "title": format!("Aceptar «{word}» en Zen Editor"),
                 "kind": "quickfix",
                 "diagnostics": [diagnostic],
                 "command": {
@@ -399,6 +399,10 @@ impl SpellServer {
                 push_format(&format!("Resaltado · {label}"), "highlight-color", value);
             }
             push_format("Resaltado · Quitar", "highlight-color", "none");
+            push_format("Alineación · Izquierda", "alignment", "left");
+            push_format("Alineación · Centrada", "alignment", "center");
+            push_format("Alineación · Derecha", "alignment", "right");
+            push_format("Alineación · Justificada", "alignment", "justify");
         }
         actions
     }

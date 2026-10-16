@@ -106,6 +106,10 @@ slint::slint! {
         in property <string> margin-top-text: "25";
         in property <string> margin-bottom-text: "25";
         callback key-input(string, bool, bool, bool);
+        callback terminal-cell-has-text(float, float) -> bool;
+        callback terminal-pointer(float, float, int);
+        callback terminal-scroll(float, float, float);
+        property <bool> terminal-selecting: false;
         callback toggle-zen();
         callback close-window();
         callback start-pomodoro();
@@ -142,14 +146,46 @@ slint::slint! {
             }
         }
 
-        // The complete client surface is the native move area. Controls declared
-        // later stay above it and remain clickable. No fake titlebar or inset is reserved.
+        // The complete surface remains draggable. A drag that starts on rendered
+        // terminal text is reserved for Helix selection; blank surface keeps native window drag.
         window-drag-surface := WindowMoveArea {
             x: 0px;
             y: 0px;
             width: root.width;
             height: root.height;
-            enabled: !root.zen-active;
+            enabled: !root.zen-active && !root.terminal-selecting;
+
+            terminal-pointer-area := TouchArea {
+                pointer-event(event) => {
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                        root.terminal-selecting = root.editor-active
+                            && root.terminal-cell-has-text(self.mouse-x / 1px, self.mouse-y / 1px);
+                        if (root.editor-active) {
+                            root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 0);
+                        }
+                    } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                        if (root.editor-active) {
+                            root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 1);
+                        }
+                        root.terminal-selecting = false;
+                    } else if (event.kind == PointerEventKind.cancel) {
+                        root.terminal-selecting = false;
+                    }
+                }
+                moved => {
+                    if (root.editor-active && root.terminal-selecting && self.pressed) {
+                        root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 2);
+                    }
+                }
+                scroll-event(event) => {
+                    if (root.editor-active) {
+                        root.terminal-scroll(self.mouse-x / 1px, self.mouse-y / 1px, event.delta-y / 1px);
+                        accept
+                    } else {
+                        reject
+                    }
+                }
+            }
         }
 
         bottom-reveal := TouchArea {
@@ -1848,7 +1884,7 @@ impl TerminalModel {
             &mut out,
             &framed_center(
                 &format!(
-                    "\x1b[1;38;5;222mHELIX SST\x1b[0m  \x1b[38;5;250mversión {APP_VERSION}\x1b[0m"
+                    "\x1b[1;38;5;222mZEN EDITOR\x1b[0m  \x1b[38;5;250mversión {APP_VERSION}\x1b[0m"
                 ),
                 inner_width,
                 "38;5;244",
@@ -2118,6 +2154,67 @@ impl TerminalModel {
         self.dirty = true;
     }
 
+    fn terminal_cell_at(&self, x: f32, y: f32) -> Option<(u16, u16)> {
+        let scale = self.scale.max(0.5);
+        let px = x * scale;
+        let py = y * scale;
+        let (left, top, cell_width, cell_height) = self.geometry();
+        if px < left || py < top || cell_width <= 0.0 || cell_height <= 0.0 {
+  return None;
+        }
+        let col = ((px - left) / cell_width).floor() as u16;
+        let row = ((py - top) / cell_height).floor() as u16;
+        let (rows, cols) = self.parser.screen().size();
+        (row < rows && col < cols).then_some((row, col))
+    }
+
+    fn terminal_cell_has_text(&self, x: f32, y: f32) -> bool {
+        let Some((row, col)) = self.terminal_cell_at(x, y) else {
+  return false;
+        };
+        self.parser
+  .screen()
+  .cell(row, col)
+  .is_some_and(|cell| !cell.is_wide_continuation() && !cell.contents().is_empty())
+    }
+
+    fn terminal_pointer(&mut self, x: f32, y: f32, kind: i32) {
+        if self.pomodoro_break {
+  return;
+        }
+        let Some((row, col)) = self.terminal_cell_at(x, y) else {
+  return;
+        };
+        let Some(editor) = self.editor.as_ref() else {
+  return;
+        };
+        let column = col as usize + 1;
+        let line = row as usize + 1;
+        let report = match kind {
+  0 => format!("\x1b[<0;{column};{line}M"),
+  1 => format!("\x1b[<0;{column};{line}m"),
+  2 => format!("\x1b[<32;{column};{line}M"),
+  _ => return,
+        };
+        let _ = editor.write_reply(report.as_bytes());
+        self.dirty = true;
+    }
+
+    fn terminal_scroll(&mut self, x: f32, y: f32, delta_y: f32) {
+        let Some((row, col)) = self.terminal_cell_at(x, y) else {
+  return;
+        };
+        let Some(editor) = self.editor.as_ref() else {
+  return;
+        };
+        let button = if delta_y < 0.0 { 64 } else { 65 };
+        let column = col as usize + 1;
+        let line = row as usize + 1;
+        let report = format!("\x1b[<{button};{column};{line}M");
+        let _ = editor.write_reply(report.as_bytes());
+        self.dirty = true;
+    }
+
     fn render(&mut self) -> Image {
         let width = self.width.max(1);
         let height = self.height.max(1);
@@ -2170,12 +2267,18 @@ impl TerminalModel {
         }
 
         let screen = self.parser.screen();
-        let format_overlay = self
+        let native_document = self
             .current_file
             .as_ref()
             .filter(|path| document::is_native_path(path))
-            .and_then(|path| document::read(path).ok())
-            .map(|document| native_format_overlay(screen, &document))
+            .and_then(|path| document::read(path).ok());
+        let format_overlay = native_document
+            .as_ref()
+            .map(|document| native_format_overlay(screen, document))
+            .unwrap_or_default();
+        let alignment_offsets = native_document
+            .as_ref()
+            .map(|document| native_alignment_offsets(screen, document))
             .unwrap_or_default();
         let (rows, cols) = screen.size();
         let cursor = screen.cursor_position();
@@ -2216,7 +2319,8 @@ impl TerminalModel {
                     paint_background = true;
                 }
 
-                let x = (left_pad + col as f32 * cell_width).round() as i32;
+                let align_columns = alignment_offsets.get(&(row, col)).copied().unwrap_or(0.0);
+                let x = (left_pad + (col as f32 + align_columns) * cell_width).round() as i32;
                 let y = (top_pad + row as f32 * cell_height).round() as i32;
                 let wide = if cell.is_wide() { 2.0 } else { 1.0 };
                 let w = (cell_width * wide).ceil() as i32;
@@ -2476,6 +2580,22 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
                 ui.set_pomodoro_break(model.pomodoro_break);
                 ui.set_pomodoro_text(model.pomodoro_label().into());
             }
+        });
+    }
+    {
+        let model = model.clone();
+        ui.on_terminal_cell_has_text(move |x, y| model.borrow().terminal_cell_has_text(x, y));
+    }
+    {
+        let model = model.clone();
+        ui.on_terminal_pointer(move |x, y, kind| {
+            model.borrow_mut().terminal_pointer(x, y, kind);
+        });
+    }
+    {
+        let model = model.clone();
+        ui.on_terminal_scroll(move |x, y, delta_y| {
+            model.borrow_mut().terminal_scroll(x, y, delta_y);
         });
     }
     {
@@ -3082,6 +3202,89 @@ fn native_format_overlay(
         consumed = new_consumed;
     }
     overlay
+}
+
+fn native_alignment_offsets(
+    screen: &vt100::Screen,
+    document: &document::HsstDocument,
+) -> HashMap<(u16, u16), f32> {
+    let alignments = document::paragraph_alignments(document);
+    if alignments.is_empty() || document.body.is_empty() {
+        return HashMap::new();
+    }
+    let mut lines = Vec::new();
+    let mut absolute = 0usize;
+    for raw in document.body.split_inclusive('\n') {
+        let no_lf = raw.strip_suffix('\n').unwrap_or(raw);
+        let line = no_lf.strip_suffix('\r').unwrap_or(no_lf);
+        lines.push((absolute, line));
+        absolute += raw.len();
+    }
+    if document.body.ends_with('\n') {
+        lines.push((document.body.len(), ""));
+    }
+    let (rows, cols) = screen.size();
+    let mut offsets = HashMap::new();
+    let mut active_line = None::<usize>;
+    let mut consumed = 0usize;
+    for row in 0..rows {
+        if let Some(line) = screen_line_number(screen, row, lines.len()) {
+  active_line = Some(line);
+  consumed = 0;
+        }
+        let Some(line_index) = active_line else { continue; };
+        let Some((line_start, line)) = lines.get(line_index).copied() else { continue; };
+        if consumed >= line.len() || !line.is_char_boundary(consumed) { continue; }
+        let line_end = line_start + line.len();
+        let alignment = alignments
+  .iter()
+  .find(|(start, end, _)| *start <= line_start && line_end <= *end)
+  .or_else(|| alignments.iter().find(|(start, end, _)| *start <= line_start && line_start <= *end))
+  .map(|(_, _, alignment)| *alignment)
+  .unwrap_or_default();
+        if alignment == crate::format::ParagraphAlignment::Left { continue; }
+        let remaining = &line[consumed..];
+        let Some((_, matched)) = match_source_row(screen, row, remaining) else { continue; };
+        if matched.is_empty() { continue; }
+        let right_edge = matched
+  .iter()
+  .map(|(col, _, _)| *col as usize + 1)
+  .max()
+  .unwrap_or(0);
+        let spare = (cols as usize).saturating_sub(right_edge + 1);
+        match alignment {
+  crate::format::ParagraphAlignment::Left => {}
+  crate::format::ParagraphAlignment::Center | crate::format::ParagraphAlignment::Right => {
+      let shift = if alignment == crate::format::ParagraphAlignment::Center {
+          spare as f32 / 2.0
+      } else {
+          spare as f32
+      };
+      for (col, _, _) in &matched {
+          offsets.insert((row, *col), shift);
+      }
+  }
+  crate::format::ParagraphAlignment::Justify => {
+      let spaces = matched
+          .iter()
+          .filter(|(_, local_start, local_end)| remaining[*local_start..*local_end].chars().all(char::is_whitespace))
+          .count();
+      if spaces > 0 && spare > 0 && consumed + matched.last().map(|(_, _, end)| *end).unwrap_or(0) < line.len() {
+          let mut seen = 0usize;
+          for (col, local_start, local_end) in &matched {
+              offsets.insert((row, *col), spare as f32 * seen as f32 / spaces as f32);
+              if remaining[*local_start..*local_end].chars().all(char::is_whitespace) {
+                  seen += 1;
+              }
+          }
+      }
+  }
+        }
+        if let Some((_, _, last_end)) = matched.last() {
+  consumed += *last_end;
+        }
+    }
+    offsets
 }
 
 fn terminal_color(value: vt100::Color, default: Rgb) -> Rgb {
