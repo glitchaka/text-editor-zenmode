@@ -38,8 +38,8 @@ use crate::{
 
 const INITIAL_COLS: u16 = 112;
 const INITIAL_ROWS: u16 = 34;
-const PAD_X: f32 = 14.0;
-const PAD_Y: f32 = 12.0;
+const PAD_X: f32 = 0.0;
+const PAD_Y: f32 = 0.0;
 const CELL_WIDTH: f32 = 8.0;
 const CELL_HEIGHT: f32 = 18.0;
 const FONT_SIZE: f32 = 14.0;
@@ -67,7 +67,7 @@ const ICON_OFFICE: char = '\u{e10b}';
 const ICON_LOCK: char = '\u{e10c}';
 const ICON_RUST: char = '\u{e10d}';
 
-const BG: Rgb = Rgb(0x11, 0x16, 0x19);
+const BG: Rgb = Rgb(0x28, 0x28, 0x28);
 const FG: Rgb = Rgb(0xDF, 0xE8, 0xEF);
 const CURSOR: Rgb = Rgb(0xE8, 0xCC, 0x83);
 const PAGE_BG: Rgb = Rgb(0x1B, 0x1F, 0x21);
@@ -146,15 +146,14 @@ slint::slint! {
             }
         }
 
-        // Dedicated frameless titlebar handled by Slint/Winit.
-        window-drag-strip := WindowMoveArea {
-            x: 7px;
-            y: 7px;
-            width: root.width - 14px;
-            height: 24px;
-            enabled: !root.zen-active
-                && !root.symbols-open
-                && !root.page-menu-open;
+        // The complete client surface is the native move area. Controls declared
+        // later stay above it and remain clickable. No fake titlebar or inset is reserved.
+        window-drag-surface := WindowMoveArea {
+            x: 0px;
+            y: 0px;
+            width: root.width;
+            height: root.height;
+            enabled: !root.zen-active;
         }
 
         bottom-reveal := TouchArea {
@@ -2299,6 +2298,33 @@ mod native_format_overlay_tests {
 }
 
 #[cfg(windows)]
+#[link(name = "dwmapi")]
+unsafe extern "system" {
+    fn DwmSetWindowAttribute(
+        hwnd: HWND,
+        attribute: u32,
+        value: *const std::ffi::c_void,
+        value_size: u32,
+    ) -> i32;
+}
+
+#[cfg(windows)]
+unsafe fn enable_native_rounded_corners(hwnd: HWND) {
+    // Windows 11 DWM: DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND.
+    const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+    const DWMWCP_ROUND: u32 = 2;
+    let preference = DWMWCP_ROUND;
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            (&preference as *const u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+        );
+    }
+}
+
+#[cfg(windows)]
 fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
     let handle = ui.window().window_handle();
     let window_handle = handle.window_handle().ok()?;
@@ -2486,6 +2512,13 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     }
 
     ui.show()?;
+
+    #[cfg(windows)]
+    if let Some(hwnd) = slint_hwnd(&ui) {
+        unsafe {
+            enable_native_rounded_corners(hwnd);
+        }
+    }
 
     let weak = ui.as_weak();
     let timer = Timer::default();
