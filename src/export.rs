@@ -9,7 +9,7 @@ use zip::{ZipWriter, write::FileOptions};
 
 use crate::{
     document,
-    format::{ParagraphAlignment, StyledRun, TextStyle},
+    format::{ParagraphAlignment, TextStyle},
     page::PageProfile,
 };
 
@@ -183,7 +183,7 @@ fn export_line_alignments(document: &document::HsstDocument) -> Vec<ParagraphAli
                 ranges
                     .iter()
                     .rev()
-                    .find(|(start, end, _)| offset <= *start && *start <= line_end)
+                    .find(|(start, _end, _)| offset <= *start && *start <= line_end)
             })
             .map(|(_, _, alignment)| *alignment)
             .unwrap_or_default();

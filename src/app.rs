@@ -22,8 +22,8 @@ use windows_sys::Win32::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
             BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
-            HWND_TOPMOST, IsZoomed, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SWP_NOACTIVATE,
-            SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow, SetWindowPos, ShowWindow,
+            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
+            SetWindowPos,
         },
     },
 };
