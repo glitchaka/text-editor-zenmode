@@ -153,16 +153,25 @@ slint::slint! {
                     if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
                         root.terminal-selecting = root.editor-active
                             && root.terminal-cell-has-text(self.mouse-x / 1px, self.mouse-y / 1px);
-                        if (root.editor-active) {
+                        if (root.terminal-selecting) {
                             root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 0);
+                            accept
+                        } else {
+                            // Do not consume blank client area: WindowMoveArea underneath
+                            // remains the native drag target across the whole surface.
+                            reject
                         }
-                    } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
-                        if (root.editor-active) {
-                            root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 1);
-                        }
+                    } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up && root.terminal-selecting) {
+                        root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 1);
                         root.terminal-selecting = false;
+                        accept
                     } else if (event.kind == PointerEventKind.cancel) {
                         root.terminal-selecting = false;
+                        reject
+                    } else if (root.terminal-selecting) {
+                        accept
+                    } else {
+                        reject
                     }
                 }
                 moved => {
