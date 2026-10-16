@@ -1047,6 +1047,7 @@ impl TerminalModel {
                     self.style_redo.clear();
                 } else if modified.is_some() && modified != self.source_modified {
                     self.source_modified = modified;
+                    let mut f2_sidecar_changed = false;
                     if let Ok(changed_document) = document::read(source) {
                         self.page_profile = changed_document.metadata.page;
                         if let Some(before) = self.pending_style_snapshot.take() {
@@ -1054,6 +1055,7 @@ impl TerminalModel {
                             if before.formatting != after.formatting || before.page != after.page {
                                 self.style_undo.push(before);
                                 self.style_redo.clear();
+                                f2_sidecar_changed = true;
                             }
                         }
                     }
@@ -1062,6 +1064,13 @@ impl TerminalModel {
                     if let Err(error) = editor.refresh_after_formatting() {
                         self.launcher.message =
                             Some(format!("No se pudo refrescar el formato: {error}"));
+                    }
+                    if f2_sidecar_changed {
+                        if let Err(error) = editor.finish_formatting_action() {
+                            self.launcher.message = Some(format!(
+                                "No se pudo cerrar F2 y volver a escritura: {error}"
+                            ));
+                        }
                     }
                 }
             }
@@ -2751,12 +2760,15 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             }
 
             #[cfg(windows)]
-            if zen
-                && let Some(hwnd) = slint_hwnd(&ui)
-                && unsafe { GetForegroundWindow() != hwnd }
-            {
+            if let Some(hwnd) = slint_hwnd(&ui) {
                 unsafe {
-                    focus_native_window(hwnd);
+                    if zen {
+                        if GetForegroundWindow() != hwnd {
+                            focus_native_window(hwnd);
+                        }
+                    } else {
+                        enable_native_rounded_corners(hwnd);
+                    }
                 }
             }
 

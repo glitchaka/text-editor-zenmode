@@ -261,6 +261,17 @@ impl EditorSession {
         )
     }
 
+    pub fn finish_formatting_action(&self) -> Result<()> {
+        let win32 = self.win32_input();
+        // First Esc closes the code-action/menu popup; the second leaves Select mode.
+        // Then return to insert mode so the next printable key is text, not a Helix
+        // normal-mode command such as `.` (repeat last change).
+        self.send_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), win32)?;
+        self.send_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), win32)?;
+        self.send_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), win32)?;
+        Ok(())
+    }
+
     pub fn refresh_after_formatting(&self) -> Result<()> {
         // HSST formatting is rendered by the native overlay in app.rs.
         // Do not reload the buffer or restart the LSP: those operations destroy
