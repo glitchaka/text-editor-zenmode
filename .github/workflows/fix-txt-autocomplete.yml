@@ -1,0 +1,77 @@
+name: Fix TXT default and autocomplete
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-txt-autocomplete.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Patch Zen Editor source
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'missing marker: {label}')
+              return text.replace(old, new, 1)
+
+          # Restore Helix autocomplete. The popup rendering bug must be fixed,
+          # not hidden by removing the feature.
+          p = Path('src/editor.rs')
+          s = p.read_text(encoding='utf-8')
+          s = replace_once(s, 'auto-completion = false', 'auto-completion = true', 'autocomplete config')
+          s = s.replace('Some(false),\n            "el autocompletado emergente debe permanecer desactivado"', 'Some(true),\n            "el autocompletado debe permanecer habilitado"')
+          p.write_text(s, encoding='utf-8')
+
+          # TXT is the normal/default document type. HSST remains only as an
+          # explicit legacy/rich-container option when the user types .hsst.
+          p = Path('src/document.rs')
+          s = p.read_text(encoding='utf-8')
+          s = replace_once(
+              s,
+              'pub const EXTENSION: &str = "hsst";\npub const FORMAT_VERSION: u32 = 2;',
+              'pub const EXTENSION: &str = "hsst";\npub const DEFAULT_TEXT_EXTENSION: &str = "txt";\npub const FORMAT_VERSION: u32 = 2;',
+              'default txt extension',
+          )
+          marker = '''pub fn native_path_for_name(directory: &Path, requested_name: &str) -> PathBuf {\n    let trimmed = requested_name.trim();\n    let mut path = directory.join(trimmed);\n    if !is_native_path(&path) {\n        path.set_extension(EXTENSION);\n    }\n    path\n}\n\npub fn create_native(path: &Path, title: &str) -> Result<()> {'''
+          replacement = '''pub fn native_path_for_name(directory: &Path, requested_name: &str) -> PathBuf {\n    let trimmed = requested_name.trim();\n    let mut path = directory.join(trimmed);\n    if !is_native_path(&path) {\n        path.set_extension(EXTENSION);\n    }\n    path\n}\n\npub fn default_path_for_name(directory: &Path, requested_name: &str) -> PathBuf {\n    let trimmed = requested_name.trim();\n    let mut path = directory.join(trimmed);\n    if path.extension().is_none() {\n        path.set_extension(DEFAULT_TEXT_EXTENSION);\n    }\n    path\n}\n\npub fn create_plain_text(path: &Path) -> Result<()> {\n    if let Some(parent) = path.parent() {\n        fs::create_dir_all(parent)?;\n    }\n    fs::write(path, b"")\n        .with_context(|| format!("No se pudo crear {}", path.display()))?;\n    Ok(())\n}\n\npub fn create_native(path: &Path, title: &str) -> Result<()> {'''
+          s = replace_once(s, marker, replacement, 'plain txt creation')
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/app.rs')
+          s = p.read_text(encoding='utf-8')
+          s = replace_once(
+              s,
+              'let path = document::native_path_for_name(&self.launcher.cwd, &name);',
+              'let path = document::default_path_for_name(&self.launcher.cwd, &name);',
+              'default new path',
+          )
+          s = replace_once(
+              s,
+              'match document::create_native(&path, &title) {',
+              'let create_result = if document::is_native_path(&path) {\n                                document::create_native(&path, &title)\n                            } else {\n                                document::create_plain_text(&path)\n                            };\n                            match create_result {',
+              'create txt by default',
+          )
+          s = s.replace('HELIX SST', 'ZEN EDITOR')
+          p.write_text(s, encoding='utf-8')
+
+      - name: Commit real source changes to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/editor.rs src/document.rs src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: make TXT default and restore autocomplete"
+          git push origin HEAD:main
