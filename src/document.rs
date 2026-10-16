@@ -1311,6 +1311,31 @@ pub fn serialize(document: &HsstDocument) -> String {
     )
 }
 
+pub fn set_project_assignment(
+    path: &Path,
+    project: &str,
+    chapter: Option<u32>,
+) -> Result<()> {
+    if !is_native_path(path) {
+        return Ok(());
+    }
+    let mut document = read(path)?;
+    let project = project.trim().to_owned();
+    document.metadata.project = project;
+    document.metadata.chapter = chapter;
+    if let Some(chapter) = chapter {
+        document.metadata.kind = "chapter".into();
+        if document.metadata.order == 0 {
+            document.metadata.order = chapter.saturating_mul(10);
+        }
+    } else if document.metadata.kind.eq_ignore_ascii_case("chapter") {
+        document.metadata.kind = "document".into();
+    }
+    write(path, &document).with_context(|| {
+        format!("No se pudo actualizar el proyecto de {}", path.display())
+    })
+}
+
 pub fn set_page_profile(path: &Path, page: PageProfile) -> Result<()> {
     if !is_native_path(path) {
         return Ok(());

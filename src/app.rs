@@ -369,6 +369,10 @@ struct Launcher {
     new_name: String,
     exporting: Option<PathBuf>,
     export_selected: usize,
+    project_editing: Option<PathBuf>,
+    project_name: String,
+    project_chapter: String,
+    project_stage: u8,
     message: Option<String>,
 }
 
@@ -382,6 +386,10 @@ impl Launcher {
             new_name: String::new(),
             exporting: None,
             export_selected: 0,
+            project_editing: None,
+            project_name: String::new(),
+            project_chapter: String::new(),
+            project_stage: 0,
             message: None,
         };
         this.refresh();
@@ -1485,6 +1493,58 @@ impl TerminalModel {
     }
 
     fn launcher_key(&mut self, key: KeyEvent) {
+        if let Some(path) = self.launcher.project_editing.clone() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.launcher.project_editing = None;
+                    self.launcher.project_name.clear();
+                    self.launcher.project_chapter.clear();
+                    self.launcher.project_stage = 0;
+                }
+                KeyCode::Enter if self.launcher.project_stage == 0 => {
+                    self.launcher.project_stage = 1;
+                }
+                KeyCode::Enter => {
+                    let chapter = self.launcher.project_chapter.trim().parse::<u32>().ok();
+                    match document::set_project_assignment(&path, &self.launcher.project_name, chapter) {
+                        Ok(()) => {
+                            self.launcher.message = Some(if let Some(chapter) = chapter {
+                                format!("Proyecto: {} · capítulo {chapter}", self.launcher.project_name.trim())
+                            } else {
+                                format!("Proyecto: {}", self.launcher.project_name.trim())
+                            });
+                            self.launcher.project_editing = None;
+                            self.launcher.project_name.clear();
+                            self.launcher.project_chapter.clear();
+                            self.launcher.project_stage = 0;
+                            self.launcher.refresh();
+                        }
+                        Err(error) => self.launcher.message = Some(format!("No se pudo guardar proyecto: {error}")),
+                    }
+                }
+                KeyCode::Backspace => {
+                    if self.launcher.project_stage == 0 {
+                        self.launcher.project_name.pop();
+                    } else {
+                        self.launcher.project_chapter.pop();
+                    }
+                }
+                KeyCode::Char(ch)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !key.modifiers.contains(KeyModifiers::ALT) =>
+                {
+                    if self.launcher.project_stage == 0 {
+                        self.launcher.project_name.push(ch);
+                    } else if ch.is_ascii_digit() {
+                        self.launcher.project_chapter.push(ch);
+                    }
+                }
+                _ => {}
+            }
+            self.render_launcher();
+            return;
+        }
+
         if let Some(source) = self.launcher.exporting.clone() {
             match key.code {
                 KeyCode::Esc => {
@@ -1610,6 +1670,24 @@ impl TerminalModel {
                 }
             }
 
+            KeyCode::Char('p') | KeyCode::Char('P') => {
+                if let Some(entry) = self.launcher.selected_entry().cloned()
+                    && !entry.directory
+                    && document::is_native_path(&entry.path)
+                {
+                    let metadata = entry.metadata.unwrap_or_else(|| DocumentMetadata {
+                        title: entry.name.clone(),
+                        ..DocumentMetadata::default()
+                    });
+                    self.launcher.project_name = metadata.project;
+                    self.launcher.project_chapter = metadata.chapter.map(|value| value.to_string()).unwrap_or_default();
+                    self.launcher.project_stage = 0;
+                    self.launcher.project_editing = Some(entry.path);
+                    self.launcher.message = None;
+                } else {
+                    self.launcher.message = Some("Selecciona un documento .hsst para asignar proyecto.".into());
+                }
+            }
             KeyCode::Char('e') | KeyCode::Char('E') => {
                 if let Some(entry) = self.launcher.selected_entry().cloned()
                     && !entry.directory
@@ -1834,6 +1912,43 @@ impl TerminalModel {
                     "38;5;244",
                 ),
             );
+        } else if self.launcher.project_editing.is_some() {
+            push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[1;38;5;222mPROYECTO / CAPÍTULO\x1b[0m",
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+            if self.launcher.project_stage == 0 {
+                push_line(
+                    &mut out,
+                    &framed_left(
+                        &format!(
+                            "\x1b[38;5;250mProyecto:\x1b[0m {}\x1b[?25h",
+                            self.launcher.project_name
+                        ),
+                        inner_width,
+                        "38;5;244",
+                    ),
+                );
+                push_line(&mut out, &framed_left("Enter: capítulo  ·  Esc cancelar", inner_width, "38;5;244"));
+            } else {
+                push_line(
+                    &mut out,
+                    &framed_left(
+                        &format!(
+                            "\x1b[38;5;250mCapítulo (vacío = documento):\x1b[0m {}\x1b[?25h",
+                            self.launcher.project_chapter
+                        ),
+                        inner_width,
+                        "38;5;244",
+                    ),
+                );
+                push_line(&mut out, &framed_left("Enter: guardar  ·  Esc cancelar", inner_width, "38;5;244"));
+            }
         } else if self.launcher.creating {
             push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
             push_line(
