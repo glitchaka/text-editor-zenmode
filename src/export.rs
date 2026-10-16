@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use zip::{ZipWriter, write::FileOptions};
 
-use crate::{document, page::PageProfile};
+use crate::{document, format::{ParagraphAlignment, StyledRun, TextStyle}, page::PageProfile};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -99,15 +99,18 @@ struct ExportDocument {
     title: String,
     body: String,
     page: PageProfile,
+    alignments: Vec<ParagraphAlignment>,
 }
 
 fn read_export_document(path: &Path) -> Result<ExportDocument> {
     if document::is_native_path(path) {
         let document = document::read(path)?;
+        let alignments = export_line_alignments(&document);
         return Ok(ExportDocument {
             title: document.metadata.title.clone(),
             body: document::rich_body(&document),
             page: document.metadata.page,
+            alignments,
         });
     }
 
@@ -120,10 +123,12 @@ fn read_export_document(path: &Path) -> Result<ExportDocument> {
         .unwrap_or("Documento")
         .to_owned();
 
+    let alignments = body.lines().map(|_| ParagraphAlignment::Left).collect();
     Ok(ExportDocument {
         title,
         body,
         page: PageProfile::default(),
+        alignments,
     })
 }
 
@@ -135,10 +140,12 @@ fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<Ex
 
     let members = document::project_chapters(library_documents, &current.metadata.project)?;
     if members.is_empty() {
+        let alignments = export_line_alignments(&current);
         return Ok(vec![ExportDocument {
             title: current.metadata.title.clone(),
             body: document::rich_body(&current),
             page: current.metadata.page,
+            alignments,
         }]);
     }
 
@@ -146,13 +153,47 @@ fn read_project_bundle(source: &Path, library_documents: &Path) -> Result<Vec<Ex
         .into_iter()
         .map(|(path, metadata)| {
             let document = document::read(&path)?;
+            let alignments = export_line_alignments(&document);
             Ok(ExportDocument {
                 title: metadata.title,
                 body: document::rich_body(&document),
                 page: document.metadata.page,
+                alignments,
             })
         })
         .collect()
+}
+
+fn export_line_alignments(document: &document::HsstDocument) -> Vec<ParagraphAlignment> {
+    let ranges = document::paragraph_alignments(document);
+    let mut result = Vec::new();
+    let mut offset = 0usize;
+    for segment in document.body.split_inclusive('\n') {
+        let line = segment.strip_suffix('\n').unwrap_or(segment);
+        let line_end = offset + line.len();
+        let alignment = ranges
+  .iter()
+  .rev()
+  .find(|(start, end, _)| *start <= offset && offset <= *end)
+  .or_else(|| ranges.iter().rev().find(|(start, end, _)| offset <= *start && *start <= line_end))
+  .map(|(_, _, alignment)| *alignment)
+  .unwrap_or_default();
+        result.push(alignment);
+        offset += segment.len();
+    }
+    if document.body.is_empty() {
+        result.push(ParagraphAlignment::Left);
+    }
+    result
+}
+
+fn docx_justification(alignment: ParagraphAlignment) -> &'static str {
+    match alignment {
+        ParagraphAlignment::Left => "left",
+        ParagraphAlignment::Center => "center",
+        ParagraphAlignment::Right => "right",
+        ParagraphAlignment::Justify => "both",
+    }
 }
 
 fn write_txt(target: &Path, documents: &[ExportDocument]) -> Result<()> {
@@ -223,13 +264,18 @@ fn write_docx(target: &Path, documents: &[ExportDocument]) -> Result<()> {
 
     for (index, document) in documents.iter().enumerate() {
         if documents.len() > 1 || index == 0 {
-            xml.push_str(&paragraph_xml(&document.title, Some("Heading1")));
+            xml.push_str(&paragraph_xml(&document.title, Some("Heading1"), ParagraphAlignment::Left));
         }
-        for line in document.body.lines() {
+        for (line_index, line) in document.body.lines().enumerate() {
+            let alignment = document
+                .alignments
+                .get(line_index)
+                .copied()
+                .unwrap_or_default();
             if let Some(heading) = line.strip_prefix("# ") {
-                xml.push_str(&paragraph_xml(heading, Some("Heading1")));
+                xml.push_str(&paragraph_xml(heading, Some("Heading1"), alignment));
             } else {
-                xml.push_str(&rich_paragraph_xml(line));
+                xml.push_str(&rich_paragraph_xml(line, alignment));
             }
         }
         if index + 1 < documents.len() {
@@ -256,19 +302,22 @@ fn section_properties_xml(page: PageProfile) -> String {
     )
 }
 
-fn paragraph_xml(text: &str, style: Option<&str>) -> String {
-    let style = style
-        .map(|style| format!(r#"<w:pPr><w:pStyle w:val="{style}"/></w:pPr>"#))
-        .unwrap_or_default();
+fn paragraph_xml(text: &str, style: Option<&str>, alignment: ParagraphAlignment) -> String {
+    let mut paragraph = String::from("<w:pPr>");
+    if let Some(style) = style {
+        paragraph.push_str(&format!(r#"<w:pStyle w:val="{style}"/>"#));
+    }
+    paragraph.push_str(&format!(r#"<w:jc w:val="{}"/>"#, docx_justification(alignment)));
+    paragraph.push_str("</w:pPr>");
     format!(
-        r#"<w:p>{style}<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+        r#"<w:p>{paragraph}<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
         xml_escape(text)
     )
 }
 
-fn rich_paragraph_xml(line: &str) -> String {
+fn rich_paragraph_xml(line: &str, alignment: ParagraphAlignment) -> String {
     let runs = crate::format::styled_runs(line);
-    let mut xml = String::from("<w:p>");
+    let mut xml = format!(r#"<w:p><w:pPr><w:jc w:val="{}"/></w:pPr>"#, docx_justification(alignment));
     for run in runs {
         let style = run.style;
         xml.push_str("<w:r>");
@@ -311,6 +360,189 @@ fn rich_paragraph_xml(line: &str) -> String {
     xml
 }
 
+#[derive(Clone)]
+struct PdfFragment {
+    text: String,
+    style: TextStyle,
+}
+
+#[derive(Clone)]
+struct PdfVisualLine {
+    fragments: Vec<PdfFragment>,
+    alignment: ParagraphAlignment,
+    justify: bool,
+}
+
+fn merge_pdf_chars(chars: &[(char, TextStyle)]) -> Vec<PdfFragment> {
+    let mut output = Vec::<PdfFragment>::new();
+    for &(ch, style) in chars {
+        if let Some(last) = output.last_mut()
+  && last.style == style
+        {
+  last.text.push(ch);
+        } else {
+  output.push(PdfFragment { text: ch.to_string(), style });
+        }
+    }
+    output
+}
+
+fn wrap_pdf_rich_line(
+    line: &str,
+    width: usize,
+    alignment: ParagraphAlignment,
+) -> Vec<PdfVisualLine> {
+    if line.is_empty() {
+        return vec![PdfVisualLine {
+  fragments: Vec::new(),
+  alignment,
+  justify: false,
+        }];
+    }
+    let mut chars = Vec::<(char, TextStyle)>::new();
+    for run in crate::format::styled_runs(line) {
+        chars.extend(run.text.chars().map(|ch| (ch, run.style)));
+    }
+    if chars.is_empty() {
+        return vec![PdfVisualLine {
+  fragments: Vec::new(),
+  alignment,
+  justify: false,
+        }];
+    }
+
+    let mut output = Vec::new();
+    let mut cursor = 0usize;
+    while cursor < chars.len() {
+        let remaining = chars.len() - cursor;
+        if remaining <= width {
+  output.push(PdfVisualLine {
+      fragments: merge_pdf_chars(&chars[cursor..]),
+      alignment,
+      justify: false,
+  });
+  break;
+        }
+        let hard_end = (cursor + width).min(chars.len());
+        let split = chars[cursor..hard_end]
+  .iter()
+  .rposition(|(ch, _)| ch.is_whitespace())
+  .filter(|relative| *relative > 0)
+  .map(|relative| cursor + relative)
+  .unwrap_or(hard_end);
+        output.push(PdfVisualLine {
+  fragments: merge_pdf_chars(&chars[cursor..split]),
+  alignment,
+  justify: alignment == ParagraphAlignment::Justify,
+        });
+        cursor = split;
+        while cursor < chars.len() && chars[cursor].0.is_whitespace() {
+  cursor += 1;
+        }
+    }
+    output
+}
+
+fn pdf_color(color: crate::format::PaletteColor) -> (f32, f32, f32) {
+    use crate::format::PaletteColor as C;
+    match color {
+        C::White => (0.92, 0.88, 0.75),
+        C::Red => (0.98, 0.29, 0.20),
+        C::Orange => (1.00, 0.50, 0.10),
+        C::Yellow => (0.98, 0.74, 0.18),
+        C::Green => (0.72, 0.73, 0.15),
+        C::Cyan => (0.56, 0.75, 0.49),
+        C::Blue => (0.51, 0.65, 0.60),
+        C::Purple => (0.83, 0.53, 0.61),
+        C::Gray => (0.57, 0.51, 0.45),
+    }
+}
+
+fn pdf_font_name(style: TextStyle) -> &'static str {
+    match (style.bold, style.italic) {
+        (true, true) => "F4",
+        (true, false) => "F2",
+        (false, true) => "F3",
+        (false, false) => "F1",
+    }
+}
+
+fn pdf_line_plain_width(line: &PdfVisualLine, char_width: f32) -> f32 {
+    line.fragments
+        .iter()
+        .map(|fragment| fragment.text.chars().count() as f32 * char_width)
+        .sum()
+}
+
+fn pdf_line_stream(
+    line: &PdfVisualLine,
+    y: f32,
+    margin_left: f32,
+    content_width: f32,
+    font_size: f32,
+) -> String {
+    let char_width = font_size * 0.60;
+    let plain_width = pdf_line_plain_width(line, char_width);
+    let mut x = match line.alignment {
+        ParagraphAlignment::Left | ParagraphAlignment::Justify => margin_left,
+        ParagraphAlignment::Center => margin_left + ((content_width - plain_width) / 2.0).max(0.0),
+        ParagraphAlignment::Right => margin_left + (content_width - plain_width).max(0.0),
+    };
+    let spaces = line
+        .fragments
+        .iter()
+        .map(|fragment| fragment.text.chars().filter(|ch| ch.is_whitespace()).count())
+        .sum::<usize>();
+    let extra_space = if line.justify && spaces > 0 {
+        ((content_width - plain_width) / spaces as f32).max(0.0)
+    } else {
+        0.0
+    };
+    let mut stream = String::new();
+
+    for fragment in &line.fragments {
+        let chars = fragment.text.chars().count() as f32;
+        let fragment_spaces = fragment.text.chars().filter(|ch| ch.is_whitespace()).count() as f32;
+        let width = chars * char_width + fragment_spaces * extra_space;
+        if let Some(background) = fragment.style.background {
+  let (r, g, b) = pdf_color(background);
+  stream.push_str(&format!(
+      "q {r:.3} {g:.3} {b:.3} rg {x:.2} {:.2} {width:.2} {:.2} re f Q\n",
+      y - 2.0,
+      font_size + 3.0
+  ));
+        }
+        let (r, g, b) = fragment
+  .style
+  .foreground
+  .map(pdf_color)
+  .unwrap_or((0.08, 0.08, 0.08));
+        let font = pdf_font_name(fragment.style);
+        stream.push_str(&format!(
+  "BT /{font} {font_size:.1} Tf {r:.3} {g:.3} {b:.3} rg {extra_space:.3} Tw 1 0 0 1 {x:.2} {y:.2} Tm ({}) Tj ET\n",
+  pdf_escape_text(&fragment.text)
+        ));
+        if fragment.style.underline {
+  stream.push_str(&format!(
+      "q {r:.3} {g:.3} {b:.3} RG 0.7 w {x:.2} {:.2} m {:.2} {:.2} l S Q\n",
+      y - 1.5,
+      x + width,
+      y - 1.5
+  ));
+        }
+        if fragment.style.strikethrough {
+  stream.push_str(&format!(
+      "q {r:.3} {g:.3} {b:.3} RG 0.7 w {x:.2} {:.2} m {:.2} {:.2} l S Q\n",
+      y + font_size * 0.34,
+      x + width,
+      y + font_size * 0.34
+  ));
+        }
+        x += width;
+    }
+    stream
+}
+
 fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
     let page = documents
         .first()
@@ -322,19 +554,25 @@ fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
     let content_height = (page_height - margin_top - margin_bottom).max(120.0);
     let font_size = 11.0f32;
     let line_height = 14.0f32;
-    let wrap_columns = ((content_width / (font_size * 0.54)).floor() as usize).max(20);
+    let wrap_columns = ((content_width / (font_size * 0.60)).floor() as usize).max(20);
     let lines_per_page = ((content_height / line_height).floor() as usize).max(8);
 
-    let mut lines = Vec::<String>::new();
-    for (index, document) in documents.iter().enumerate() {
-        if index > 0 {
-            lines.push(String::new());
+    let bold = TextStyle { bold: true, ..TextStyle::default() };
+    let mut lines = Vec::<PdfVisualLine>::new();
+    for (document_index, document) in documents.iter().enumerate() {
+        if document_index > 0 {
+  lines.push(PdfVisualLine { fragments: Vec::new(), alignment: ParagraphAlignment::Left, justify: false });
         }
-        lines.push(document.title.clone());
-        lines.push(String::new());
+        lines.push(PdfVisualLine {
+  fragments: vec![PdfFragment { text: document.title.clone(), style: bold }],
+  alignment: ParagraphAlignment::Left,
+  justify: false,
+        });
+        lines.push(PdfVisualLine { fragments: Vec::new(), alignment: ParagraphAlignment::Left, justify: false });
 
-        for line in document::body_without_markup(&document.body).lines() {
-            wrap_line(line, wrap_columns, &mut lines);
+        for (line_index, line) in document.body.lines().enumerate() {
+  let alignment = document.alignments.get(line_index).copied().unwrap_or_default();
+  lines.extend(wrap_pdf_rich_line(line, wrap_columns, alignment));
         }
     }
 
@@ -342,70 +580,61 @@ fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
         .chunks(lines_per_page)
         .map(Vec::from)
         .collect::<Vec<_>>();
-    let pages = if pages.is_empty() {
-        vec![Vec::new()]
-    } else {
-        pages
-    };
+    let pages = if pages.is_empty() { vec![Vec::new()] } else { pages };
 
     let page_count = pages.len();
-    let first_page_object = 4usize;
+    const FONT_COUNT: usize = 4;
+    let first_page_object = 3 + FONT_COUNT;
     let first_content_object = first_page_object + page_count;
     let mut objects = Vec::<Vec<u8>>::new();
 
     objects.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
-
     let kids = (0..page_count)
         .map(|index| format!("{} 0 R", first_page_object + index))
         .collect::<Vec<_>>()
         .join(" ");
     objects.push(format!("<< /Type /Pages /Count {page_count} /Kids [ {kids} ] >>").into_bytes());
-    objects.push(
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
-            .to_vec(),
-    );
+    for base_font in ["Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique"] {
+        objects.push(format!(
+  "<< /Type /Font /Subtype /Type1 /BaseFont /{base_font} /Encoding /WinAnsiEncoding >>"
+        ).into_bytes());
+    }
 
     for index in 0..page_count {
         objects.push(
-            format!(
-                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width:.2} {page_height:.2}] /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
-                first_content_object + index
-            )
-            .into_bytes(),
+  format!(
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width:.2} {page_height:.2}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents {} 0 R >>",
+      first_content_object + index
+  )
+  .into_bytes(),
         );
     }
 
     let start_y = page_height - margin_top - font_size;
     for page_lines in &pages {
-        let mut stream = format!(
-            "BT\n/F1 {font_size:.1} Tf\n{margin_left:.2} {start_y:.2} Td\n{line_height:.1} TL\n"
-        );
-        for line in page_lines {
-            stream.push('(');
-            stream.push_str(&pdf_escape_text(line));
-            stream.push_str(") Tj\nT*\n");
+        let mut stream = String::new();
+        for (index, line) in page_lines.iter().enumerate() {
+  let y = start_y - index as f32 * line_height;
+  stream.push_str(&pdf_line_stream(line, y, margin_left, content_width, font_size));
         }
-        stream.push_str("ET\n");
         objects.push(
-            format!(
-                "<< /Length {} >>\nstream\n{}endstream",
-                stream.len(),
-                stream
-            )
-            .into_bytes(),
+  format!(
+      "<< /Length {} >>\nstream\n{}endstream",
+      stream.len(),
+      stream
+  )
+  .into_bytes(),
         );
     }
 
     let mut pdf = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n".to_vec();
     let mut offsets = Vec::with_capacity(objects.len());
-
     for (index, object) in objects.iter().enumerate() {
         offsets.push(pdf.len());
         pdf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
         pdf.extend_from_slice(object);
         pdf.extend_from_slice(b"\nendobj\n");
     }
-
     let xref = pdf.len();
     pdf.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
     pdf.extend_from_slice(b"0000000000 65535 f \n");
@@ -414,33 +643,12 @@ fn write_pdf(target: &Path, documents: &[ExportDocument]) -> Result<()> {
     }
     pdf.extend_from_slice(
         format!(
-            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
-            objects.len() + 1
+  "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+  objects.len() + 1
         )
         .as_bytes(),
     );
-
     fs::write(target, pdf).with_context(|| format!("No se pudo escribir {}", target.display()))
-}
-
-fn wrap_line(line: &str, width: usize, output: &mut Vec<String>) {
-    if line.trim().is_empty() {
-        output.push(String::new());
-        return;
-    }
-
-    let mut current = String::new();
-    for word in line.split_whitespace() {
-        let extra = usize::from(!current.is_empty());
-        if current.chars().count() + word.chars().count() + extra > width && !current.is_empty() {
-            output.push(std::mem::take(&mut current));
-        }
-        if !current.is_empty() {
-            current.push(' ');
-        }
-        current.push_str(word);
-    }
-    output.push(current);
 }
 
 fn pdf_escape_text(text: &str) -> String {
@@ -539,6 +747,7 @@ mod tests {
     fn rich_markup_becomes_word_runs() {
         let xml = rich_paragraph_xml(
             "Uno **dos** *tres* ==cuatro== __cinco__ {{fg:red}}seis{{/fg}} {{bg:blue}}siete{{/bg}}",
+            ParagraphAlignment::Justify,
         );
         assert!(xml.contains("<w:b/>"));
         assert!(xml.contains("<w:i/>"));
@@ -549,6 +758,7 @@ mod tests {
         assert!(!xml.contains("**"));
         assert!(!xml.contains("{{fg:"));
         assert!(!xml.contains("{{bg:"));
+        assert!(xml.contains(r#"<w:jc w:val="both"/>"#));
     }
 
     #[test]
@@ -565,6 +775,7 @@ mod tests {
             title: "Capítulo 1".into(),
             body: "Texto **fuerte**, *cursivo* y ==destacado==.".into(),
             page: PageProfile::default(),
+            alignments: vec![ParagraphAlignment::Center],
         };
 
         let docx = root.join("test.docx");
