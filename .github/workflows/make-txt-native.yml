@@ -1,0 +1,76 @@
+name: Make TXT native
+
+on:
+  push:
+    paths:
+      - '.github/workflows/make-txt-native.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Make TXT native with sidecar metadata
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def once(s, old, new, label):
+              if old not in s:
+                  raise SystemExit(f'missing marker: {label}')
+              return s.replace(old, new, 1)
+
+          p = Path('src/document.rs')
+          s = p.read_text(encoding='utf-8')
+
+          s = once(
+              s,
+              '''pub fn is_native_path(path: &Path) -> bool {\n    path.extension()\n        .and_then(|extension| extension.to_str())\n        .is_some_and(|extension| extension.eq_ignore_ascii_case(EXTENSION))\n}\n''',
+              '''pub fn is_native_path(path: &Path) -> bool {\n    path.extension()\n        .and_then(|extension| extension.to_str())\n        .is_some_and(|extension| {\n            extension.eq_ignore_ascii_case(EXTENSION)\n                || extension.eq_ignore_ascii_case(DEFAULT_TEXT_EXTENSION)\n        })\n}\n\npub fn is_legacy_container_path(path: &Path) -> bool {\n    path.extension()\n        .and_then(|extension| extension.to_str())\n        .is_some_and(|extension| extension.eq_ignore_ascii_case(EXTENSION))\n}\n\nfn sidecar_path(path: &Path) -> PathBuf {\n    let name = path\n        .file_name()\n        .and_then(|name| name.to_str())\n        .unwrap_or("document.txt");\n    path.with_file_name(format!("{name}.zen.json"))\n}\n''',
+              'native txt path',
+          )
+
+          s = once(
+              s,
+              'let mut target = native_path_for_name(directory, &safe_title);',
+              'let mut target = default_path_for_name(directory, &safe_title);',
+              'import target txt',
+          )
+          s = s.replace(
+              'let candidate = native_path_for_name(directory, &format!("{safe_title} ({index})"));',
+              'let candidate = default_path_for_name(directory, &format!("{safe_title} ({index})"));',
+          )
+
+          old_read = '''pub fn read(path: &Path) -> Result<HsstDocument> {\n    let bytes = fs::read(path).with_context(|| format!("No se pudo leer {}", path.display()))?;\n    if bytes.starts_with(b"PK\\x03\\x04") {\n        return read_container(path);\n    }\n    let raw = String::from_utf8(bytes).with_context(|| {\n        format!(\n            "{} no es UTF-8 ni un contenedor HSST válido",\n            path.display()\n        )\n    })?;\n    Ok(parse(&raw, path))\n}\n'''
+          new_read = '''pub fn read(path: &Path) -> Result<HsstDocument> {\n    let bytes = fs::read(path).with_context(|| format!("No se pudo leer {}", path.display()))?;\n    if bytes.starts_with(b"PK\\x03\\x04") {\n        return read_container(path);\n    }\n    let raw = String::from_utf8(bytes)\n        .with_context(|| format!("{} no es un archivo de texto UTF-8 válido", path.display()))?;\n    let mut document = parse(&raw, path);\n\n    if path\n        .extension()\n        .and_then(|extension| extension.to_str())\n        .is_some_and(|extension| extension.eq_ignore_ascii_case(DEFAULT_TEXT_EXTENSION))\n        && let Ok(sidecar_raw) = fs::read_to_string(sidecar_path(path))\n        && let Ok(sidecar) = serde_json::from_str::<Value>(&sidecar_raw)\n    {\n        if let Some(manifest) = sidecar.get("manifest") {\n            document.metadata = metadata_from_manifest(manifest, path);\n        }\n        if let Some(formatting) = sidecar.get("formatting") {\n            document.formatting = sanitize_formatting(formatting, document.body.len());\n        }\n    }\n\n    Ok(document)\n}\n'''
+          s = once(s, old_read, new_read, 'read txt sidecar')
+
+          write_start = '''pub fn write(path: &Path, document: &HsstDocument) -> Result<()> {\n    if let Some(parent) = path.parent() {\n        fs::create_dir_all(parent)?;\n    }\n\n    let plain = &document.body;\n    let formatting = sanitize_formatting(&document.formatting, document.body.len());\n    let manifest = manifest_json(&document.metadata);\n    let temporary = path.with_extension("hsst.tmp");\n    let backup = path.with_extension("hsst.bak");\n'''
+          write_new = '''pub fn write(path: &Path, document: &HsstDocument) -> Result<()> {\n    if let Some(parent) = path.parent() {\n        fs::create_dir_all(parent)?;\n    }\n\n    let plain = &document.body;\n    let formatting = sanitize_formatting(&document.formatting, document.body.len());\n    let manifest = manifest_json(&document.metadata);\n\n    if !is_legacy_container_path(path) {\n        fs::write(path, plain.as_bytes())\n            .with_context(|| format!("No se pudo guardar {}", path.display()))?;\n        let sidecar = json!({\n            "version": FORMAT_VERSION,\n            "manifest": manifest,\n            "formatting": formatting\n        });\n        fs::write(\n            sidecar_path(path),\n            serde_json::to_string_pretty(&sidecar)?.as_bytes(),\n        )?;\n        return Ok(());\n    }\n\n    let temporary = path.with_extension("hsst.tmp");\n    let backup = path.with_extension("hsst.bak");\n'''
+          s = once(s, write_start, write_new, 'write txt sidecar')
+          p.write_text(s, encoding='utf-8')
+
+          # Keep autocomplete, but suppress the extra information popup that was
+          # contributing visual clutter. Suggestions themselves remain enabled.
+          p = Path('src/editor.rs')
+          s = p.read_text(encoding='utf-8')
+          marker = 'auto-completion = true\nend-of-line-diagnostics = "disable"'
+          if marker in s and 'auto-info = false' not in s:
+              s = s.replace(marker, 'auto-completion = true\nauto-info = false\nend-of-line-diagnostics = "disable"', 1)
+          p.write_text(s, encoding='utf-8')
+
+      - name: Commit source changes to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/document.rs src/editor.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: use TXT as native document with formatting sidecar"
+          git push origin HEAD:main
