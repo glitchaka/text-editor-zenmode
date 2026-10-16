@@ -25,6 +25,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Repair F2 borrow conflict
+        shell: pwsh
+        run: |
+          $path = "src/app.rs"
+          $text = Get-Content $path -Raw
+          $oldStart = @'
+            if let Some(editor) = self.editor.as_mut() {
+                if native {
+'@
+          $newStart = @'
+            let pending_style_snapshot = native.then(|| self.current_style_snapshot());
+            if let Some(editor) = self.editor.as_mut() {
+                if native {
+'@
+          if ($text.Contains($oldStart)) {
+            $text = $text.Replace($oldStart, $newStart)
+          }
+          $oldEnd = @'
+                if native {
+                    self.pending_style_snapshot = self.current_style_snapshot();
+                }
+                let _ = editor.send_key(key, editor.win32_input());
+'@
+          $newEnd = @'
+                if let Some(snapshot) = pending_style_snapshot {
+                    self.pending_style_snapshot = snapshot;
+                }
+                let _ = editor.send_key(key, editor.win32_input());
+'@
+          if ($text.Contains($oldEnd)) {
+            $text = $text.Replace($oldEnd, $newEnd)
+          }
+          Set-Content -Path $path -Value $text -NoNewline -Encoding utf8
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "fix: resolve F2 formatting borrow conflict"
+            git push origin HEAD:main
+          }
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -51,11 +94,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-
           $source = "target/$env:TARGET/release/zen-editor.exe"
           $target = "dist/$env:EXE_NAME"
           Copy-Item $source $target
-
           $hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $env:EXE_NAME" | Set-Content "$target.sha256" -Encoding ascii
 
