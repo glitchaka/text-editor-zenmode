@@ -11,8 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Patch functional issues
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
           p = Path('src/app.rs')
           s = p.read_text(encoding='utf-8')
@@ -79,9 +80,11 @@ jobs:
           s = s.replace(old_tick, new_tick, 1)
 
           p.write_text(s, encoding='utf-8')
+          PY
       - name: Format
         run: cargo fmt --all
       - name: Commit
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
