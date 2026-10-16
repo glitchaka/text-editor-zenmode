@@ -1,0 +1,31 @@
+name: Correct Zen Editor branding
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-zen-editor-branding.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/app.rs')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('title: "Helix SST";', 'title: "Zen Editor";', 1)
+          p.write_text(s, encoding='utf-8')
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: correct Zen Editor window branding"
+          git push
