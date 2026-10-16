@@ -24,7 +24,7 @@ impl LibraryPaths {
 }
 
 pub fn default_root() -> PathBuf {
-    if let Some(path) = std::env::var_os("HELIX_SST_LIBRARY")
+    if let Some(path) = std::env::var_os("ZEN_EDITOR_LIBRARY")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
     {
@@ -36,7 +36,7 @@ pub fn default_root() -> PathBuf {
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
     {
-        return profile.join("Documents").join("Helix SST");
+        return profile.join("Documents").join("Zen Editor");
     }
 
     #[cfg(not(windows))]
@@ -44,12 +44,12 @@ pub fn default_root() -> PathBuf {
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
     {
-        return home.join("Documents").join("Helix SST");
+        return home.join("Documents").join("Zen Editor");
     }
 
     std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
-        .join("Helix SST")
+        .join("Zen Editor")
 }
 
 #[cfg(test)]
@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn library_has_stable_subdirectories() {
-        let root = PathBuf::from("X:/example/Helix SST");
+        let root = PathBuf::from("X:/example/Zen Editor");
         let paths = LibraryPaths {
             documents: root.join("Documentos"),
             exports: root.join("exports"),
