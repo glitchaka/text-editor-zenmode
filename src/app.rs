@@ -19,11 +19,11 @@ use windows_sys::Win32::{
     Foundation::HWND,
     System::Threading::{AttachThreadInput, GetCurrentThreadId},
     UI::{
-        Input::KeyboardAndMouse::{GetAsyncKeyState, ReleaseCapture, SetActiveWindow, SetFocus},
+        Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
-            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HTCAPTION,
-            HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW,
-            SetForegroundWindow, SetWindowPos, WM_NCLBUTTONDOWN,
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
+            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
+            SetWindowPos, WM_NCLBUTTONDOWN,
         },
     },
 };
@@ -88,7 +88,7 @@ slint::slint! {
         min-height: 340px;
         no-frame: true;
         resize-border-width: 7px;
-        background: #111619;
+        background: #282828;
 
         in property <image> terminal-image;
         in property <string> version-text: "v0.0.0";
@@ -110,7 +110,6 @@ slint::slint! {
         callback key-input(string, bool, bool, bool);
         callback toggle-zen();
         callback close-window();
-        callback begin-window-drag();
         callback start-pomodoro();
         callback format-action(string, string);
         callback insert-symbol(string);
@@ -857,12 +856,7 @@ impl TerminalModel {
 
         let cols = (((self.width as f32 - left_pad * 2.0) / cell_width).floor() as i32)
             .clamp(20, 300) as u16;
-        let scale = self.scale.max(0.5);
-        let bottom_pad = if self.zen_engaged() && !self.pomodoro_active {
-            (PAD_Y * scale).round()
-        } else {
-            ((PAD_Y + ISLAND_HEIGHT + CONTENT_TOP_GAP) * scale).round()
-        };
+        let bottom_pad = 0.0;
         let rows = (((self.height as f32 - top_pad - bottom_pad) / cell_height).floor() as i32)
             .clamp(8, 160) as u16;
         (cols, rows)
@@ -2335,14 +2329,6 @@ fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
 }
 
 #[cfg(windows)]
-unsafe fn begin_native_window_drag(hwnd: HWND) {
-    unsafe {
-        ReleaseCapture();
-        SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
-    }
-}
-
-#[cfg(windows)]
 unsafe fn focus_native_window(hwnd: HWND) {
     unsafe {
         let foreground = GetForegroundWindow();
@@ -2432,19 +2418,6 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             };
             if let Some(ui) = weak.upgrade() {
                 ui.set_zen_active(zen);
-            }
-        });
-    }
-    {
-        let weak = ui.as_weak();
-        ui.on_begin_window_drag(move || {
-            if let Some(ui) = weak.upgrade() {
-                #[cfg(windows)]
-                if let Some(hwnd) = slint_hwnd(&ui) {
-                    unsafe {
-                        begin_native_window_drag(hwnd);
-                    }
-                }
             }
         });
     }
