@@ -10,85 +10,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch functional issues
+      - name: Patch F2 redraw and drag
         shell: bash
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
-          p = Path('src/app.rs')
-          s = p.read_text(encoding='utf-8')
-
-          old_drag = '''        // Native drag target: do not rely on Slint WindowMoveArea for the frameless Win32 window.
-        window-drag-strip := TouchArea {
-            x: 7px;
-            y: 7px;
-            width: root.width - 14px;
-            height: 22px;
-            enabled: !root.zen-active
-                && !root.font-palette-open
-                && !root.highlight-palette-open
-                && !root.symbols-open
-                && !root.page-menu-open;
-            pointer-event(event) => {
-                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
-                    root.begin-window-drag();
-                    EventResult.accept
-                } else {
-                    EventResult.reject
-                }
-            }
-        }
-'''
-          new_drag = '''        // Dedicated frameless titlebar. Slint/Winit owns the drag gesture directly;
-        // this avoids routing a mouse-down through the terminal FocusScope or Win32 messages.
-        window-drag-strip := WindowMoveArea {
-            x: 7px;
-            y: 7px;
-            width: root.width - 14px;
-            height: 24px;
-            enabled: !root.zen-active
-                && !root.symbols-open
-                && !root.page-menu-open;
-        }
-'''
-          if old_drag not in s:
-              raise SystemExit('drag block not found')
-          s = s.replace(old_drag, new_drag, 1)
-
-          old_tick = '''                } else if modified.is_some() && modified != self.source_modified {
-                    self.source_modified = modified;
-                    if let Err(error) = editor.refresh_after_formatting() {
-                        self.launcher.message =
-                            Some(format!("No se pudo refrescar el formato: {error}"));
-                    }
-                }
-'''
-          new_tick = '''                } else if modified.is_some() && modified != self.source_modified {
-                    self.source_modified = modified;
-                    // F2 formatting is applied by the prose LSP directly to the HSST
-                    // container. The terminal text itself does not necessarily change,
-                    // so force our renderer to rebuild the native-format overlay now.
-                    self.dirty = true;
-                    if let Err(error) = editor.refresh_after_formatting() {
-                        self.launcher.message =
-                            Some(format!("No se pudo refrescar el formato: {error}"));
-                    }
-                }
-'''
-          if old_tick not in s:
-              raise SystemExit('tick block not found')
-          s = s.replace(old_tick, new_tick, 1)
-
-          p.write_text(s, encoding='utf-8')
+          p=Path('src/app.rs')
+          t=p.read_text(encoding='utf-8')
+          old='''        // Native drag target: do not rely on Slint WindowMoveArea for the frameless Win32 window.\n        window-drag-strip := TouchArea {\n            x: 7px;\n            y: 7px;\n            width: root.width - 14px;\n            height: 22px;\n            enabled: !root.zen-active\n                && !root.font-palette-open\n                && !root.highlight-palette-open\n                && !root.symbols-open\n                && !root.page-menu-open;\n            pointer-event(event) => {\n                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {\n                    root.begin-window-drag();\n                    EventResult.accept\n                } else {\n                    EventResult.reject\n                }\n            }\n        }\n'''
+          new='''        // Dedicated frameless titlebar handled by Slint/Winit.\n        window-drag-strip := WindowMoveArea {\n            x: 7px;\n            y: 7px;\n            width: root.width - 14px;\n            height: 24px;\n            enabled: !root.zen-active\n                && !root.symbols-open\n                && !root.page-menu-open;\n        }\n'''
+          if old not in t:
+              raise SystemExit('drag target missing')
+          t=t.replace(old,new,1)
+          old='''                } else if modified.is_some() && modified != self.source_modified {\n                    self.source_modified = modified;\n                    if let Err(error) = editor.refresh_after_formatting() {\n                        self.launcher.message =\n                            Some(format!("No se pudo refrescar el formato: {error}"));\n                    }\n                }\n'''
+          new='''                } else if modified.is_some() && modified != self.source_modified {\n                    self.source_modified = modified;\n                    // F2 changes formatting.json without necessarily changing terminal text.\n                    // Force the HSST overlay to be rebuilt immediately.\n                    self.dirty = true;\n                    if let Err(error) = editor.refresh_after_formatting() {\n                        self.launcher.message =\n                            Some(format!("No se pudo refrescar el formato: {error}"));\n                    }\n                }\n'''
+          if old not in t:
+              raise SystemExit('F2 redraw target missing')
+          t=t.replace(old,new,1)
+          p.write_text(t,encoding='utf-8',newline='\n')
           PY
-      - name: Format
-        run: cargo fmt --all
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all
       - name: Commit
         shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name glitchaka
+          git config user.email 82622846+glitchaka@users.noreply.github.com
           git add src/app.rs
-          git diff --cached --quiet && exit 0
-          git commit -m "fix: redraw F2 formatting and restore window dragging"
-          git push
+          git commit -m 'fix: redraw F2 formatting and restore drag'
+          git push origin HEAD:main
