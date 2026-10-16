@@ -155,23 +155,23 @@ slint::slint! {
                             && root.terminal-cell-has-text(self.mouse-x / 1px, self.mouse-y / 1px);
                         if (root.terminal-selecting) {
                             root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 0);
-                            accept
+                            EventResult.accept
                         } else {
                             // Do not consume blank client area: WindowMoveArea underneath
                             // remains the native drag target across the whole surface.
-                            reject
+                            EventResult.reject
                         }
                     } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up && root.terminal-selecting) {
                         root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 1);
                         root.terminal-selecting = false;
-                        accept
+                        EventResult.accept
                     } else if (event.kind == PointerEventKind.cancel) {
                         root.terminal-selecting = false;
-                        reject
+                        EventResult.reject
                     } else if (root.terminal-selecting) {
-                        accept
+                        EventResult.accept
                     } else {
-                        reject
+                        EventResult.reject
                     }
                 }
                 moved => {
@@ -182,9 +182,9 @@ slint::slint! {
                 scroll-event(event) => {
                     if (root.editor-active) {
                         root.terminal-scroll(self.mouse-x / 1px, self.mouse-y / 1px, event.delta-y / 1px);
-                        accept
+                        EventResult.accept
                     } else {
-                        reject
+                        EventResult.reject
                     }
                 }
             }

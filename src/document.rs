@@ -1373,7 +1373,7 @@ pub fn set_project_assignment(path: &Path, project: &str, chapter: Option<u32>) 
     if let Some(chapter) = chapter {
         document.metadata.kind = "chapter".into();
         if document.metadata.order == 0 {
-            document.metadata.order = chapter.saturating_mul(10);
+            document.metadata.order = i64::from(chapter).saturating_mul(10);
         }
     } else if document.metadata.kind.eq_ignore_ascii_case("chapter") {
         document.metadata.kind = "document".into();
