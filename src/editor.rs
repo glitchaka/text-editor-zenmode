@@ -614,7 +614,7 @@ true-color = true
 cursorline = true
 bufferline = "multiple"
 color-modes = true
-auto-completion = true
+auto-completion = false
 end-of-line-diagnostics = "disable"
 
 [editor.inline-diagnostics]
@@ -1364,6 +1364,13 @@ mod tests {
                 .get("line-number")
                 .and_then(toml::Value::as_str),
             Some("absolute")
+        );
+        assert_eq!(
+            editor_table
+                .get("auto-completion")
+                .and_then(toml::Value::as_bool),
+            Some(false),
+            "el autocompletado emergente debe permanecer desactivado"
         );
 
         let keys = parsed
