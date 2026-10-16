@@ -2343,15 +2343,26 @@ unsafe extern "system" {
 
 #[cfg(windows)]
 unsafe fn enable_native_rounded_corners(hwnd: HWND) {
-    // Windows 11 DWM: DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND.
+    // Windows 11 DWM: keep native rounded corners, but suppress the system
+    // border itself. DWMWA_COLOR_NONE is explicitly supported for this
+    // rounded-without-border case; no transparency mask or fake clipping.
     const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+    const DWMWA_BORDER_COLOR: u32 = 34;
     const DWMWCP_ROUND: u32 = 2;
+    const DWMWA_COLOR_NONE: u32 = 0xFFFF_FFFE;
     let preference = DWMWCP_ROUND;
+    let border = DWMWA_COLOR_NONE;
     unsafe {
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWA_WINDOW_CORNER_PREFERENCE,
             (&preference as *const u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            (&border as *const u32).cast(),
             std::mem::size_of::<u32>() as u32,
         );
     }
@@ -2529,6 +2540,7 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     if let Some(hwnd) = slint_hwnd(&ui) {
         unsafe {
             enable_native_rounded_corners(hwnd);
+            focus_native_window(hwnd);
         }
     }
 
@@ -2567,6 +2579,10 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
                 if let Some(hwnd) = slint_hwnd(&ui) {
                     unsafe {
                         set_zen_topmost(hwnd, zen);
+                        if !zen {
+                            enable_native_rounded_corners(hwnd);
+                            focus_native_window(hwnd);
+                        }
                     }
                 }
                 last_zen.set(zen);
