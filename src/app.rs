@@ -21,9 +21,9 @@ use windows_sys::Win32::{
     UI::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
-            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
-            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
-            SetWindowPos,
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsZoomed,
+            HWND_NOTOPMOST, HWND_TOPMOST, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow, SetWindowPos, ShowWindow,
         },
     },
 };
@@ -109,6 +109,8 @@ slint::slint! {
         in property <string> margin-bottom-text: "25";
         callback key-input(string, bool, bool, bool);
         callback toggle-zen();
+        callback minimize-window();
+        callback maximize-window();
         callback close-window();
         callback start-pomodoro();
         callback format-action(string, string);
@@ -171,7 +173,7 @@ slint::slint! {
                 || root.font-palette-open
                 || root.highlight-palette-open
                 || root.page-menu-open;
-            width: 196px;
+            width: 264px;
             height: 34px;
             x: root.width - self.width - 14px;
             y: root.height - self.height - 7px;
@@ -190,7 +192,7 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 5px; y: 3px; width: 112px; height: 28px;
+                x: 5px; y: 3px; width: 100px; height: 28px;
                 border-radius: 9px;
                 background: pomodoro-touch.pressed
                     ? #29384b
@@ -212,7 +214,7 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 121px; y: 3px; width: 32px; height: 28px;
+                x: 109px; y: 3px; width: 32px; height: 28px;
                 border-radius: 9px;
                 background: symbol-menu.pressed
                     ? #29384b
@@ -234,21 +236,30 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 157px; y: 1px; width: 38px; height: 32px;
+                x: 145px; y: 3px; width: 32px; height: 28px; border-radius: 9px;
+                background: min-touch.pressed ? #29384b : min-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "—"; color: #9aa7b8; font-size: 14px; horizontal-alignment: center; vertical-alignment: center; }
+                min-touch := TouchArea { mouse-cursor: pointer; clicked => { root.minimize-window(); } }
+            }
+            Rectangle {
+                x: 181px; y: 3px; width: 32px; height: 28px; border-radius: 9px;
+                background: max-touch.pressed ? #29384b : max-touch.has-hover ? #172334 : transparent;
+                Text { width: 100%; height: 100%; text: "□"; color: #9aa7b8; font-size: 15px; horizontal-alignment: center; vertical-alignment: center; }
+                max-touch := TouchArea { mouse-cursor: pointer; clicked => { root.maximize-window(); } }
+            }
+            Rectangle {
+                x: 217px; y: 1px; width: 42px; height: 32px;
                 border-radius: 10px;
                 background: close-touch.pressed
                     ? rgb(62, 23, 36)
                     : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
                 Path {
-                    x: 10px; y: 8px; width: 18px; height: 18px;
+                    x: 12px; y: 8px; width: 18px; height: 18px;
                     commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
                     stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
                     stroke-width: 2px; stroke-line-cap: round;
                 }
-                close-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.close-window(); }
-                }
+                close-touch := TouchArea { mouse-cursor: pointer; clicked => { root.close-window(); } }
             }
         }
 
@@ -1519,8 +1530,9 @@ impl TerminalModel {
     }
 
     fn page_wrap_columns(&self) -> Option<usize> {
-        let current = self.current_file.as_deref()?;
-        document::is_supported_text_path(current).then(|| self.page_profile.text_columns())
+        // Paragraph structure belongs to the document. Display width must never
+        // rewrite prose into hard-wrapped physical lines.
+        None
     }
 
     fn helix_cursor_position(&self) -> Option<(usize, usize)> {
@@ -2379,6 +2391,25 @@ fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
 }
 
 #[cfg(windows)]
+unsafe fn minimize_native_window(hwnd: HWND) {
+    unsafe {
+        ShowWindow(hwnd, SW_MINIMIZE);
+    }
+}
+
+#[cfg(windows)]
+unsafe fn toggle_maximize_native_window(hwnd: HWND) {
+    unsafe {
+        if IsZoomed(hwnd) != 0 {
+            ShowWindow(hwnd, SW_RESTORE);
+            enable_native_rounded_corners(hwnd);
+        } else {
+            ShowWindow(hwnd, SW_MAXIMIZE);
+        }
+    }
+}
+
+#[cfg(windows)]
 unsafe fn focus_native_window(hwnd: HWND) {
     unsafe {
         let foreground = GetForegroundWindow();
@@ -2505,6 +2536,28 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             model
                 .borrow_mut()
                 .update_page(action.as_str(), value.as_str());
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_minimize_window(move || {
+            if let Some(ui) = weak.upgrade() {
+                #[cfg(windows)]
+                if let Some(hwnd) = slint_hwnd(&ui) {
+                    unsafe { minimize_native_window(hwnd); }
+                }
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_maximize_window(move || {
+            if let Some(ui) = weak.upgrade() {
+                #[cfg(windows)]
+                if let Some(hwnd) = slint_hwnd(&ui) {
+                    unsafe { toggle_maximize_native_window(hwnd); }
+                }
+            }
         });
     }
     {
