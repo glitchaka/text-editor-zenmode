@@ -1,0 +1,95 @@
+name: Restore completion and formatting LSP
+
+on:
+  push:
+    paths:
+      - .github/workflows/restore-completion-formatting-lsp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reconnect completion and semantic formatting
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/spell.rs')
+          s = p.read_text(encoding='utf-8')
+
+          old = '''                                "textDocumentSync": 1,
+                                "codeActionProvider": true,
+                                "executeCommandProvider": {
+'''
+          new = '''                                "textDocumentSync": 1,
+                                "completionProvider": {
+                                    "triggerCharacters": []
+                                },
+                                "semanticTokensProvider": {
+                                    "legend": {
+                                        "tokenTypes": crate::format::SEMANTIC_TOKEN_TYPES,
+                                        "tokenModifiers": []
+                                    },
+                                    "full": true
+                                },
+                                "codeActionProvider": true,
+                                "executeCommandProvider": {
+'''
+          if old not in s:
+              raise SystemExit('capabilities marker not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            "textDocument/codeAction" => {
+                if let Some(id) = id {
+                    let actions =
+                        server.code_actions(message.get("params").unwrap_or(&Value::Null));
+                    send_response(&mut output, id, Value::Array(actions))?;
+                }
+            }
+            "workspace/executeCommand" => {
+'''
+          new = '''            "textDocument/completion" => {
+                if let Some(id) = id {
+                    let items = server.completions(message.get("params").unwrap_or(&Value::Null));
+                    send_response(&mut output, id, Value::Array(items))?;
+                }
+            }
+            "textDocument/semanticTokens/full" => {
+                if let Some(id) = id {
+                    let data = server.semantic_tokens(message.get("params").unwrap_or(&Value::Null));
+                    send_response(&mut output, id, json!({ "data": data }))?;
+                }
+            }
+            "textDocument/codeAction" => {
+                if let Some(id) = id {
+                    let actions =
+                        server.code_actions(message.get("params").unwrap_or(&Value::Null));
+                    send_response(&mut output, id, Value::Array(actions))?;
+                }
+            }
+            "workspace/executeCommand" => {
+'''
+          if old not in s:
+              raise SystemExit('request handler marker not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+          cargo fmt --all
+
+      - name: Commit source change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/spell.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: restore autocomplete and semantic formatting requests"
+          git pull --rebase origin main
+          git push origin HEAD:main
