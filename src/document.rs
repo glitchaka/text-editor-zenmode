@@ -189,6 +189,8 @@ fn import_docx_body(path: &Path) -> Result<(String, Value)> {
 
     let mut rich = String::new();
     let mut cursor = 0usize;
+    let mut plain_offset = 0usize;
+    let mut paragraph_alignments = Vec::<(usize, usize, crate::format::ParagraphAlignment)>::new();
     while let Some(relative) = xml[cursor..].find("<w:p") {
         let start = cursor + relative;
         let Some(open_end_rel) = xml[start..].find('>') else {
@@ -202,7 +204,14 @@ fn import_docx_body(path: &Path) -> Result<(String, Value)> {
         let paragraph = &xml[start..end];
         if !rich.is_empty() {
             rich.push('\n');
+            plain_offset += 1;
         }
+        let paragraph_plain_start = plain_offset;
+        let mut paragraph_plain_len = 0usize;
+        let paragraph_alignment = xml_attr_after(paragraph, "<w:jc", "w:val")
+            .as_deref()
+            .and_then(crate::format::ParagraphAlignment::parse)
+            .unwrap_or_default();
 
         let paragraph_style =
             xml_attr_after(paragraph, "<w:pStyle", "w:val").unwrap_or_default();
@@ -210,10 +219,13 @@ fn import_docx_body(path: &Path) -> Result<(String, Value)> {
             || paragraph_style.eq_ignore_ascii_case("Title")
         {
             rich.push_str("# ");
+            paragraph_plain_len += 2;
         } else if paragraph_style.eq_ignore_ascii_case("Heading2") {
             rich.push_str("## ");
+            paragraph_plain_len += 3;
         } else if paragraph_style.eq_ignore_ascii_case("Heading3") {
             rich.push_str("### ");
+            paragraph_plain_len += 4;
         }
 
         let mut run_cursor = 0usize;
@@ -245,13 +257,21 @@ fn import_docx_body(path: &Path) -> Result<(String, Value)> {
                     background,
                 };
                 rich.push_str(&encode_styled_segment(&text, style));
+                paragraph_plain_len += text.len();
             }
             run_cursor = run_end + "</w:r>".len();
         }
+        let paragraph_plain_end = paragraph_plain_start + paragraph_plain_len;
+        if paragraph_alignment != crate::format::ParagraphAlignment::Left {
+            paragraph_alignments.push((paragraph_plain_start, paragraph_plain_end, paragraph_alignment));
+        }
+        plain_offset = paragraph_plain_end;
         cursor = end + "</w:p>".len();
     }
 
-    Ok(formatting_payload(&rich))
+    let (body, formatting) = formatting_payload(&rich);
+    let runs = decode_formatting_runs(&formatting);
+    Ok((body, encode_formatting_parts(&runs, &paragraph_alignments)))
 }
 
 fn xml_attr_after(segment: &str, tag: &str, attr: &str) -> Option<String> {
