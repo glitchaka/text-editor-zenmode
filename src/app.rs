@@ -462,6 +462,21 @@ impl Launcher {
     }
 }
 
+#[derive(Clone, Debug)]
+struct StyleSnapshot {
+    formatting: serde_json::Value,
+    page: crate::page::PageProfile,
+}
+
+impl StyleSnapshot {
+    fn from_document(document: &document::HsstDocument) -> Self {
+        Self {
+            formatting: document.formatting.clone(),
+            page: document.metadata.page,
+        }
+    }
+}
+
 struct TerminalModel {
     parser: vt100::Parser,
     font: Font,
@@ -485,6 +500,9 @@ struct TerminalModel {
     pomodoro_deadline: Option<Instant>,
     command_capture: Option<String>,
     page_profile: crate::page::PageProfile,
+    pending_style_snapshot: Option<StyleSnapshot>,
+    style_undo: Vec<StyleSnapshot>,
+    style_redo: Vec<StyleSnapshot>,
 }
 
 impl TerminalModel {
@@ -538,6 +556,9 @@ impl TerminalModel {
             pomodoro_deadline: None,
             command_capture: None,
             page_profile: crate::page::PageProfile::default(),
+            pending_style_snapshot: None,
+            style_undo: Vec::new(),
+            style_redo: Vec::new(),
         };
 
         if let Some(file) = file_to_open {
@@ -865,6 +886,76 @@ impl TerminalModel {
         self.parser = vt100::Parser::new(rows, cols, 2_000);
     }
 
+    fn current_style_snapshot(&self) -> Option<StyleSnapshot> {
+        let path = self.current_file.as_ref()?;
+        if !document::is_native_path(path) {
+            return None;
+        }
+        document::read(path)
+            .ok()
+            .map(|document| StyleSnapshot::from_document(&document))
+    }
+
+    fn restore_style_snapshot(&mut self, snapshot: StyleSnapshot, redo: bool) -> bool {
+        let Some(path) = self.current_file.clone() else {
+            return false;
+        };
+        if !document::is_native_path(&path) {
+            return false;
+        }
+        let Ok(mut current_document) = document::read(&path) else {
+            return false;
+        };
+        let current = StyleSnapshot::from_document(&current_document);
+        current_document.formatting = snapshot.formatting.clone();
+        current_document.metadata.page = snapshot.page;
+        if document::write(&path, &current_document).is_err() {
+            return false;
+        }
+        if redo {
+            self.style_undo.push(current);
+        } else {
+            self.style_redo.push(current);
+        }
+        self.page_profile = snapshot.page;
+        self.source_modified = fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        self.pending_style_snapshot = None;
+        self.dirty = true;
+        true
+    }
+
+    fn undo_style_change(&mut self) -> bool {
+        if self.helix_is_modified() {
+            return false;
+        }
+        let Some(snapshot) = self.style_undo.pop() else {
+            return false;
+        };
+        if self.restore_style_snapshot(snapshot.clone(), false) {
+            true
+        } else {
+            self.style_undo.push(snapshot);
+            false
+        }
+    }
+
+    fn redo_style_change(&mut self) -> bool {
+        if self.helix_is_modified() {
+            return false;
+        }
+        let Some(snapshot) = self.style_redo.pop() else {
+            return false;
+        };
+        if self.restore_style_snapshot(snapshot.clone(), true) {
+            true
+        } else {
+            self.style_redo.push(snapshot);
+            false
+        }
+    }
+
     fn open_editor(&mut self, file: PathBuf) -> Result<()> {
         let previous_file = self.current_file.clone();
         let previous_page = self.page_profile;
@@ -906,6 +997,9 @@ impl TerminalModel {
         self.pomodoro_break = false;
         self.pomodoro_deadline = None;
         self.command_capture = None;
+        self.pending_style_snapshot = None;
+        self.style_undo.clear();
+        self.style_redo.clear();
         if self.pomodoro_requested {
             self.start_pomodoro();
         }
@@ -950,10 +1044,20 @@ impl TerminalModel {
                     .ok();
                 if body_changed {
                     self.source_modified = modified;
+                    self.pending_style_snapshot = None;
+                    self.style_undo.clear();
+                    self.style_redo.clear();
                 } else if modified.is_some() && modified != self.source_modified {
                     self.source_modified = modified;
-                    if let Some(metadata) = document::read_metadata(source) {
-                        self.page_profile = metadata.page;
+                    if let Ok(changed_document) = document::read(source) {
+                        self.page_profile = changed_document.metadata.page;
+                        if let Some(before) = self.pending_style_snapshot.take() {
+                            let after = StyleSnapshot::from_document(&changed_document);
+                            if before.formatting != after.formatting || before.page != after.page {
+                                self.style_undo.push(before);
+                                self.style_redo.clear();
+                            }
+                        }
                     }
                     // F2 may change formatting.json or page metadata without terminal text.
                     self.dirty = true;
@@ -1075,6 +1179,9 @@ impl TerminalModel {
                             .ok();
                     }
                 }
+                if native {
+                    self.pending_style_snapshot = self.current_style_snapshot();
+                }
                 let _ = editor.send_key(key, editor.win32_input());
             }
             return;
@@ -1111,6 +1218,25 @@ impl TerminalModel {
             && self.helix_is_normal_mode();
         if zen_toggle {
             self.toggle_editor_zen();
+            return;
+        }
+
+        let ctrl_z = key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+            && matches!(key.code, KeyCode::Char('z') | KeyCode::Char('Z'));
+        let ctrl_y = key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+            && matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y'));
+        let ctrl_shift_z = ctrl_z && key.modifiers.contains(KeyModifiers::SHIFT);
+        if ctrl_shift_z {
+            if self.redo_style_change() {
+                return;
+            }
+        } else if ctrl_z {
+            if self.undo_style_change() {
+                return;
+            }
+        } else if ctrl_y && self.redo_style_change() {
             return;
         }
 
@@ -1215,6 +1341,9 @@ impl TerminalModel {
         }
         self.glyphs.clear();
         self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));
+        self.pending_style_snapshot = None;
+        self.style_undo.clear();
+        self.style_redo.clear();
         self.launcher.message = Some(format!("{} ← {}", previous_metadata.title, metadata.title));
         true
     }
@@ -1295,6 +1424,9 @@ impl TerminalModel {
         }
         self.glyphs.clear();
         self.chapter_switch_until = Some(Instant::now() + Duration::from_millis(700));
+        self.pending_style_snapshot = None;
+        self.style_undo.clear();
+        self.style_redo.clear();
         self.launcher.message = Some(format!("{} → {}", metadata.title, next_metadata.title));
         true
     }
