@@ -1,0 +1,90 @@
+name: Fix F2-only formatting and compact island
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fix-f2-only-compact-island.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply UI and input cleanup
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('src/app.rs')
+          s = p.read_text(encoding='utf-8')
+
+          # Formatting belongs to F2 code actions only. Keep the native support,
+          # but never expose a second toolbar/island for B/I/U/colors/highlight.
+          s = re.sub(
+              r'        format-island := Rectangle \{.*?\n        \}\n\n        font-palette := Rectangle \{',
+              '        font-palette := Rectangle {',
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # The old palettes had been anchored to format-island. They remain hidden
+          # and harmless, but must not reference a removed component.
+          s = s.replace('            x: format-island.x + 4px;', '            x: island.x;', 2)
+          s = s.replace('            y: format-island.y - self.height - 5px;', '            y: island.y - self.height - 5px;', 2)
+          s = s.replace('            x: format-island.x + format-island.width - self.width;', '            x: island.x + island.width - self.width;', 1)
+          s = s.replace('            y: format-island.y - self.height - 5px;', '            y: island.y - self.height - 5px;', 1)
+          s = s.replace('            visible: root.editor-active && root.font-palette-open;', '            visible: false;', 1)
+          s = s.replace('            visible: root.editor-active && root.highlight-palette-open;', '            visible: false;', 1)
+          s = s.replace('            visible: root.editor-active && root.page-menu-open;', '            visible: false;', 1)
+
+          # Restore the compact SST island: Pomodoro, symbols, close only.
+          s = s.replace('            x: root.width - 468px;', '            x: root.width - 224px;', 1)
+          s = s.replace('            width: 468px;', '            width: 224px;', 1)
+          s = re.sub(
+              r'            visible: !root\.zen-active\n                \|\| bottom-reveal\.has-hover\n                \|\| island-hover\.has-hover\n                \|\| root\.symbols-open\n                \|\| root\.font-palette-open\n                \|\| root\.highlight-palette-open\n                \|\| root\.page-menu-open;',
+              '            visible: !root.zen-active\n                || bottom-reveal.has-hover\n                || island-hover.has-hover\n                || root.symbols-open;',
+              s,
+              count=1,
+          )
+          s = s.replace('            width: 264px;\n            height: 34px;', '            width: 196px;\n            height: 34px;', 1)
+          s = s.replace('                x: 5px; y: 3px; width: 100px; height: 28px;', '                x: 5px; y: 3px; width: 112px; height: 28px;', 1)
+          s = s.replace('                x: 109px; y: 3px; width: 32px; height: 28px;', '                x: 121px; y: 3px; width: 32px; height: 28px;', 1)
+
+          # Remove minimize/maximize controls that expanded the island.
+          s = re.sub(
+              r'\n            Rectangle \{\n                x: 145px; y: 3px; width: 32px; height: 28px; border-radius: 9px;.*?min-touch := TouchArea \{.*?\}\n            \}\n            Rectangle \{\n                x: 181px; y: 3px; width: 32px; height: 28px; border-radius: 9px;.*?max-touch := TouchArea \{.*?\}\n            \}\n',
+              '\n',
+              s,
+              count=1,
+              flags=re.S,
+          )
+          s = s.replace('                x: 217px; y: 1px; width: 42px; height: 32px;', '                x: 157px; y: 1px; width: 38px; height: 32px;', 1)
+          s = s.replace('                    x: 12px; y: 8px; width: 18px; height: 18px;', '                    x: 10px; y: 8px; width: 18px; height: 18px;', 1)
+
+          # Formatting shortcuts outside F2 are explicitly not part of this editor.
+          s = re.sub(
+              r'\n        if key\.modifiers\.contains\(KeyModifiers::CONTROL\)\n            && !key\.modifiers\.contains\(KeyModifiers::ALT\)\n        \{\n            match key\.code \{\n                KeyCode::Char\(\x27b\x27\) \| KeyCode::Char\(\x27B\x27\) => \{\n                    self\.apply_format\(\x22bold\x22, \x22\x22\);\n                    return;\n                \}\n                KeyCode::Char\(\x27i\x27\) \| KeyCode::Char\(\x27I\x27\) => \{\n                    self\.apply_format\(\x22italic\x22, \x22\x22\);\n                    return;\n                \}\n                KeyCode::Char\(\x27u\x27\) \| KeyCode::Char\(\x27U\x27\) => \{\n                    self\.apply_format\(\x22underline\x22, \x22\x22\);\n                    return;\n                \}\n                _ => \{\}\n            \}\n        \}\n',
+              '\n',
+              s,
+              count=1,
+          )
+          s = re.sub(
+              r'\n    if model\.editor\.is_some\(\) && ctrl \{\n        if text == \x22\\x02\x22 \|\| text\.eq_ignore_ascii_case\(\x22b\x22\) \{\n            model\.apply_format\(\x22bold\x22, \x22\x22\);\n            return;\n        \}\n        if text == \x22\\x09\x22 \|\| key_is\(text, Key::Tab\) \|\| text\.eq_ignore_ascii_case\(\x22i\x22\) \{\n            model\.apply_format\(\x22italic\x22, \x22\x22\);\n            return;\n        \}\n        if text == \x22\\x15\x22 \|\| text\.eq_ignore_ascii_case\(\x22u\x22\) \{\n            model\.apply_format\(\x22underline\x22, \x22\x22\);\n            return;\n        \}\n    \}\n',
+              '\n',
+              s,
+              count=1,
+          )
+
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: keep formatting in F2 and restore compact SST island"
+          git push origin HEAD:main
