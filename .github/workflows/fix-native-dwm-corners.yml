@@ -1,0 +1,46 @@
+name: Fix native DWM corners
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fix-native-dwm-corners.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply native Windows corners
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/app.rs')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace(', SetWindowPos, WM_NCLBUTTONDOWN,', ', SetWindowPos,', 1)
+          marker='''#[cfg(windows)]\nfn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {\n'''
+          native='''#[cfg(windows)]\n#[link(name = "dwmapi")]\nunsafe extern "system" {\n    fn DwmSetWindowAttribute(\n        hwnd: HWND,\n        attribute: u32,\n        value: *const std::ffi::c_void,\n        value_size: u32,\n    ) -> i32;\n}\n\n#[cfg(windows)]\nunsafe fn enable_native_rounded_corners(hwnd: HWND) {\n    const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;\n    const DWMWCP_ROUND: u32 = 2;\n    let preference = DWMWCP_ROUND;\n    unsafe {\n        let _ = DwmSetWindowAttribute(\n            hwnd,\n            DWMWA_WINDOW_CORNER_PREFERENCE,\n            (&preference as *const u32).cast(),\n            std::mem::size_of::<u32>() as u32,\n        );\n    }\n}\n\n#[cfg(windows)]\nfn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {\n'''
+          if marker not in s:
+              raise SystemExit('slint_hwnd marker not found')
+          if 'DwmSetWindowAttribute' not in s:
+              s=s.replace(marker,native,1)
+          show='''    ui.show()?;\n\n    let weak = ui.as_weak();\n'''
+          show_new='''    ui.show()?;\n\n    #[cfg(windows)]\n    if let Some(hwnd) = slint_hwnd(&ui) {\n        unsafe { enable_native_rounded_corners(hwnd); }\n    }\n\n    let weak = ui.as_weak();\n'''
+          if show not in s:
+              raise SystemExit('ui.show marker not found')
+          s=s.replace(show,show_new,1)
+          p.write_text(s,encoding='utf-8',newline='\n')
+          PY
+          cargo fmt --all
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: restore native Windows rounded corners"
+          git push origin HEAD:main
