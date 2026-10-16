@@ -1,0 +1,60 @@
+name: Fix F2 borrow
+
+on:
+  push:
+    paths:
+      - .github/workflows/fix-f2-borrow.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch F2 borrow
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/app.rs')
+          s = p.read_text(encoding='utf-8')
+          old = '''            if let Some(editor) = self.editor.as_mut() {
+                if native {
+'''
+          new = '''            let pending_style_snapshot = native.then(|| self.current_style_snapshot());
+            if let Some(editor) = self.editor.as_mut() {
+                if native {
+'''
+          if old not in s:
+              raise SystemExit('F2 borrow start marker not found')
+          s = s.replace(old, new, 1)
+          old = '''                if native {
+                    self.pending_style_snapshot = self.current_style_snapshot();
+                }
+                let _ = editor.send_key(key, editor.win32_input());
+'''
+          new = '''                if let Some(snapshot) = pending_style_snapshot {
+                    self.pending_style_snapshot = snapshot;
+                }
+                let _ = editor.send_key(key, editor.win32_input());
+'''
+          if old not in s:
+              raise SystemExit('F2 borrow end marker not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+          cargo fmt --all
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: resolve F2 formatting borrow conflict"
+          git pull --rebase origin main
+          git push origin HEAD:main
