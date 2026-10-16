@@ -97,8 +97,6 @@ slint::slint! {
         in property <bool> pomodoro-prompt: false;
         in property <bool> pomodoro-break: false;
         in property <string> pomodoro-text: "";
-        property <bool> font-palette-open: false;
-        property <bool> highlight-palette-open: false;
         property <bool> symbols-open: false;
         property <bool> page-menu-open: false;
         in property <string> page-label: "CARTA";
@@ -109,11 +107,8 @@ slint::slint! {
         in property <string> margin-bottom-text: "25";
         callback key-input(string, bool, bool, bool);
         callback toggle-zen();
-        callback minimize-window();
-        callback maximize-window();
         callback close-window();
         callback start-pomodoro();
-        callback format-action(string, string);
         callback insert-symbol(string);
         callback page-action(string, string);
 
@@ -225,8 +220,6 @@ slint::slint! {
                     mouse-cursor: pointer;
                     clicked => {
                         root.symbols-open = !root.symbols-open;
-                        root.font-palette-open = false;
-                        root.highlight-palette-open = false;
                         root.page-menu-open = false;
                     }
                 }
@@ -245,62 +238,6 @@ slint::slint! {
                     stroke-width: 2px; stroke-line-cap: round;
                 }
                 close-touch := TouchArea { mouse-cursor: pointer; clicked => { root.close-window(); } }
-            }
-        }
-
-        font-palette := Rectangle {
-            visible: false;
-            x: island.x;
-            y: island.y - self.height - 5px;
-            width: 226px;
-            height: 32px;
-            border-radius: 9px;
-            border-width: 1px;
-            border-color: #354052;
-            background: rgba(10, 13, 20, 0.98);
-
-            Rectangle { x: 7px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #ebdbb2; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "white"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 29px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fb4934; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "red"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 51px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fe8019; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "orange"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 73px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fabd2f; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "yellow"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 95px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #b8bb26; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "green"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 117px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: rgb(142, 192, 124); TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "cyan"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 139px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #83a598; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "blue"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 161px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #d3869b; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "purple"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 183px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #928374; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "gray"); root.font-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle {
-                x: 205px; y: 7px; width: 14px; height: 18px; border-radius: 4px;
-                background: reset-font.has-hover ? #29384b : transparent;
-                Text { width: 100%; height: 100%; text: "×"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; font-size: 14px; }
-                reset-font := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("font-color", "none"); root.font-palette-open = false; terminal-focus.focus(); } }
-            }
-        }
-
-        highlight-palette := Rectangle {
-            visible: false;
-            x: island.x;
-            y: island.y - self.height - 5px;
-            width: 226px;
-            height: 32px;
-            border-radius: 9px;
-            border-width: 1px;
-            border-color: #354052;
-            background: rgba(10, 13, 20, 0.98);
-
-            Rectangle { x: 7px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #ebdbb2; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "white"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 29px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fb4934; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "red"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 51px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fe8019; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "orange"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 73px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #fabd2f; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "yellow"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 95px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #b8bb26; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "green"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 117px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: rgb(142, 192, 124); TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "cyan"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 139px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #83a598; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "blue"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 161px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #d3869b; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "purple"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle { x: 183px; y: 7px; width: 18px; height: 18px; border-radius: 4px; background: #928374; TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "gray"); root.highlight-palette-open = false; terminal-focus.focus(); } } }
-            Rectangle {
-                x: 205px; y: 7px; width: 14px; height: 18px; border-radius: 4px;
-                background: reset-highlight.has-hover ? #29384b : transparent;
-                Text { width: 100%; height: 100%; text: "×"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; font-size: 14px; }
-                reset-highlight := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("highlight-color", "none"); root.highlight-palette-open = false; terminal-focus.focus(); } }
             }
         }
 
@@ -2461,24 +2398,6 @@ fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
     Some(win32.hwnd.get() as HWND)
 }
 
-#[cfg(windows)]
-unsafe fn minimize_native_window(hwnd: HWND) {
-    unsafe {
-        ShowWindow(hwnd, SW_MINIMIZE);
-    }
-}
-
-#[cfg(windows)]
-unsafe fn toggle_maximize_native_window(hwnd: HWND) {
-    unsafe {
-        if IsZoomed(hwnd) != 0 {
-            ShowWindow(hwnd, SW_RESTORE);
-            enable_native_rounded_corners(hwnd);
-        } else {
-            ShowWindow(hwnd, SW_MAXIMIZE);
-        }
-    }
-}
 
 #[cfg(windows)]
 unsafe fn focus_native_window(hwnd: HWND) {
@@ -2589,14 +2508,6 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     }
     {
         let model = model.clone();
-        ui.on_format_action(move |action, value| {
-            model
-                .borrow_mut()
-                .apply_format(action.as_str(), value.as_str());
-        });
-    }
-    {
-        let model = model.clone();
         ui.on_insert_symbol(move |symbol| {
             model.borrow_mut().insert_symbol(symbol.as_str());
         });
@@ -2607,28 +2518,6 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             model
                 .borrow_mut()
                 .update_page(action.as_str(), value.as_str());
-        });
-    }
-    {
-        let weak = ui.as_weak();
-        ui.on_minimize_window(move || {
-            if let Some(ui) = weak.upgrade() {
-                #[cfg(windows)]
-                if let Some(hwnd) = slint_hwnd(&ui) {
-                    unsafe { minimize_native_window(hwnd); }
-                }
-            }
-        });
-    }
-    {
-        let weak = ui.as_weak();
-        ui.on_maximize_window(move || {
-            if let Some(ui) = weak.upgrade() {
-                #[cfg(windows)]
-                if let Some(hwnd) = slint_hwnd(&ui) {
-                    unsafe { toggle_maximize_native_window(hwnd); }
-                }
-            }
         });
     }
     {
