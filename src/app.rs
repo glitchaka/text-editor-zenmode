@@ -81,7 +81,7 @@ const FONT_BYTES: &[u8] = include_bytes!(concat!(
 
 slint::slint! {
     export component ZenWindow inherits Window {
-        title: "Helix SST";
+        title: "Zen Editor";
         preferred-width: 980px;
         preferred-height: 680px;
         min-width: 520px;
