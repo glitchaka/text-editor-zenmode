@@ -1,0 +1,49 @@
+name: Fix window surface final
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/fix-window-surface-final.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Remove reserved borders and keep full drag surface
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/app.rs')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('        background: #111619;', '        background: #282828;', 1)
+          old='''        let scale = self.scale.max(0.5);\n        let bottom_pad = if self.zen_engaged() && !self.pomodoro_active {\n            (PAD_Y * scale).round()\n        } else {\n            ((PAD_Y + ISLAND_HEIGHT + CONTENT_TOP_GAP) * scale).round()\n        };\n        let rows = (((self.height as f32 - top_pad - bottom_pad) / cell_height).floor() as i32)\n            .clamp(8, 160) as u16;\n'''
+          new='''        let bottom_pad = 0.0;\n        let rows = (((self.height as f32 - top_pad - bottom_pad) / cell_height).floor() as i32)\n            .clamp(8, 160) as u16;\n'''
+          if old not in s:
+              raise SystemExit('bottom padding block not found')
+          s=s.replace(old,new,1)
+          # The old Win32 drag callback is obsolete: the entire client surface is now a WindowMoveArea.
+          s=s.replace('        callback begin-window-drag();\n','',1)
+          oldcb='''    {\n        let weak = ui.as_weak();\n        ui.on_begin_window_drag(move || {\n            if let Some(ui) = weak.upgrade() {\n                #[cfg(windows)]\n                if let Some(hwnd) = slint_hwnd(&ui) {\n                    unsafe {\n                        begin_native_window_drag(hwnd);\n                    }\n                }\n            }\n        });\n    }\n'''
+          s=s.replace(oldcb,'',1)
+          oldfn='''#[cfg(windows)]\nunsafe fn begin_native_window_drag(hwnd: HWND) {\n    unsafe {\n        ReleaseCapture();\n        SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);\n    }\n}\n\n'''
+          s=s.replace(oldfn,'',1)
+          # Remove imports used only by the obsolete synthetic drag path.
+          s=s.replace('Input::KeyboardAndMouse::{GetAsyncKeyState, ReleaseCapture, SetActiveWindow, SetFocus}', 'Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus}', 1)
+          s=s.replace('BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HTCAPTION,\n            HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW,\n', 'BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,\n            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,\n', 1)
+          p.write_text(s,encoding='utf-8',newline='\n')
+          PY
+          cargo fmt --all
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: remove drag gutters and fill native window surface"
+          git push origin HEAD:main
