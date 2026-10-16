@@ -1364,9 +1364,25 @@ mod tests {
             editor_table.get("text-width").is_none(),
             "Zenmode no debe imponer un ancho lógico de 88 columnas"
         );
-        assert!(
-            editor_table.get("soft-wrap").is_none(),
-            "Zenmode no debe partir visualmente cada párrafo como si fuera una sola línea"
+        let soft_wrap = editor_table
+            .get("soft-wrap")
+            .and_then(toml::Value::as_table)
+            .expect("Zen Editor debe usar soft-wrap global no destructivo");
+        assert_eq!(
+            soft_wrap.get("enable").and_then(toml::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            soft_wrap
+                .get("wrap-at-text-width")
+                .and_then(toml::Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            soft_wrap
+                .get("wrap-indicator")
+                .and_then(toml::Value::as_str),
+            Some("")
         );
         assert_eq!(
             editor_table
