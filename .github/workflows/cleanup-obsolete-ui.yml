@@ -1,0 +1,52 @@
+name: Cleanup obsolete editor UI
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/cleanup-obsolete-ui.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove dead format palettes and window callbacks
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p=Path('src/app.rs')
+          s=p.read_text(encoding='utf-8')
+
+          # B/I/U/color/highlight belong exclusively to F2. Remove the old hidden palettes.
+          s=re.sub(r'\n        font-palette := Rectangle \{.*?\n        symbols-palette := Rectangle \{', '\n        symbols-palette := Rectangle {', s, count=1, flags=re.S)
+          s=s.replace('        property <bool> font-palette-open: false;\n','')
+          s=s.replace('        property <bool> highlight-palette-open: false;\n','')
+          s=s.replace('        callback format-action(string, string);\n','')
+          s=s.replace('                        root.font-palette-open = false;\n','')
+          s=s.replace('                        root.highlight-palette-open = false;\n','')
+          s=re.sub(r'\n    \{\n        let model = model\.clone\(\);\n        ui\.on_format_action\(move \|action, value\| \{.*?\n    \}\n', '\n', s, count=1, flags=re.S)
+
+          # Minimize/maximize were accidentally reintroduced by a staged patch, but their UI was removed.
+          s=s.replace('        callback minimize-window();\n','')
+          s=s.replace('        callback maximize-window();\n','')
+          s=re.sub(r'\n    \{\n        let weak = ui\.as_weak\(\);\n        ui\.on_minimize_window\(move \|\| \{.*?\n    \}\n    \{\n        let weak = ui\.as_weak\(\);\n        ui\.on_maximize_window\(move \|\| \{.*?\n    \}\n', '\n', s, count=1, flags=re.S)
+          s=re.sub(r'\n#\[cfg\(windows\)\]\nunsafe fn minimize_native_window\(hwnd: HWND\) \{.*?\n\}\n\n#\[cfg\(windows\)\]\nunsafe fn toggle_maximize_native_window\(hwnd: HWND\) \{.*?\n\}\n', '\n', s, count=1, flags=re.S)
+
+          # Remove now-unused Win32 imports for the deleted window buttons.
+          s=s.replace(', IsZoomed, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, ShowWindow','')
+          s=s.replace('IsZoomed, ', '')
+          s=s.replace('SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, ShowWindow, ', '')
+          s=s.replace('SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, ShowWindow,', '')
+
+          p.write_text(s,encoding='utf-8',newline='\n')
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: remove obsolete hidden formatting UI and window controls"
+          git pull --rebase origin main
+          git push origin HEAD:main
