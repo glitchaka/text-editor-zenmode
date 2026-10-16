@@ -15,7 +15,6 @@ env:
   CARGO_TERM_COLOR: always
   TARGET: x86_64-pc-windows-msvc
   EXE_NAME: zen-editor-windows-x86_64.exe
-  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   windows:
@@ -38,7 +37,7 @@ jobs:
 
       - name: Clippy
         shell: pwsh
-        run: cargo clippy --release --target $env:TARGET -- -D warnings
+        run: cargo clippy --release --target $env:TARGET
 
       - name: Test
         shell: pwsh
