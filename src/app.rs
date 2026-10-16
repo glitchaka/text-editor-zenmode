@@ -158,9 +158,9 @@ slint::slint! {
         }
 
         bottom-reveal := TouchArea {
-            x: root.width - 468px;
+            x: root.width - 224px;
             y: root.height - 10px;
-            width: 468px;
+            width: 224px;
             height: 10px;
             enabled: root.zen-active;
         }
@@ -169,11 +169,8 @@ slint::slint! {
             visible: !root.zen-active
                 || bottom-reveal.has-hover
                 || island-hover.has-hover
-                || root.symbols-open
-                || root.font-palette-open
-                || root.highlight-palette-open
-                || root.page-menu-open;
-            width: 264px;
+                || root.symbols-open;
+            width: 196px;
             height: 34px;
             x: root.width - self.width - 14px;
             y: root.height - self.height - 7px;
@@ -192,7 +189,7 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 5px; y: 3px; width: 100px; height: 28px;
+                x: 5px; y: 3px; width: 112px; height: 28px;
                 border-radius: 9px;
                 background: pomodoro-touch.pressed
                     ? #29384b
@@ -214,7 +211,7 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 109px; y: 3px; width: 32px; height: 28px;
+                x: 121px; y: 3px; width: 32px; height: 28px;
                 border-radius: 9px;
                 background: symbol-menu.pressed
                     ? #29384b
@@ -236,25 +233,13 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 145px; y: 3px; width: 32px; height: 28px; border-radius: 9px;
-                background: min-touch.pressed ? #29384b : min-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "—"; color: #9aa7b8; font-size: 14px; horizontal-alignment: center; vertical-alignment: center; }
-                min-touch := TouchArea { mouse-cursor: pointer; clicked => { root.minimize-window(); } }
-            }
-            Rectangle {
-                x: 181px; y: 3px; width: 32px; height: 28px; border-radius: 9px;
-                background: max-touch.pressed ? #29384b : max-touch.has-hover ? #172334 : transparent;
-                Text { width: 100%; height: 100%; text: "□"; color: #9aa7b8; font-size: 15px; horizontal-alignment: center; vertical-alignment: center; }
-                max-touch := TouchArea { mouse-cursor: pointer; clicked => { root.maximize-window(); } }
-            }
-            Rectangle {
-                x: 217px; y: 1px; width: 42px; height: 32px;
+                x: 157px; y: 1px; width: 38px; height: 32px;
                 border-radius: 10px;
                 background: close-touch.pressed
                     ? rgb(62, 23, 36)
                     : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
                 Path {
-                    x: 12px; y: 8px; width: 18px; height: 18px;
+                    x: 10px; y: 8px; width: 18px; height: 18px;
                     commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
                     stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
                     stroke-width: 2px; stroke-line-cap: round;
@@ -263,40 +248,10 @@ slint::slint! {
             }
         }
 
-        format-island := Rectangle {
-            visible: root.editor-active && (
-                !root.zen-active
-                || bottom-reveal.has-hover
-                || format-hover.has-hover
-                || root.font-palette-open
-                || root.highlight-palette-open
-                || root.page-menu-open
-            );
-            width: 236px;
-            height: 34px;
-            x: island.x - self.width - 6px;
-            y: island.y;
-            border-radius: 13px;
-            background: rgba(10, 13, 20, 0.96);
-            border-width: 1px;
-            border-color: #2b3547;
-
-            format-hover := TouchArea { x: 0; y: 0; width: parent.width; height: parent.height; }
-            format-move := WindowMoveArea { x: 0; y: 0; width: parent.width; height: parent.height; enabled: !root.zen-active; }
-
-            Rectangle { x: 4px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: bold-touch.pressed ? #29384b : bold-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "B"; color: #dfe8ef; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; } bold-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("bold", ""); terminal-focus.focus(); } } }
-            Rectangle { x: 37px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: italic-touch.pressed ? #29384b : italic-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "I"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } italic-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("italic", ""); terminal-focus.focus(); } } }
-            Rectangle { x: 70px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: underline-touch.pressed ? #29384b : underline-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "U"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } underline-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("underline", ""); terminal-focus.focus(); } } }
-            Rectangle { x: 103px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: strike-touch.pressed ? #29384b : strike-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "S̶"; color: #dfe8ef; horizontal-alignment: center; vertical-alignment: center; } strike-touch := TouchArea { mouse-cursor: pointer; clicked => { root.format-action("strikethrough", ""); terminal-focus.focus(); } } }
-            Rectangle { x: 136px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: font-touch.pressed ? #29384b : font-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "A"; color: #e8cc83; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } font-touch := TouchArea { mouse-cursor: pointer; clicked => { root.font-palette-open = !root.font-palette-open; root.highlight-palette-open = false; root.page-menu-open = false; root.symbols-open = false; } } }
-            Rectangle { x: 169px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: highlight-touch.pressed ? #29384b : highlight-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "▰"; color: #fabd2f; horizontal-alignment: center; vertical-alignment: center; } highlight-touch := TouchArea { mouse-cursor: pointer; clicked => { root.highlight-palette-open = !root.highlight-palette-open; root.font-palette-open = false; root.page-menu-open = false; root.symbols-open = false; } } }
-            Rectangle { x: 202px; y: 3px; width: 30px; height: 28px; border-radius: 8px; background: page-touch.pressed ? #29384b : page-touch.has-hover ? #172334 : transparent; Text { width: 100%; height: 100%; text: "▣"; color: #8db9bb; horizontal-alignment: center; vertical-alignment: center; } page-touch := TouchArea { mouse-cursor: pointer; clicked => { root.page-menu-open = !root.page-menu-open; root.font-palette-open = false; root.highlight-palette-open = false; root.symbols-open = false; } } }
-        }
-
         font-palette := Rectangle {
-            visible: root.editor-active && root.font-palette-open;
-            x: format-island.x + 4px;
-            y: format-island.y - self.height - 5px;
+            visible: false;
+            x: island.x;
+            y: island.y - self.height - 5px;
             width: 226px;
             height: 32px;
             border-radius: 9px;
@@ -322,9 +277,9 @@ slint::slint! {
         }
 
         highlight-palette := Rectangle {
-            visible: root.editor-active && root.highlight-palette-open;
-            x: format-island.x + 4px;
-            y: format-island.y - self.height - 5px;
+            visible: false;
+            x: island.x;
+            y: island.y - self.height - 5px;
             width: 226px;
             height: 32px;
             border-radius: 9px;
@@ -377,9 +332,9 @@ slint::slint! {
         }
 
         page-palette := Rectangle {
-            visible: root.editor-active && root.page-menu-open;
-            x: format-island.x + format-island.width - self.width;
-            y: format-island.y - self.height - 5px;
+            visible: false;
+            x: island.x + island.width - self.width;
+            y: island.y - self.height - 5px;
             width: 420px;
             height: 100px;
             border-radius: 9px;
@@ -1385,25 +1340,6 @@ impl TerminalModel {
             return;
         }
 
-        if key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-        {
-            match key.code {
-                KeyCode::Char('b') | KeyCode::Char('B') => {
-                    self.apply_format("bold", "");
-                    return;
-                }
-                KeyCode::Char('i') | KeyCode::Char('I') => {
-                    self.apply_format("italic", "");
-                    return;
-                }
-                KeyCode::Char('u') | KeyCode::Char('U') => {
-                    self.apply_format("underline", "");
-                    return;
-                }
-                _ => {}
-            }
-        }
 
         let ctrl_v = key.modifiers.contains(KeyModifiers::CONTROL)
             && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'));
@@ -2747,20 +2683,6 @@ fn handle_key(model: &mut TerminalModel, text: &str, ctrl: bool, alt: bool, shif
 
     let ctrl = control_pressed(ctrl);
 
-    if model.editor.is_some() && ctrl {
-        if text == "\x02" || text.eq_ignore_ascii_case("b") {
-            model.apply_format("bold", "");
-            return;
-        }
-        if text == "\x09" || key_is(text, Key::Tab) || text.eq_ignore_ascii_case("i") {
-            model.apply_format("italic", "");
-            return;
-        }
-        if text == "\x15" || text.eq_ignore_ascii_case("u") {
-            model.apply_format("underline", "");
-            return;
-        }
-    }
 
     // AltGr is represented as Alt (and on Windows often Control+Alt) by winit.
     // Keep Alt+D intact and add AltGr/Alt + '-' as the natural em-dash shortcut.
