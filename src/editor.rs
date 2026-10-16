@@ -603,13 +603,20 @@ fn write_editor_config(path: &Path, launcher: &Path) -> Result<()> {
 
 [editor]
 line-number = "absolute"
-mouse = false
+mouse = true
 true-color = true
 cursorline = true
 bufferline = "multiple"
 color-modes = true
 auto-completion = false
 end-of-line-diagnostics = "disable"
+
+[editor.soft-wrap]
+enable = true
+wrap-at-text-width = false
+max-wrap = 25
+max-indent-retain = 0
+wrap-indicator = ""
 
 [editor.inline-diagnostics]
 cursor-line = "warning"
