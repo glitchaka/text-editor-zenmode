@@ -1,0 +1,46 @@
+name: Disable intrusive autocomplete
+
+on:
+  push:
+    paths:
+      - '.github/workflows/hotfix-disable-autocomplete.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Disable automatic completion popup
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/editor.rs')
+          text = path.read_text(encoding='utf-8')
+          old = 'auto-completion = true'
+          new = 'auto-completion = false'
+          if old not in text:
+              raise SystemExit('auto-completion=true not found')
+          text = text.replace(old, new, 1)
+
+          marker = '''        assert_eq!(\n            editor_table\n                .get("line-number")\n                .and_then(toml::Value::as_str),\n            Some("absolute")\n        );\n'''
+          assertion = marker + '''        assert_eq!(\n            editor_table\n                .get("auto-completion")\n                .and_then(toml::Value::as_bool),\n            Some(false),\n            "el autocompletado emergente debe permanecer desactivado"\n        );\n'''
+          if marker not in text:
+              raise SystemExit('editor config test marker not found')
+          text = text.replace(marker, assertion, 1)
+          path.write_text(text, encoding='utf-8')
+
+      - name: Commit hotfix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/editor.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: disable intrusive autocomplete popup"
+          git push
