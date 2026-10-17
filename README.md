@@ -2,6 +2,14 @@
 
 **Zen Editor** es un editor de escritura para Windows construido sobre **Helix 25.07.1**. Helix sigue siendo el motor real de edición dentro de una PTY; la interfaz exterior está escrita en Rust con Slint/FemtoVG y añade escritura sin distracciones, formato enriquecido no destructivo, corrector es-CL, proyectos, Pomodoro, importación y exportación.
 
+Zen Editor existe sobre el trabajo del proyecto **Helix** y de sus contribuidores. Gracias al equipo de Helix por construir y mantener el motor de edición que hace posible este proyecto. Zen Editor no es un producto oficial ni afiliado al proyecto Helix.
+
+## Créditos y licencia
+
+- **Helix Editor** — motor de edición integrado: https://github.com/helix-editor/helix
+- **Licencia de Helix:** Mozilla Public License 2.0.
+- La licencia completa está en [`LICENSE`](LICENSE) y la información de terceros en [`THIRD_PARTY.md`](THIRD_PARTY.md) y [`CREDITS.md`](CREDITS.md).
+
 ## Documento nativo
 
 El formato de trabajo por defecto es **TXT**. El archivo `.txt` contiene solamente el texto que se puede abrir con cualquier editor. Zen Editor guarda metadatos y formato enriquecido en un sidecar hermano:
@@ -69,7 +77,7 @@ DOCX y PDF usan el perfil de papel, orientación y márgenes del documento y rec
 
 ## Isla inferior y Pomodoro
 
-La isla inferior se mantiene compacta: **Pomodoro · Ω símbolos · cerrar**. F4 o `:PD` inicia el ciclo de 25 minutos de escritura y 5 de descanso. Durante el descanso se bloquea la escritura. El menú Ω inserta signos tipográficos; `Alt+D`, `Ctrl+G` y `AltGr+-` permiten insertar raya `—`.
+La isla inferior se mantiene compacta: **Pomodoro · Ω símbolos · pantalla completa · cerrar**. F4 o `:PD` inicia el ciclo de 25 minutos de escritura y 5 de descanso. Durante el descanso se bloquea la escritura. El menú Ω inserta signos tipográficos; `Alt+D`, `Ctrl+G` y `AltGr+-` permiten insertar raya `—`.
 
 ## Editor: atajos principales
 
@@ -90,6 +98,7 @@ La isla inferior se mantiene compacta: **Pomodoro · Ω símbolos · cerrar**. F
 | `Ctrl+S` | guardar |
 | `F2` | acciones de corrección/formato/página |
 | `F4` | Pomodoro |
+| `F11` | entrar/salir de pantalla completa |
 
 ## Abrir directamente
 

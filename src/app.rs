@@ -188,9 +188,9 @@ slint::slint! {
         }
 
         bottom-reveal := TouchArea {
-            x: root.width - 224px;
+            x: root.width - 260px;
             y: root.height - 10px;
-            width: 224px;
+            width: 260px;
             height: 10px;
             enabled: root.zen-active;
         }
@@ -200,7 +200,7 @@ slint::slint! {
                 || bottom-reveal.has-hover
                 || island-hover.has-hover
                 || root.symbols-open;
-            width: 196px;
+            width: 232px;
             height: 34px;
             x: root.width - self.width - 14px;
             y: root.height - self.height - 7px;
@@ -260,7 +260,24 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 157px; y: 1px; width: 38px; height: 32px;
+                x: 157px; y: 3px; width: 32px; height: 28px;
+                border-radius: 9px;
+                background: fullscreen-touch.pressed
+                    ? #29384b
+                    : fullscreen-touch.has-hover ? #172334 : transparent;
+                Text {
+                    width: 100%; height: 100%; text: "⛶"; color: #dfe8ef;
+                    font-family: "Segoe UI Variable"; font-size: 15px;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                fullscreen-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.toggle-zen(); terminal-focus.focus(); }
+                }
+            }
+
+            Rectangle {
+                x: 193px; y: 1px; width: 38px; height: 32px;
                 border-radius: 10px;
                 background: close-touch.pressed
                     ? rgb(62, 23, 36)
@@ -1143,6 +1160,10 @@ impl TerminalModel {
             }
             return;
         }
+        if key.code == KeyCode::F(11) && key.modifiers.is_empty() {
+            self.toggle_editor_zen();
+            return;
+        }
         if key.code == KeyCode::F(4) && key.modifiers.is_empty() {
             self.start_pomodoro();
             return;
@@ -1822,6 +1843,14 @@ impl TerminalModel {
                     self.launcher.export_selected = 0;
                     self.launcher.message = None;
                 }
+            }
+            KeyCode::F(11) => {
+                self.zen_requested = !self.zen_requested;
+                self.launcher.message = Some(if self.zen_requested {
+                    "Pantalla completa seleccionada.".into()
+                } else {
+                    "Modo ventana seleccionado.".into()
+                });
             }
             KeyCode::Char('z') | KeyCode::Char('Z') => {
                 self.zen_requested = !self.zen_requested;

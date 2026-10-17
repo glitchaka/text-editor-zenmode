@@ -1,13 +1,15 @@
-# Third-party components
+# Componentes de terceros
 
-## Helix
+## Helix Editor
 
-Helix-SST Zenmode embeds Helix 25.07.1.
+Zen Editor integra **Helix 25.07.1** como motor real de edición.
 
-Upstream: https://github.com/helix-editor/helix
+Proyecto original: https://github.com/helix-editor/helix
 
-License: Mozilla Public License 2.0. The full license text is stored in `licenses/HELIX-MPL-2.0.txt`.
+Helix se distribuye bajo **Mozilla Public License 2.0 (MPL-2.0)**. El texto completo de la licencia se conserva en `LICENSE` y `licenses/HELIX-MPL-2.0.txt`.
 
-## Spanish (Chile) spelling dictionary
+**Agradecimiento:** gracias al equipo y a todos los contribuidores de Helix por desarrollar y mantener el editor sobre el que se construye Zen Editor. Zen Editor es un proyecto independiente y no oficial.
 
-The es-CL Hunspell dictionary is obtained at build time from the `wooorm/dictionaries` project at the pinned revision declared in `build.rs`. Its license is also embedded and copied beside the local Helix-SST installation.
+## Diccionario ortográfico español de Chile
+
+El diccionario Hunspell es-CL se obtiene desde `wooorm/dictionaries` en la revisión fijada en `build.rs`. Su licencia se integra con los recursos generados del programa.

@@ -435,8 +435,9 @@ impl SpellServer {
             && let Some(range) = params.get("range").cloned()
             && range.pointer("/start") != range.pointer("/end")
         {
+            let mut format_actions = Vec::new();
             let mut push_format = |title: &str, action: &str, value: &str| {
-                actions.push(json!({
+                format_actions.push(json!({
                     "title": title,
                     "kind": "refactor.rewrite",
                     "command": {
@@ -481,6 +482,8 @@ impl SpellServer {
             push_format("Alineación · Centrada", "alignment", "center");
             push_format("Alineación · Derecha", "alignment", "right");
             push_format("Alineación · Justificada", "alignment", "justify");
+            format_actions.extend(actions);
+            actions = format_actions;
         }
         actions
     }

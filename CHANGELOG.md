@@ -1,6 +1,13 @@
 # Historial de versiones — Zen Editor
 
-Historial reconstruido desde el historial Git del proyecto. Cada versión corresponde al estado final del código antes del siguiente cambio de versión.
+Cambios por versión de Zen Editor.
+
+## v0.2.18 — 2026-10-17
+
+- Restaurar control visible y atajo F11 para pantalla completa.
+- Corregir el orden del menú F2 para mostrar primero formato y alineación cuando hay selección.
+- Añadir licencia visible, créditos y agradecimiento al proyecto Helix.
+- Limpiar las notas de las releases para mostrar solo información útil de cada versión.
 
 ## v0.2.17 — 2026-10-17
 
