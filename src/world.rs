@@ -375,6 +375,38 @@ impl ProjectWorkspace {
             .collect()
     }
 
+    pub fn record_fields(&self, section: WorldSection, index: usize) -> Vec<WorldRow> {
+        if section.is_record_list() {
+            return self.array(section).get(index).map(|value| object_rows(Some(value))).unwrap_or_default();
+        }
+        match section {
+            WorldSection::Project => object_rows(self.root.get("profile")),
+            WorldSection::Layout => object_rows(self.root.get("layout")),
+            WorldSection::Settings => object_rows(self.root.get("settings")),
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn set_field(&mut self, section: WorldSection, index: usize, key: &str, raw: &str) -> Result<bool> {
+        let target = if section.is_record_list() {
+            self.array_mut(section).get_mut(index)
+        } else {
+            match section {
+                WorldSection::Project => self.root.get_mut("profile"),
+                WorldSection::Layout => self.root.get_mut("layout"),
+                WorldSection::Settings => self.root.get_mut("settings"),
+                _ => None,
+            }
+        };
+        let Some(object) = target.and_then(Value::as_object_mut) else { return Ok(false); };
+        let existing = object.get(key).cloned().unwrap_or(Value::String(String::new()));
+        let value = parse_like(&existing, raw);
+        object.insert(key.to_owned(), value);
+        self.touch();
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn add_record(&mut self, section: WorldSection, title: &str) -> Result<()> {
         if !section.is_record_list() {
             return Ok(());
@@ -664,6 +696,20 @@ fn object_rows(value: Option<&Value>) -> Vec<WorldRow> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn parse_like(existing: &Value, raw: &str) -> Value {
+    match existing {
+        Value::Bool(_) => Value::Bool(matches!(raw.trim().to_ascii_lowercase().as_str(), "1" | "true" | "sí" | "si" | "yes" | "on")),
+        Value::Number(number) if number.is_i64() => raw.trim().parse::<i64>().map(Value::from).unwrap_or_else(|_| existing.clone()),
+        Value::Number(number) if number.is_u64() => raw.trim().parse::<u64>().map(Value::from).unwrap_or_else(|_| existing.clone()),
+        Value::Number(_) => raw.trim().parse::<f64>().ok().and_then(serde_json::Number::from_f64).map(Value::Number).unwrap_or_else(|| existing.clone()),
+        Value::Array(_) => Value::Array(raw.split(',').map(str::trim).filter(|v| !v.is_empty()).map(|v| Value::String(v.to_owned())).collect()),
+        Value::Null if raw.trim().is_empty() => Value::Null,
+        Value::Null => Value::String(raw.to_owned()),
+        Value::Object(_) => existing.clone(),
+        Value::String(_) => Value::String(raw.to_owned()),
+    }
 }
 
 fn scalar_text(value: &Value) -> String {

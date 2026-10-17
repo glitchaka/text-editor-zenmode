@@ -2,6 +2,14 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## WBW complete workspace — 2026-10-17
+
+- Completado el workspace WBW: Proyecto, Manuscrito, Tablero de escenas, Personajes, Relaciones, Hilos/teorías, Cronología, Atlas, Mapas, Magia, Referencias, Revisión, Maquetación, Multimedia, Configuración y Estadísticas.
+- Las fichas permiten editar todos sus campos escalares/listas; los registros se crean, renombran, eliminan y reordenan.
+- Multimedia local puede adjuntarse desde el workspace.
+- Importación/exportación `.wbw` portable con `manifest.json`, `project.json`, manuscrito y medios.
+- Proyecto, maquetación y configuración son editables sin contaminar los TXT.
+
 ## WBW workspace — 2026-10-17
 
 - Integrado workspace de Worldbuilder Writer por proyecto: manuscrito, escenas, personajes, relaciones, cronología, mundo/atlas, magia, referencias, notas y estadísticas.
