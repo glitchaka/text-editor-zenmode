@@ -105,10 +105,15 @@ F11/Zen maximiza la ventana dentro del área de trabajo de Windows en vez de usa
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | cambiar de pestaña |
 | `Ctrl+W` | cerrar pestaña actual |
 | `Ctrl+Shift+T` | reabrir última pestaña cerrada |
+| `Ctrl+M` | abrir/cerrar navegador del manuscrito |
 | `Ctrl+S` | guardar |
 | `F2` | acciones de corrección/formato/página |
 | `F4` | Pomodoro |
 | `F11` | maximizar/restaurar Zenmode |
+
+## Manuscrito sin distracciones
+
+`Ctrl+M` abre una vista transitoria del proyecto actual. Muestra capítulos/documentos, palabras y estado sin dejar un panel permanente en pantalla. `Enter` abre el elemento en una pestaña, `S` alterna Borrador/Revisión/Final e `I` abre su ficha literaria. La ficha guarda POV, ubicación, tiempo, etiquetas y resumen en el sidecar/metadatos del documento. `Esc` vuelve inmediatamente al texto y fuerza un repintado limpio de Helix.
 
 ## Abrir directamente
 

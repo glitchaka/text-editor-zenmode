@@ -2,6 +2,13 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## v0.2.23 — 2026-10-17
+- Navegador transitorio de manuscrito con Ctrl+M, sin panel lateral permanente.
+- Apertura de capítulos y documentos del proyecto directamente en pestañas.
+- Recuento de palabras y estado Borrador/Revisión/Final por documento.
+- Ficha literaria transitoria con POV, ubicación, tiempo, etiquetas y resumen.
+- Metadatos literarios persistentes en sidecar/HSST y manifiesto de proyecto.
+
 ## v0.2.22 — 2026-10-17
 - Repintado F2 en dos fases para eliminar residuos visuales de menús y submenús.
 - Reflow fiable al maximizar/restaurar usando el tamaño real del área cliente de Windows.

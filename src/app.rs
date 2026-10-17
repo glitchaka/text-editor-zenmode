@@ -494,6 +494,29 @@ struct StyleSnapshot {
     page: crate::page::PageProfile,
 }
 
+#[derive(Clone, Debug)]
+struct ManuscriptEntry {
+    path: PathBuf,
+    metadata: DocumentMetadata,
+    words: usize,
+}
+
+#[derive(Clone, Debug)]
+struct ManuscriptNavigator {
+    project: String,
+    entries: Vec<ManuscriptEntry>,
+    selected: usize,
+}
+
+#[derive(Clone, Debug)]
+struct StoryMetadataEditor {
+    path: PathBuf,
+    metadata: DocumentMetadata,
+    field: usize,
+    editing: bool,
+    buffer: String,
+}
+
 impl StyleSnapshot {
     fn from_document(document: &document::HsstDocument) -> Self {
         Self {
@@ -536,6 +559,8 @@ struct TerminalModel {
     tabs: Vec<PathBuf>,
     active_tab: usize,
     closed_tabs: Vec<PathBuf>,
+    manuscript_nav: Option<ManuscriptNavigator>,
+    metadata_editor: Option<StoryMetadataEditor>,
 }
 
 impl TerminalModel {
@@ -599,6 +624,8 @@ impl TerminalModel {
             tabs: Vec::new(),
             active_tab: 0,
             closed_tabs: Vec::new(),
+            manuscript_nav: None,
+            metadata_editor: None,
         };
 
         if let Some(file) = file_to_open {
@@ -1176,6 +1203,379 @@ impl TerminalModel {
         let _ = self.activate_tab(next);
     }
 
+    fn overlay_active(&self) -> bool {
+        self.manuscript_nav.is_some() || self.metadata_editor.is_some()
+    }
+
+    fn status_label(status: &str) -> &'static str {
+        match status.to_ascii_lowercase().as_str() {
+            "revision" | "revisión" => "REVISIÓN",
+            "final" => "FINAL",
+            _ => "BORRADOR",
+        }
+    }
+
+    fn next_status(status: &str) -> &'static str {
+        match status.to_ascii_lowercase().as_str() {
+            "draft" | "borrador" => "revision",
+            "revision" | "revisión" => "final",
+            _ => "draft",
+        }
+    }
+
+    fn open_manuscript_navigator(&mut self) {
+        let Some(current) = self.current_file.clone() else {
+            return;
+        };
+        let Some(metadata) = document::read_metadata(&current) else {
+            self.launcher.message = Some("Este documento no tiene metadatos de proyecto.".into());
+            return;
+        };
+        if metadata.project.trim().is_empty() {
+            self.launcher.message =
+                Some("Asigna el documento a un proyecto desde el launcher (P).".into());
+            return;
+        }
+        let Ok(documents) = document::project_documents(&self.library.documents, &metadata.project)
+        else {
+            self.launcher.message = Some("No se pudo leer el manuscrito del proyecto.".into());
+            return;
+        };
+        let entries = documents
+            .into_iter()
+            .map(|(path, metadata)| {
+                let words = document::read(&path)
+                    .map(|doc| doc.body.split_whitespace().count())
+                    .unwrap_or(0);
+                ManuscriptEntry {
+                    path,
+                    metadata,
+                    words,
+                }
+            })
+            .collect::<Vec<_>>();
+        let selected = entries
+            .iter()
+            .position(|entry| paths_equivalent(&entry.path, &current))
+            .unwrap_or(0);
+        self.manuscript_nav = Some(ManuscriptNavigator {
+            project: metadata.project,
+            entries,
+            selected,
+        });
+        self.metadata_editor = None;
+        self.render_manuscript_navigator();
+    }
+
+    fn render_manuscript_navigator(&mut self) {
+        let Some(nav) = self.manuscript_nav.as_ref() else {
+            return;
+        };
+        let (cols, rows) = self.terminal_size();
+        let width = cols as usize;
+        let total_words = nav.entries.iter().map(|entry| entry.words).sum::<usize>();
+        let mut out = String::from("\x1b[2J\x1b[H\x1b[?25l");
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[1;38;5;222mMANUSCRITO\x1b[0m  \x1b[38;5;250m{}\x1b[0m",
+                truncate(&nav.project, width.saturating_sub(14))
+            ),
+        );
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[38;5;109m{} documentos · {} palabras\x1b[0m",
+                nav.entries.len(),
+                total_words
+            ),
+        );
+        push_line(&mut out, "");
+
+        let available = rows.saturating_sub(7) as usize;
+        let start = nav.selected.saturating_sub(available.saturating_sub(1) / 2);
+        let end = (start + available).min(nav.entries.len());
+        for (index, entry) in nav.entries.iter().enumerate().take(end).skip(start) {
+            let selected = index == nav.selected;
+            let marker = if selected { "▶" } else { " " };
+            let chapter = entry
+                .metadata
+                .chapter
+                .map(|value| format!("{value:02}"))
+                .unwrap_or_else(|| "--".into());
+            let status = Self::status_label(&entry.metadata.status);
+            let title_width = width.saturating_sub(35).max(12);
+            let title = truncate(&entry.metadata.title, title_width);
+            let line = format!(
+                "{marker} {chapter}  {title:<title_width$}  {:>6} pal  {status}",
+                entry.words
+            );
+            if selected {
+                push_line(
+                    &mut out,
+                    &format!("\x1b[30;48;5;109m{}\x1b[0m", truncate(&line, width)),
+                );
+            } else {
+                push_line(
+                    &mut out,
+                    &format!("\x1b[38;5;250m{}\x1b[0m", truncate(&line, width)),
+                );
+            }
+        }
+        while out.bytes().filter(|byte| *byte == b'\n').count() < rows.saturating_sub(2) as usize {
+            push_line(&mut out, "");
+        }
+        push_line(
+            &mut out,
+            "\x1b[38;5;244m↑↓ mover · Enter abrir pestaña · I ficha · S estado · Esc cerrar\x1b[0m",
+        );
+        self.reset_parser();
+        self.parser.process(out.as_bytes());
+        self.glyphs.clear();
+        self.dirty = true;
+    }
+
+    fn close_workspace_overlay(&mut self) {
+        self.manuscript_nav = None;
+        self.metadata_editor = None;
+        self.reset_parser();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.force_terminal_redraw();
+        }
+        self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(150));
+        self.glyphs.clear();
+        self.dirty = true;
+    }
+
+    fn manuscript_key(&mut self, key: KeyEvent) {
+        let Some(nav) = self.manuscript_nav.as_mut() else {
+            return;
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.close_workspace_overlay();
+                return;
+            }
+            KeyCode::Up => nav.selected = nav.selected.saturating_sub(1),
+            KeyCode::Down => {
+                nav.selected = (nav.selected + 1).min(nav.entries.len().saturating_sub(1));
+            }
+            KeyCode::Enter => {
+                let path = nav
+                    .entries
+                    .get(nav.selected)
+                    .map(|entry| entry.path.clone());
+                self.manuscript_nav = None;
+                if let Some(path) = path {
+                    if let Err(error) = self.open_in_tab(path) {
+                        self.launcher.message =
+                            Some(format!("No se pudo abrir el documento: {error}"));
+                    }
+                }
+                return;
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                if let Some(entry) = nav.entries.get_mut(nav.selected) {
+                    let next = Self::next_status(&entry.metadata.status);
+                    if document::set_status(&entry.path, next).is_ok() {
+                        entry.metadata.status = next.into();
+                    }
+                }
+            }
+            KeyCode::Char('i') | KeyCode::Char('I') => {
+                let path = nav
+                    .entries
+                    .get(nav.selected)
+                    .map(|entry| entry.path.clone());
+                if let Some(path) = path {
+                    self.open_story_metadata_editor(path);
+                }
+                return;
+            }
+            _ => {}
+        }
+        self.render_manuscript_navigator();
+    }
+
+    fn metadata_field_value(metadata: &DocumentMetadata, field: usize) -> String {
+        match field {
+            0 => metadata.pov.clone(),
+            1 => metadata.location.clone(),
+            2 => metadata.timeline.clone(),
+            3 => metadata.tags.join(", "),
+            _ => metadata.summary.clone(),
+        }
+    }
+
+    fn open_story_metadata_editor(&mut self, path: PathBuf) {
+        let Some(metadata) = document::read_metadata(&path) else {
+            return;
+        };
+        self.manuscript_nav = None;
+        self.metadata_editor = Some(StoryMetadataEditor {
+            path,
+            metadata,
+            field: 0,
+            editing: false,
+            buffer: String::new(),
+        });
+        self.render_story_metadata_editor();
+    }
+
+    fn persist_story_metadata(editor: &StoryMetadataEditor) -> Result<()> {
+        document::set_story_metadata(
+            &editor.path,
+            &editor.metadata.pov,
+            &editor.metadata.location,
+            &editor.metadata.timeline,
+            &editor.metadata.tags,
+            &editor.metadata.summary,
+        )
+    }
+
+    fn render_story_metadata_editor(&mut self) {
+        let Some(editor) = self.metadata_editor.as_ref() else {
+            return;
+        };
+        let (cols, rows) = self.terminal_size();
+        let width = cols as usize;
+        let mut out = String::from("\x1b[2J\x1b[H\x1b[?25l");
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[1;38;5;222mFICHA\x1b[0m  \x1b[38;5;250m{}\x1b[0m",
+                truncate(&editor.metadata.title, width.saturating_sub(9))
+            ),
+        );
+        push_line(
+            &mut out,
+            &format!(
+                "\x1b[38;5;109m{} · {}\x1b[0m",
+                editor.metadata.project,
+                Self::status_label(&editor.metadata.status)
+            ),
+        );
+        push_line(&mut out, "");
+        let labels = ["POV", "Ubicación", "Tiempo", "Etiquetas", "Resumen"];
+        for (index, label) in labels.iter().enumerate() {
+            let selected = index == editor.field;
+            let value = if selected && editor.editing {
+                format!("{}▏", editor.buffer)
+            } else {
+                Self::metadata_field_value(&editor.metadata, index)
+            };
+            let line = format!(
+                "{:>10}  {}",
+                label,
+                truncate(&value, width.saturating_sub(14))
+            );
+            if selected {
+                push_line(
+                    &mut out,
+                    &format!("\x1b[30;48;5;109m{}\x1b[0m", truncate(&line, width)),
+                );
+            } else {
+                push_line(
+                    &mut out,
+                    &format!("\x1b[38;5;250m{}\x1b[0m", truncate(&line, width)),
+                );
+            }
+        }
+        while out.bytes().filter(|byte| *byte == b'\n').count() < rows.saturating_sub(2) as usize {
+            push_line(&mut out, "");
+        }
+        let help = if editor.editing {
+            "Enter guardar · Esc cancelar · escribir para editar"
+        } else {
+            "↑↓ campo · Enter editar · S estado · M manuscrito · Esc volver"
+        };
+        push_line(&mut out, &format!("\x1b[38;5;244m{help}\x1b[0m"));
+        self.reset_parser();
+        self.parser.process(out.as_bytes());
+        self.glyphs.clear();
+        self.dirty = true;
+    }
+
+    fn story_metadata_key(&mut self, key: KeyEvent) {
+        let Some(editor) = self.metadata_editor.as_mut() else {
+            return;
+        };
+        if editor.editing {
+            match key.code {
+                KeyCode::Esc => {
+                    editor.editing = false;
+                    editor.buffer.clear();
+                }
+                KeyCode::Enter => {
+                    let value = editor.buffer.trim().to_owned();
+                    match editor.field {
+                        0 => editor.metadata.pov = value,
+                        1 => editor.metadata.location = value,
+                        2 => editor.metadata.timeline = value,
+                        3 => {
+                            editor.metadata.tags = value
+                                .split(',')
+                                .map(str::trim)
+                                .filter(|tag| !tag.is_empty())
+                                .map(str::to_owned)
+                                .collect();
+                        }
+                        _ => editor.metadata.summary = value,
+                    }
+                    editor.editing = false;
+                    editor.buffer.clear();
+                    let snapshot = editor.clone();
+                    if let Err(error) = Self::persist_story_metadata(&snapshot) {
+                        self.launcher.message =
+                            Some(format!("No se pudo guardar la ficha: {error}"));
+                    }
+                }
+                KeyCode::Backspace => {
+                    editor.buffer.pop();
+                }
+                KeyCode::Char(ch)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !key.modifiers.contains(KeyModifiers::ALT) =>
+                {
+                    editor.buffer.push(ch);
+                }
+                _ => {}
+            }
+            self.render_story_metadata_editor();
+            return;
+        }
+
+        match key.code {
+            KeyCode::Esc => {
+                self.metadata_editor = None;
+                self.open_manuscript_navigator();
+                if self.manuscript_nav.is_none() {
+                    self.close_workspace_overlay();
+                }
+                return;
+            }
+            KeyCode::Up => editor.field = editor.field.saturating_sub(1),
+            KeyCode::Down | KeyCode::Tab => editor.field = (editor.field + 1).min(4),
+            KeyCode::Enter => {
+                editor.buffer = Self::metadata_field_value(&editor.metadata, editor.field);
+                editor.editing = true;
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                let next = Self::next_status(&editor.metadata.status);
+                if document::set_status(&editor.path, next).is_ok() {
+                    editor.metadata.status = next.into();
+                }
+            }
+            KeyCode::Char('m') | KeyCode::Char('M') => {
+                self.metadata_editor = None;
+                self.open_manuscript_navigator();
+                return;
+            }
+            _ => {}
+        }
+        self.render_story_metadata_editor();
+    }
+
     fn insert_symbol(&mut self, symbol: &str) {
         if self.pomodoro_break || symbol.is_empty() {
             return;
@@ -1283,8 +1683,10 @@ impl TerminalModel {
                 match result {
                     Ok(bytes) => {
                         let bytes = editor.normalize_output(&bytes);
-                        self.parser.process(&bytes);
-                        self.dirty = true;
+                        if !self.overlay_active() {
+                            self.parser.process(&bytes);
+                            self.dirty = true;
+                        }
                     }
                     Err(error) => {
                         self.launcher.message = Some(format!("Error leyendo Helix: {error}"));
@@ -1316,6 +1718,8 @@ impl TerminalModel {
             self.word_count = 0;
             self.tabs.clear();
             self.active_tab = 0;
+            self.manuscript_nav = None;
+            self.metadata_editor = None;
             self.launcher.refresh();
             self.reset_parser();
             self.render_launcher();
@@ -1335,6 +1739,22 @@ impl TerminalModel {
     }
 
     fn editor_key(&mut self, key: KeyEvent) {
+        if self.metadata_editor.is_some() {
+            self.story_metadata_key(key);
+            return;
+        }
+        if self.manuscript_nav.is_some() {
+            self.manuscript_key(key);
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+            && matches!(key.code, KeyCode::Char('m') | KeyCode::Char('M'))
+        {
+            self.open_manuscript_navigator();
+            return;
+        }
+
         // F2 is a transient Helix code-action menu. Once the user confirms an
         // entry, send Enter to Helix first and close the popup shortly after,
         // independent of file timestamp changes. This also clears SELECT mode

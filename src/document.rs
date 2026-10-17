@@ -26,6 +26,11 @@ pub struct DocumentMetadata {
     pub order: i64,
     pub language: String,
     pub status: String,
+    pub pov: String,
+    pub location: String,
+    pub timeline: String,
+    pub tags: Vec<String>,
+    pub summary: String,
     pub page: PageProfile,
 }
 
@@ -50,6 +55,11 @@ impl DocumentMetadata {
             order: 0,
             language: "es-CL".into(),
             status: "draft".into(),
+            pov: String::new(),
+            location: String::new(),
+            timeline: String::new(),
+            tags: Vec::new(),
+            summary: String::new(),
             page: PageProfile::default(),
         }
     }
@@ -536,6 +546,11 @@ fn manifest_json(metadata: &DocumentMetadata) -> Value {
         "order": metadata.order,
         "language": metadata.language,
         "status": metadata.status,
+        "pov": metadata.pov,
+        "location": metadata.location,
+        "timeline": metadata.timeline,
+        "tags": metadata.tags,
+        "summary": metadata.summary,
         "page": {
             "paper": page.paper.name(),
             "orientation": page.orientation.name(),
@@ -616,6 +631,37 @@ fn metadata_from_manifest(value: &Value, source: &Path) -> DocumentMetadata {
             .get("status")
             .and_then(Value::as_str)
             .unwrap_or("draft")
+            .to_owned(),
+        pov: value
+            .get("pov")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        location: value
+            .get("location")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        timeline: value
+            .get("timeline")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        tags: value
+            .get("tags")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        summary: value
+            .get("summary")
+            .and_then(Value::as_str)
+            .unwrap_or("")
             .to_owned(),
         page,
     }
@@ -1329,7 +1375,13 @@ fn sync_project_manifest(root: &Path, project: &str) -> Result<()> {
                 "title": metadata.title,
                 "type": metadata.kind,
                 "chapter": metadata.chapter,
-                "order": metadata.order
+                "order": metadata.order,
+                "status": metadata.status,
+                "pov": metadata.pov,
+                "location": metadata.location,
+                "timeline": metadata.timeline,
+                "tags": metadata.tags,
+                "summary": metadata.summary
             })
         })
         .collect::<Vec<_>>();
@@ -1339,6 +1391,62 @@ fn sync_project_manifest(root: &Path, project: &str) -> Result<()> {
         project_manifest_path(root, project),
         serde_json::to_string_pretty(&manifest)?,
     )?;
+    Ok(())
+}
+
+pub fn set_status(path: &Path, status: &str) -> Result<()> {
+    if !is_native_path(path) {
+        return Ok(());
+    }
+    let mut document = read(path)?;
+    let next = match status.trim().to_ascii_lowercase().as_str() {
+        "revision" | "revisión" => "revision",
+        "final" | "finished" | "terminado" => "final",
+        _ => "draft",
+    };
+    if document.metadata.status == next {
+        return Ok(());
+    }
+    document.metadata.status = next.into();
+    let project = document.metadata.project.clone();
+    write(path, &document)?;
+    if !project.trim().is_empty() {
+        if let Some(root) = path.parent() {
+            sync_project_manifest(root, &project)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn set_story_metadata(
+    path: &Path,
+    pov: &str,
+    location: &str,
+    timeline: &str,
+    tags: &[String],
+    summary: &str,
+) -> Result<()> {
+    if !is_native_path(path) {
+        return Ok(());
+    }
+    let mut document = read(path)?;
+    document.metadata.pov = pov.trim().to_owned();
+    document.metadata.location = location.trim().to_owned();
+    document.metadata.timeline = timeline.trim().to_owned();
+    document.metadata.tags = tags
+        .iter()
+        .map(|tag| tag.trim())
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_owned)
+        .collect();
+    document.metadata.summary = summary.trim().to_owned();
+    let project = document.metadata.project.clone();
+    write(path, &document)?;
+    if !project.trim().is_empty() {
+        if let Some(root) = path.parent() {
+            sync_project_manifest(root, &project)?;
+        }
+    }
     Ok(())
 }
 
@@ -1533,6 +1641,37 @@ fn metadata_from_table(table: &toml::value::Table, source: &Path) -> DocumentMet
             .and_then(toml::Value::as_str)
             .unwrap_or("draft")
             .to_owned(),
+        pov: table
+            .get("pov")
+            .and_then(toml::Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        location: table
+            .get("location")
+            .and_then(toml::Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        timeline: table
+            .get("timeline")
+            .and_then(toml::Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        tags: table
+            .get("tags")
+            .and_then(toml::Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(toml::Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        summary: table
+            .get("summary")
+            .and_then(toml::Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
         page,
     }
 }
@@ -1588,6 +1727,11 @@ mod tests {
                 order: 10,
                 language: "es-CL".into(),
                 status: "draft".into(),
+                pov: String::new(),
+                location: String::new(),
+                timeline: String::new(),
+                tags: Vec::new(),
+                summary: String::new(),
                 page: PageProfile::default(),
             },
             body: "Texto en negrita.\n".into(),
