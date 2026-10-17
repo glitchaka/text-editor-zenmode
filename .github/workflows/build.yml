@@ -25,18 +25,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Apply scene and reference completion
+      - name: Apply final consistency pass
         shell: pwsh
-        run: python .github/scripts/finalize_scene_refs.py
+        run: python .github/scripts/final_consistency.py
 
-      - name: Commit scene and reference completion
+      - name: Commit final consistency
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/app.rs src/world.rs src/editor.rs CHANGELOG.md
+          git add src/app.rs src/world.rs CHANGELOG.md
           if (-not (git diff --cached --quiet)) {
-            git commit -m "feat: finish scene documents and semantic references [skip ci]"
+            git commit -m "fix: complete WBW scene round-trip and reference picker [skip ci]"
             git push origin HEAD:main
           }
 
