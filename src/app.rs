@@ -1212,13 +1212,15 @@ impl TerminalModel {
                     "No se pudo cerrar F2 y volver a escritura: {error}"
                 ));
             }
-            self.reset_parser();
+            // Keep the live VT parser intact. Helix repaints into the existing
+            // terminal state; recreating the parser here loses unchanged cells and
+            // produces stale gutters/EOF markers after transient menus.
             if let Some(editor) = self.editor.as_mut()
                 && let Err(error) = editor.force_terminal_redraw()
             {
                 self.launcher.message = Some(format!("No se pudo repintar Helix: {error}"));
             }
-            self.layout_redraw_passes = self.layout_redraw_passes.max(4);
+            self.layout_redraw_passes = self.layout_redraw_passes.max(2);
             self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(70));
             self.dirty = true;
         }
@@ -1229,8 +1231,10 @@ impl TerminalModel {
         {
             self.layout_redraw_at = None;
             let (cols, rows) = self.terminal_size();
+            // Preserve the accumulated VT state while resizing. A PTY resize makes
+            // Helix redraw/reflow; resetting our parser in the middle of that redraw
+            // causes partially blank/stale rows.
             self.parser.screen_mut().set_size(rows, cols);
-            self.reset_parser();
             if let Some(editor) = self.editor.as_mut() {
                 if let Err(error) = editor
                     .resize(cols, rows)
@@ -1574,19 +1578,16 @@ impl TerminalModel {
             return;
         }
 
-        let transient_ui_key =
-            key.modifiers.is_empty() && matches!(key.code, KeyCode::Enter | KeyCode::Esc);
         if let Some(editor) = self.editor.as_ref() {
             if let Some(code) = bridged_editor_shortcut(key) {
                 let internal = KeyEvent::new(code, KeyModifiers::NONE);
                 let _ = editor.send_key(internal, editor.win32_input());
                 return;
             }
+            // Normal Enter/Esc must remain normal editor input. Scheduling a forced
+            // terminal rebuild after every Enter was racing Helix's incremental
+            // paint and is the source of the apparently random visual corruption.
             let _ = editor.send_key(key, editor.win32_input());
-        }
-        if transient_ui_key {
-            self.layout_redraw_passes = self.layout_redraw_passes.max(2);
-            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(110));
         }
     }
 

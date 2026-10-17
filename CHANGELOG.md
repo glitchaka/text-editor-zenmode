@@ -2,6 +2,12 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## v0.2.24
+
+- Corregido el estado visual del editor después de Enter/Esc: ya no se reconstruye el terminal en cada pulsación.
+- El repintado de F2 conserva el parser VT para evitar restos, líneas fantasma y marcadores `~` incoherentes.
+- El reajuste al maximizar/restaurar conserva el estado del terminal mientras Helix realiza el reflow.
+
 ## v0.2.23 — 2026-10-17
 - Corregido Ctrl+C/Ctrl+X mediante un puente explícito al portapapeles del sistema.
 - Reflow de Helix en varias pasadas tras maximizar/restaurar y cambios de tamaño de Windows.
