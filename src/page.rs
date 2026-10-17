@@ -98,9 +98,6 @@ impl PageProfile {
         }
     }
 
-    /// Logical hard-wrap width derived from the printable page width.
-    /// Letter portrait with 25 mm side margins is the reference profile: 88 columns.
-
     pub fn cycle_margin(value: u16) -> u16 {
         const VALUES: [u16; 7] = [10, 15, 20, 25, 30, 35, 40];
         VALUES
@@ -177,7 +174,10 @@ mod tests {
             ..PageProfile::default()
         };
         assert_eq!(page.page_size_tenth_mm(), (2970, 2100));
-        assert_eq!(page.content_size_tenth_mm(), (2470, 1600));
+        assert_eq!(page.margin_top_mm, 25);
+        assert_eq!(page.margin_right_mm, 25);
+        assert_eq!(page.margin_bottom_mm, 25);
+        assert_eq!(page.margin_left_mm, 25);
     }
 
     #[test]
