@@ -1,0 +1,144 @@
+name: Create historical releases
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        version:
+          - 0.0.1
+          - 0.1.0
+          - 0.1.1
+          - 0.1.2
+          - 0.1.3
+          - 0.1.4
+          - 0.1.5
+          - 0.1.6
+          - 0.1.7
+          - 0.2.0
+          - 0.2.1
+          - 0.2.2
+          - 0.2.3
+          - 0.2.4
+          - 0.2.5
+          - 0.2.6
+          - 0.2.7
+          - 0.2.8
+          - 0.2.9
+          - 0.2.10
+          - 0.2.11
+          - 0.2.12
+          - 0.2.13
+          - 0.2.14
+          - 0.2.15
+          - 0.2.16
+          - 0.2.17
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create release v${{ matrix.version }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ matrix.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "$TAG already exists"
+            exit 0
+          fi
+
+          ROOT="$(git rev-list --max-parents=0 HEAD | head -n1)"
+          START=""
+          NEXT=""
+          LAST_VERSION=""
+          FOUND=0
+
+          while read -r SHA; do
+            CARGO="$(git show "${SHA}:Cargo.toml" 2>/dev/null || true)"
+            [ -n "$CARGO" ] || continue
+            V="$(printf '%s\n' "$CARGO" | sed -n 's/^version = "\([0-9][0-9.]*\)"/\1/p' | head -n1)"
+            [ -n "$V" ] || continue
+            if [ "$V" != "$LAST_VERSION" ]; then
+              if [ "$FOUND" -eq 1 ]; then
+                NEXT="$SHA"
+                break
+              fi
+              if [ "$V" = "$VERSION" ]; then
+                START="$SHA"
+                FOUND=1
+              fi
+              LAST_VERSION="$V"
+            fi
+          done < <(git rev-list --reverse HEAD)
+
+          if [ "$VERSION" = "0.0.1" ] && [ -z "$START" ]; then
+            START="$ROOT"
+            FOUND=1
+            NEXT="$(git rev-list --reverse "${ROOT}..HEAD" | while read -r SHA; do
+              CARGO="$(git show "${SHA}:Cargo.toml" 2>/dev/null || true)"
+              V="$(printf '%s\n' "$CARGO" | sed -n 's/^version = "\([0-9][0-9.]*\)"/\1/p' | head -n1)"
+              if [ -n "$V" ] && [ "$V" != "0.0.1" ]; then echo "$SHA"; break; fi
+            done)"
+          fi
+
+          if [ "$FOUND" -ne 1 ]; then
+            echo "Version $VERSION not found in history"
+            exit 1
+          fi
+
+          if [ -n "$NEXT" ]; then
+            TARGET="$(git rev-parse "${NEXT}^")"
+          else
+            TARGET="$(git rev-parse HEAD)"
+          fi
+
+          if [ "$VERSION" = "0.2.17" ]; then
+            TARGET="$(git rev-parse HEAD)"
+          fi
+
+          DATE="$(git show -s --format=%cs "$TARGET")"
+          NOTES="/tmp/release-${VERSION}.md"
+
+          if [ "$START" = "$ROOT" ]; then
+            RANGE="$TARGET"
+          else
+            PARENT="$(git rev-parse "${START}^" 2>/dev/null || echo "$START")"
+            RANGE="${PARENT}..${TARGET}"
+          fi
+
+          {
+            echo "## Zen Editor ${TAG}"
+            echo
+            echo "Versión histórica reconstruida desde el historial Git del proyecto."
+            echo
+            echo "**Fecha del estado:** ${DATE}"
+            echo
+            echo "### Cambios"
+            git log --reverse --format='- %s' "$RANGE" \
+              | grep -viE 'reconstruct release history|release reconstruction|create historical releases' \
+              | awk '!seen[$0]++' \
+              | head -n 80 || true
+          } > "$NOTES"
+
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --target "$TARGET" \
+            --title "Zen Editor ${TAG}" \
+            --notes-file "$NOTES"
