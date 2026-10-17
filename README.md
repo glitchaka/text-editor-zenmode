@@ -27,6 +27,8 @@ Los contenedores `.hsst` anteriores continúan siendo compatibles. Un `.hsst` mo
 
 Helix conserva modos NORMAL/INSERT/SELECT, undo/redo, selección, movimientos y edición real. La presentación usa **soft-wrap no destructivo**: el ancho de ventana nunca inserta saltos físicos en el texto. Los saltos de párrafo escritos o pegados se conservan literalmente.
 
+La selección se comporta como en un editor convencional: al escribir sobre una selección, el texto seleccionado se reemplaza; Retroceso o Suprimir eliminan la selección completa; pegar reemplaza la selección activa.
+
 El ratón se puentea a la PTY para selección y scroll. El área cliente no ocupada por una selección de texto permanece como superficie de arrastre de la ventana. La ventana es `no-frame` y el redondeo se solicita al DWM de Windows mediante `DWMWA_WINDOW_CORNER_PREFERENCE`; no se usa una máscara para simular esquinas.
 
 ## F2: corrección, formato y página
@@ -77,7 +79,9 @@ DOCX y PDF usan el perfil de papel, orientación y márgenes del documento y rec
 
 ## Isla inferior y Pomodoro
 
-La isla inferior se mantiene compacta: **Pomodoro · Ω símbolos · pantalla completa · cerrar**. F4 o `:PD` inicia el ciclo de 25 minutos de escritura y 5 de descanso. Durante el descanso se bloquea la escritura. El menú Ω inserta signos tipográficos; `Alt+D`, `Ctrl+G` y `AltGr+-` permiten insertar raya `—`.
+La isla inferior se mantiene compacta y reserva su propia franja para no cubrir la línea de estado: **contador de palabras · Pomodoro · Ω símbolos · maximizar/restaurar · cerrar**. F4 o `:PD` inicia el ciclo de 25 minutos de escritura y 5 de descanso. Durante el descanso se bloquea la escritura. El menú Ω inserta signos tipográficos; `Alt+D`, `Ctrl+G` y `AltGr+-` permiten insertar raya `—`.
+
+F11/Zen maximiza la ventana dentro del área de trabajo de Windows en vez de usar fullscreen exclusivo, por lo que la barra de tareas permanece disponible. Al maximizar, restaurar o redimensionar, la PTY se recalcula y Helix se repinta para ajustar el contenido al nuevo ancho.
 
 ## Editor: atajos principales
 
@@ -94,11 +98,11 @@ La isla inferior se mantiene compacta: **Pomodoro · Ω símbolos · pantalla co
 | `Ctrl+Y` / `Ctrl+Shift+Z` | rehacer |
 | `Ctrl+A` | seleccionar todo |
 | `Ctrl+C` / `Ctrl+X` | copiar / cortar selección |
-| `Ctrl+V` | pegar con bracketed paste |
+| `Ctrl+V` | pegar reemplazando la selección si existe |
 | `Ctrl+S` | guardar |
 | `F2` | acciones de corrección/formato/página |
 | `F4` | Pomodoro |
-| `F11` | entrar/salir de pantalla completa |
+| `F11` | maximizar/restaurar Zenmode |
 
 ## Abrir directamente
 
