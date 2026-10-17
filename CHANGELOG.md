@@ -2,6 +2,14 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## v0.2.20 — 2026-10-17
+- Eliminar restos visuales de los menús F2 mediante un repintado completo de Helix.
+- Añadir creación de carpetas desde el launcher.
+- Añadir agrupación de documentos por proyecto mediante un manifiesto de proyecto.
+- Mantener el dock visible y compacto sin cubrir la línea de estado del editor.
+- Mostrar contador de palabras en el dock.
+- Cambiar F11/Zen a ventana maximizada sin ocultar la barra de tareas de Windows.
+
 ## v0.2.19 — 2026-10-17
 - Cierre determinista del menú F2 al confirmar una acción.
 - Retorno automático a modo escritura después de aplicar formato o configuración de página.

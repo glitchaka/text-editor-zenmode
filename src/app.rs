@@ -21,9 +21,8 @@ use windows_sys::Win32::{
     UI::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
-            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, HWND_NOTOPMOST,
-            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
-            SetWindowPos,
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SW_MAXIMIZE,
+            SW_RESTORE, SetForegroundWindow, ShowWindow,
         },
     },
 };
@@ -95,6 +94,7 @@ slint::slint! {
         in property <bool> pomodoro-prompt: false;
         in property <bool> pomodoro-break: false;
         in property <string> pomodoro-text: "";
+        in property <string> word-count-text: "0 PAL";
         property <bool> symbols-open: false;
         callback key-input(string, bool, bool, bool);
         callback terminal-cell-has-text(float, float) -> bool;
@@ -196,15 +196,12 @@ slint::slint! {
         }
 
         island := Rectangle {
-            visible: !root.zen-active
-                || bottom-reveal.has-hover
-                || island-hover.has-hover
-                || root.symbols-open;
-            width: 232px;
-            height: 34px;
-            x: root.width - self.width - 14px;
-            y: root.height - self.height - 7px;
-            border-radius: 13px;
+            visible: root.editor-active;
+            width: 266px;
+            height: 22px;
+            x: root.width - self.width - 4px;
+            y: root.height - self.height - 2px;
+            border-radius: 9px;
             background: rgba(10, 13, 20, 0.96);
             border-width: 1px;
             border-color: #2b3547;
@@ -218,9 +215,19 @@ slint::slint! {
                 enabled: !root.zen-active;
             }
 
+            Text {
+                x: 6px; y: 1px; width: 68px; height: 20px;
+                text: root.word-count-text;
+                color: #8db9bb;
+                font-family: "Segoe UI Variable";
+                font-size: 9px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
             Rectangle {
-                x: 5px; y: 3px; width: 112px; height: 28px;
-                border-radius: 9px;
+                x: 77px; y: 1px; width: 99px; height: 20px;
+                border-radius: 7px;
                 background: pomodoro-touch.pressed
                     ? #29384b
                     : pomodoro-touch.has-hover ? #172334 : transparent;
@@ -229,7 +236,7 @@ slint::slint! {
                     text: root.pomodoro-text != "" ? root.pomodoro-text : "POMODORO";
                     color: root.pomodoro-break ? #ffb4a2 : #e8cc83;
                     font-family: "Segoe UI Variable";
-                    font-size: root.pomodoro-text != "" ? 10px : 11px;
+                    font-size: 9px;
                     font-weight: 650;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -241,8 +248,8 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 121px; y: 3px; width: 32px; height: 28px;
-                border-radius: 9px;
+                x: 179px; y: 1px; width: 24px; height: 20px;
+                border-radius: 7px;
                 background: symbol-menu.pressed
                     ? #29384b
                     : symbol-menu.has-hover ? #172334 : transparent;
@@ -260,8 +267,8 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 157px; y: 3px; width: 32px; height: 28px;
-                border-radius: 9px;
+                x: 206px; y: 1px; width: 24px; height: 20px;
+                border-radius: 7px;
                 background: fullscreen-touch.pressed
                     ? #29384b
                     : fullscreen-touch.has-hover ? #172334 : transparent;
@@ -277,13 +284,13 @@ slint::slint! {
             }
 
             Rectangle {
-                x: 193px; y: 1px; width: 38px; height: 32px;
-                border-radius: 10px;
+                x: 233px; y: 0px; width: 31px; height: 22px;
+                border-radius: 8px;
                 background: close-touch.pressed
                     ? rgb(62, 23, 36)
                     : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
                 Path {
-                    x: 10px; y: 8px; width: 18px; height: 18px;
+                    x: 7px; y: 3px; width: 17px; height: 17px;
                     commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
                     stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
                     stroke-width: 2px; stroke-line-cap: round;
@@ -522,6 +529,7 @@ struct TerminalModel {
     pending_style_snapshot: Option<StyleSnapshot>,
     style_undo: Vec<StyleSnapshot>,
     style_redo: Vec<StyleSnapshot>,
+    word_count: usize,
     f2_menu_open: bool,
     f2_close_at: Option<Instant>,
 }
@@ -580,6 +588,7 @@ impl TerminalModel {
             pending_style_snapshot: None,
             style_undo: Vec::new(),
             style_redo: Vec::new(),
+            word_count: 0,
             f2_menu_open: false,
             f2_close_at: None,
         };
@@ -782,7 +791,11 @@ impl TerminalModel {
 
         let cols = (((self.width as f32 - left_pad * 2.0) / cell_width).floor() as i32)
             .clamp(20, 300) as u16;
-        let bottom_pad = 0.0;
+        let bottom_pad = if self.editor.is_some() {
+            24.0 * self.scale.max(0.5)
+        } else {
+            0.0
+        };
         let rows = (((self.height as f32 - top_pad - bottom_pad) / cell_height).floor() as i32)
             .clamp(8, 160) as u16;
         (cols, rows)
@@ -989,6 +1002,13 @@ impl TerminalModel {
         self.page_profile = document::read_metadata(&file)
             .map(|metadata| metadata.page)
             .unwrap_or_default();
+        self.word_count = document::read(&file)
+            .map(|document| document.body.split_whitespace().count())
+            .unwrap_or_else(|_| {
+                fs::read_to_string(&file)
+                    .map(|text| text.split_whitespace().count())
+                    .unwrap_or(0)
+            });
         let (cols, rows) = self.terminal_size();
         let session = match EditorSession::start(&file, cols, rows)
             .with_context(|| format!("No se pudo abrir {}", file.display()))
@@ -1091,6 +1111,9 @@ impl TerminalModel {
                     .ok();
                 if body_changed {
                     self.source_modified = modified;
+                    if let Ok(document) = document::read(source) {
+                        self.word_count = document.body.split_whitespace().count();
+                    }
                     self.pending_style_snapshot = None;
                     self.style_undo.clear();
                     self.style_redo.clear();
@@ -1149,6 +1172,7 @@ impl TerminalModel {
             self.pomodoro_break = false;
             self.pomodoro_deadline = None;
             self.command_capture = None;
+            self.word_count = 0;
             self.launcher.refresh();
             self.reset_parser();
             self.render_launcher();
@@ -1405,6 +1429,7 @@ impl TerminalModel {
             .and_then(|metadata| metadata.modified())
             .ok();
         self.page_profile = previous_metadata.page;
+        self.word_count = previous_document.body.split_whitespace().count();
         let (cols, rows) = self.terminal_size();
         self.parser.screen_mut().set_size(rows, cols);
         if let Some(editor) = self.editor.as_mut() {
@@ -1488,6 +1513,9 @@ impl TerminalModel {
             .and_then(|metadata| metadata.modified())
             .ok();
         self.page_profile = next_metadata.page;
+        self.word_count = document::read(next)
+            .map(|document| document.body.split_whitespace().count())
+            .unwrap_or(0);
         let (cols, rows) = self.terminal_size();
         self.parser.screen_mut().set_size(rows, cols);
         if let Some(editor) = self.editor.as_mut() {
@@ -2740,24 +2768,12 @@ unsafe fn focus_native_window(hwnd: HWND) {
 }
 
 #[cfg(windows)]
-unsafe fn set_zen_topmost(hwnd: HWND, enabled: bool) {
+unsafe fn set_zen_maximized(hwnd: HWND, enabled: bool) {
     unsafe {
-        let insert_after = if enabled {
-            HWND_TOPMOST
-        } else {
-            HWND_NOTOPMOST
-        };
-        SetWindowPos(
-            hwnd,
-            insert_after,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-        );
-        if enabled {
-            focus_native_window(hwnd);
+        ShowWindow(hwnd, if enabled { SW_MAXIMIZE } else { SW_RESTORE });
+        focus_native_window(hwnd);
+        if !enabled {
+            enable_native_rounded_corners(hwnd);
         }
     }
 }
@@ -2792,6 +2808,7 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
                 ui.set_pomodoro_prompt(model.pomodoro_offer);
                 ui.set_pomodoro_break(model.pomodoro_break);
                 ui.set_pomodoro_text(model.pomodoro_label().into());
+                ui.set_word_count_text(format!("{} PAL", model.word_count).into());
             }
         });
     }
@@ -2863,6 +2880,8 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
         ui.set_pomodoro_prompt(model.pomodoro_offer);
         ui.set_pomodoro_break(model.pomodoro_break);
         ui.set_pomodoro_text(model.pomodoro_label().into());
+        ui.set_word_count_text(format!("{} PAL", model.word_count).into());
+        #[cfg(not(windows))]
         ui.window().set_fullscreen(zen);
     }
 
@@ -2872,7 +2891,11 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
     if let Some(hwnd) = slint_hwnd(&ui) {
         unsafe {
             enable_native_rounded_corners(hwnd);
-            focus_native_window(hwnd);
+            if model.borrow().zen_engaged() {
+                set_zen_maximized(hwnd, true);
+            } else {
+                focus_native_window(hwnd);
+            }
         }
     }
 
@@ -2897,18 +2920,16 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             ui.set_pomodoro_prompt(model.pomodoro_offer);
             ui.set_pomodoro_break(model.pomodoro_break);
             ui.set_pomodoro_text(model.pomodoro_label().into());
+            ui.set_word_count_text(format!("{} PAL", model.word_count).into());
             ui.set_zen_active(zen);
             if zen != last_zen.get() {
                 ui.set_zen_active(zen);
+                #[cfg(not(windows))]
                 ui.window().set_fullscreen(zen);
                 #[cfg(windows)]
                 if let Some(hwnd) = slint_hwnd(&ui) {
                     unsafe {
-                        set_zen_topmost(hwnd, zen);
-                        if !zen {
-                            enable_native_rounded_corners(hwnd);
-                            focus_native_window(hwnd);
-                        }
+                        set_zen_maximized(hwnd, zen);
                     }
                 }
                 last_zen.set(zen);
@@ -2918,11 +2939,7 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             #[cfg(windows)]
             if let Some(hwnd) = slint_hwnd(&ui) {
                 unsafe {
-                    if zen {
-                        if GetForegroundWindow() != hwnd {
-                            focus_native_window(hwnd);
-                        }
-                    } else {
+                    if !zen {
                         enable_native_rounded_corners(hwnd);
                     }
                 }

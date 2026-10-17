@@ -1,6 +1,6 @@
 [package]
 name = "zen-editor"
-version = "0.2.19"
+version = "0.2.20"
 edition = "2024"
 autobins = false
 description = "Zen Editor standalone distraction-free editor built on Helix"
