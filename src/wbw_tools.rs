@@ -227,8 +227,8 @@ pub fn relationship_board(workspace: &ProjectWorkspace, width: usize, zoom: i32,
             let fields = workspace.record_fields(WorldSection::Relationships, index);
             let from = field(&fields, "from").unwrap_or_default();
             let to = field(&fields, "to").unwrap_or_default();
-            if &from == focus { allowed.insert(to); }
-            if &to == focus { allowed.insert(from); }
+            if &from == focus { allowed.insert(to.clone()); }
+            if &to == focus { allowed.insert(from.clone()); }
         }
     }
 

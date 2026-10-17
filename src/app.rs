@@ -3064,7 +3064,7 @@ impl TerminalModel {
                         if rows.is_empty() {
                             push_line(&mut out, &framed_left("(sin registros)", inner_width, "38;5;244"));
                         } else if section == WorldSection::Scenes {
-                            let visible = if self.launcher.workspace_scene_compact { 12 } else { 7 };
+                            let visible: usize = if self.launcher.workspace_scene_compact { 12 } else { 7 };
                             let start = self.launcher.workspace_row.saturating_sub(visible.saturating_sub(1));
                             for (index, row) in rows.iter().enumerate().skip(start).take(visible) {
                                 let marker = if index == self.launcher.workspace_row { "▶" } else { " " };
