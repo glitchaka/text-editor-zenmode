@@ -31,13 +31,32 @@ jobs:
           targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
 
+      - name: Apply warning cleanup
+        shell: pwsh
+        run: python .github/scripts/warning_cleanup.py
+
+      - name: Clippy auto-fix
+        shell: pwsh
+        run: cargo clippy --fix --release --target $env:TARGET --allow-dirty --allow-staged
+
       - name: Format source
         shell: pwsh
         run: cargo fmt --all
 
-      - name: Clippy
+      - name: Commit warning cleanup
         shell: pwsh
-        run: cargo clippy --release --target $env:TARGET
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs src/world.rs src/wbw_tools.rs src/export.rs
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "chore: make WBW build warning-free [skip ci]"
+            git push origin HEAD:main
+          }
+
+      - name: Strict Clippy
+        shell: pwsh
+        run: cargo clippy --release --target $env:TARGET -- -D warnings
 
       - name: Test
         shell: pwsh
