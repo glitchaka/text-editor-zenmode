@@ -25,6 +25,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Apply mandatory WBW integration
+        shell: pwsh
+        run: python .github/scripts/apply_wbw.py
+
+      - name: Commit mandatory WBW integration
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.rs src/main.rs CHANGELOG.md
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "feat: integrate mandatory WBW workspace and repair build [skip ci]"
+            git push origin HEAD:main
+          }
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
