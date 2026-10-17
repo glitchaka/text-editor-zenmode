@@ -673,6 +673,8 @@ F14 = "move_next_word_start"
 F17 = "undo"
 F18 = "redo"
 F19 = ["select_all", "select_mode"]
+F23 = "yank_to_clipboard"
+F24 = ["yank_to_clipboard", "delete_selection"]
 
 [keys.insert]
 F2 = "code_action"
@@ -700,6 +702,8 @@ F16 = "delete_word_forward"
 F17 = ["normal_mode", "undo", "insert_mode"]
 F18 = ["normal_mode", "redo", "insert_mode"]
 F19 = ["normal_mode", "select_all", "select_mode"]
+F23 = ["normal_mode", "yank_to_clipboard", "insert_mode"]
+F24 = ["normal_mode", "yank_to_clipboard", "delete_selection", "insert_mode"]
 
 [keys.select]
 F20 = ":write"
@@ -726,6 +730,8 @@ F17 = "undo"
 F18 = "redo"
 F19 = "select_all"
 F22 = ["delete_selection", "insert_mode"]
+F23 = "yank_to_clipboard"
+F24 = ["yank_to_clipboard", "delete_selection"]
 "#
     );
     fs::write(path, content)?;

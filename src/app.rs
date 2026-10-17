@@ -533,6 +533,7 @@ struct TerminalModel {
     f2_menu_open: bool,
     f2_close_at: Option<Instant>,
     layout_redraw_at: Option<Instant>,
+    layout_redraw_passes: u8,
     tabs: Vec<PathBuf>,
     active_tab: usize,
     closed_tabs: Vec<PathBuf>,
@@ -596,6 +597,7 @@ impl TerminalModel {
             f2_menu_open: false,
             f2_close_at: None,
             layout_redraw_at: None,
+            layout_redraw_passes: 0,
             tabs: Vec::new(),
             active_tab: 0,
             closed_tabs: Vec::new(),
@@ -626,7 +628,8 @@ impl TerminalModel {
     fn toggle_editor_zen(&mut self) {
         if self.editor.is_some() {
             self.zen_requested = !self.zen_requested;
-            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(220));
+            self.layout_redraw_passes = 5;
+            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(70));
             self.dirty = true;
             self.glyphs.clear();
         }
@@ -831,7 +834,8 @@ impl TerminalModel {
                     self.launcher.message =
                         Some(format!("No se pudo redimensionar Helix: {error}"));
                 } else {
-                    self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(120));
+                    self.layout_redraw_passes = self.layout_redraw_passes.max(3);
+                    self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(70));
                 }
             } else if self.splash_active {
                 self.render_splash();
@@ -1214,7 +1218,8 @@ impl TerminalModel {
             {
                 self.launcher.message = Some(format!("No se pudo repintar Helix: {error}"));
             }
-            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(160));
+            self.layout_redraw_passes = self.layout_redraw_passes.max(4);
+            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(70));
             self.dirty = true;
         }
 
@@ -1223,13 +1228,24 @@ impl TerminalModel {
             .is_some_and(|deadline| Instant::now() >= deadline)
         {
             self.layout_redraw_at = None;
+            let (cols, rows) = self.terminal_size();
+            self.parser.screen_mut().set_size(rows, cols);
             self.reset_parser();
-            if let Some(editor) = self.editor.as_mut()
-                && let Err(error) = editor.force_terminal_redraw()
-            {
-                self.launcher.message = Some(format!(
-                    "No se pudo reajustar Helix al tamaño de la ventana: {error}"
-                ));
+            if let Some(editor) = self.editor.as_mut() {
+                if let Err(error) = editor
+                    .resize(cols, rows)
+                    .and_then(|_| editor.force_terminal_redraw())
+                {
+                    self.launcher.message = Some(format!(
+                        "No se pudo reajustar Helix al tamaño de la ventana: {error}"
+                    ));
+                }
+            }
+            if self.layout_redraw_passes > 0 {
+                self.layout_redraw_passes -= 1;
+            }
+            if self.layout_redraw_passes > 0 {
+                self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(90));
             }
             self.glyphs.clear();
             self.dirty = true;
@@ -1558,6 +1574,8 @@ impl TerminalModel {
             return;
         }
 
+        let transient_ui_key =
+            key.modifiers.is_empty() && matches!(key.code, KeyCode::Enter | KeyCode::Esc);
         if let Some(editor) = self.editor.as_ref() {
             if let Some(code) = bridged_editor_shortcut(key) {
                 let internal = KeyEvent::new(code, KeyModifiers::NONE);
@@ -1565,6 +1583,10 @@ impl TerminalModel {
                 return;
             }
             let _ = editor.send_key(key, editor.win32_input());
+        }
+        if transient_ui_key {
+            self.layout_redraw_passes = self.layout_redraw_passes.max(2);
+            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(110));
         }
     }
 
@@ -3259,6 +3281,8 @@ fn bridged_editor_shortcut(key: KeyEvent) -> Option<KeyCode> {
         KeyCode::Char('z') | KeyCode::Char('Z') => Some(KeyCode::F(17)),
         KeyCode::Char('y') | KeyCode::Char('Y') => Some(KeyCode::F(18)),
         KeyCode::Char('a') | KeyCode::Char('A') => Some(KeyCode::F(19)),
+        KeyCode::Char('c') | KeyCode::Char('C') => Some(KeyCode::F(23)),
+        KeyCode::Char('x') | KeyCode::Char('X') => Some(KeyCode::F(24)),
         KeyCode::Left => Some(KeyCode::F(13)),
         KeyCode::Right => Some(KeyCode::F(14)),
         KeyCode::Backspace => Some(KeyCode::F(15)),
@@ -4122,6 +4146,14 @@ mod app_input_tests {
         assert_eq!(
             bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('a'), ctrl)),
             Some(KeyCode::F(19))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('c'), ctrl)),
+            Some(KeyCode::F(23))
+        );
+        assert_eq!(
+            bridged_editor_shortcut(KeyEvent::new(KeyCode::Char('x'), ctrl)),
+            Some(KeyCode::F(24))
         );
         assert_eq!(
             bridged_editor_shortcut(KeyEvent::new(

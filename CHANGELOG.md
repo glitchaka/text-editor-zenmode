@@ -2,6 +2,12 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## v0.2.23 — 2026-10-17
+- Corregido Ctrl+C/Ctrl+X mediante un puente explícito al portapapeles del sistema.
+- Reflow de Helix en varias pasadas tras maximizar/restaurar y cambios de tamaño de Windows.
+- Limpieza diferida de superficies transitorias para evitar restos visuales de menús/completado.
+- El navegador de manuscrito y la ficha literaria se posponen al TODO posterior al gran cambio.
+
 ## v0.2.22 — 2026-10-17
 - Repintado F2 en dos fases para eliminar residuos visuales de menús y submenús.
 - Reflow fiable al maximizar/restaurar usando el tamaño real del área cliente de Windows.
