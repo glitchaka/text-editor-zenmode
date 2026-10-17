@@ -9,6 +9,7 @@ mod library;
 mod page;
 mod pty_protocol;
 mod spell;
+mod world;
 
 use std::{
     io::{Read, Write},

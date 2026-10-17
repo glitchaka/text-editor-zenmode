@@ -33,6 +33,7 @@ use crate::{
     export::{self, ExportFormat, ExportScope},
     format,
     library::LibraryPaths,
+    world::{self, WorldSection},
 };
 
 const INITIAL_COLS: u16 = 112;
@@ -403,6 +404,12 @@ struct Launcher {
     project_name: String,
     project_chapter: String,
     project_stage: u8,
+    workspace_project: Option<String>,
+    workspace_selected: usize,
+    workspace_detail: bool,
+    workspace_row: usize,
+    workspace_new: bool,
+    workspace_input: String,
     message: Option<String>,
 }
 
@@ -421,6 +428,12 @@ impl Launcher {
             project_name: String::new(),
             project_chapter: String::new(),
             project_stage: 0,
+            workspace_project: None,
+            workspace_selected: 0,
+            workspace_detail: false,
+            workspace_row: 0,
+            workspace_new: false,
+            workspace_input: String::new(),
             message: None,
         };
         this.refresh();
@@ -1789,8 +1802,8 @@ impl TerminalModel {
     }
 
     fn page_wrap_columns(&self) -> Option<usize> {
-        let current = self.current_file.as_deref()?;
-        document::is_supported_text_path(current).then(|| self.page_profile.text_columns())
+        // El reflow visual no debe reescribir el documento físico.
+        None
     }
 
     fn helix_cursor_position(&self) -> Option<(usize, usize)> {
@@ -1955,6 +1968,95 @@ impl TerminalModel {
     }
 
     fn launcher_key(&mut self, key: KeyEvent) {
+        if let Some(project) = self.launcher.workspace_project.clone() {
+            let section = WorldSection::ALL[self.launcher.workspace_selected.min(WorldSection::ALL.len() - 1)];
+            if self.launcher.workspace_new {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.launcher.workspace_new = false;
+                        self.launcher.workspace_input.clear();
+                    }
+                    KeyCode::Enter => {
+                        let title = self.launcher.workspace_input.trim().to_owned();
+                        if !title.is_empty() {
+                            match world::ProjectWorkspace::load_or_create(&self.library.documents, &project)
+                                .and_then(|mut workspace| workspace.add_record(section, &title))
+                            {
+                                Ok(()) => self.launcher.message = Some(format!("{} añadido a {}", title, section.label())),
+                                Err(error) => self.launcher.message = Some(format!("No se pudo guardar WBW: {error}")),
+                            }
+                        }
+                        self.launcher.workspace_new = false;
+                        self.launcher.workspace_input.clear();
+                    }
+                    KeyCode::Backspace => { self.launcher.workspace_input.pop(); }
+                    KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) && !key.modifiers.contains(KeyModifiers::ALT) => {
+                        self.launcher.workspace_input.push(ch);
+                    }
+                    _ => {}
+                }
+                self.render_launcher();
+                return;
+            }
+
+            match key.code {
+                KeyCode::Esc => {
+                    if self.launcher.workspace_detail {
+                        self.launcher.workspace_detail = false;
+                        self.launcher.workspace_row = 0;
+                    } else {
+                        self.launcher.workspace_project = None;
+                        self.launcher.workspace_selected = 0;
+                    }
+                }
+                KeyCode::Up => {
+                    if self.launcher.workspace_detail {
+                        self.launcher.workspace_row = self.launcher.workspace_row.saturating_sub(1);
+                    } else {
+                        self.launcher.workspace_selected = self.launcher.workspace_selected.saturating_sub(1);
+                    }
+                }
+                KeyCode::Down => {
+                    if self.launcher.workspace_detail {
+                        if let Ok(workspace) = world::ProjectWorkspace::load_or_create(&self.library.documents, &project) {
+                            let max = workspace.rows(section).len().saturating_sub(1);
+                            self.launcher.workspace_row = (self.launcher.workspace_row + 1).min(max);
+                        }
+                    } else {
+                        self.launcher.workspace_selected = (self.launcher.workspace_selected + 1).min(WorldSection::ALL.len() - 1);
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') if self.launcher.workspace_detail
+                    && !matches!(section, WorldSection::Manuscript | WorldSection::Statistics) =>
+                {
+                    self.launcher.workspace_new = true;
+                    self.launcher.workspace_input.clear();
+                    self.launcher.message = None;
+                }
+                KeyCode::Enter => {
+                    if self.launcher.workspace_detail {
+                        if let Ok(workspace) = world::ProjectWorkspace::load_or_create(&self.library.documents, &project) {
+                            if let Some(path) = workspace.rows(section).get(self.launcher.workspace_row).and_then(|row| row.path.clone()) {
+                                self.launcher.workspace_project = None;
+                                self.launcher.workspace_detail = false;
+                                self.launcher.workspace_row = 0;
+                                if let Err(error) = self.open_editor(path) {
+                                    self.launcher.message = Some(error.to_string());
+                                }
+                                return;
+                            }
+                        }
+                    } else {
+                        self.launcher.workspace_detail = true;
+                        self.launcher.workspace_row = 0;
+                    }
+                }
+                _ => {}
+            }
+            if self.editor.is_none() { self.render_launcher(); }
+            return;
+        }
+
         if let Some(path) = self.launcher.project_editing.clone() {
             match key.code {
                 KeyCode::Esc => {
@@ -2228,6 +2330,27 @@ impl TerminalModel {
                     self.launcher.message = None;
                 }
             }
+            KeyCode::Char('w') | KeyCode::Char('W') => {
+                let selected_project = self.launcher.selected_entry()
+                    .and_then(|entry| entry.metadata.as_ref())
+                    .map(|metadata| metadata.project.trim().to_owned())
+                    .filter(|project| !project.is_empty());
+                let fallback = document::project_counts(&self.library.documents).into_iter().next().map(|(name, _)| name);
+                if let Some(project) = selected_project.or(fallback) {
+                    match world::ProjectWorkspace::load_or_create(&self.library.documents, &project) {
+                        Ok(_) => {
+                            self.launcher.workspace_project = Some(project);
+                            self.launcher.workspace_selected = 0;
+                            self.launcher.workspace_detail = false;
+                            self.launcher.workspace_row = 0;
+                            self.launcher.message = None;
+                        }
+                        Err(error) => self.launcher.message = Some(format!("No se pudo abrir WBW: {error}")),
+                    }
+                } else {
+                    self.launcher.message = Some("Asigna primero un documento a un proyecto con P.".into());
+                }
+            }
             KeyCode::F(11) => {
                 self.zen_requested = !self.zen_requested;
                 self.launcher.message = Some(if self.zen_requested {
@@ -2409,7 +2532,54 @@ impl TerminalModel {
             &framed_left("\x1b[1;38;5;222mARCHIVOS\x1b[0m", inner_width, "38;5;244"),
         );
 
-        if let Some(source) = self.launcher.exporting.as_ref() {
+        if let Some(project) = self.launcher.workspace_project.as_ref() {
+            match world::ProjectWorkspace::load_or_create(&self.library.documents, project) {
+                Ok(workspace) => {
+                    push_line(&mut out, &framed_left(
+                        &format!("\x1b[1;38;5;222mWBW · {}\x1b[0m", truncate(project, inner_width.saturating_sub(8))),
+                        inner_width, "38;5;244"));
+                    if self.launcher.workspace_new {
+                        push_line(&mut out, &framed_left(
+                            &format!("Nuevo {}: {}\x1b[?25h", WorldSection::ALL[self.launcher.workspace_selected].label(), self.launcher.workspace_input),
+                            inner_width, "38;5;244"));
+                        push_line(&mut out, &framed_left("Enter guardar · Esc cancelar", inner_width, "38;5;244"));
+                    } else if self.launcher.workspace_detail {
+                        let section = WorldSection::ALL[self.launcher.workspace_selected];
+                        push_line(&mut out, &framed_left(
+                            &format!("\x1b[38;5;109m{}\x1b[0m", section.label()), inner_width, "38;5;244"));
+                        let rows = workspace.rows(section);
+                        if rows.is_empty() {
+                            push_line(&mut out, &framed_left("(sin registros)", inner_width, "38;5;244"));
+                        } else {
+                            for (index, row) in rows.iter().enumerate().take((rows.len()).min(12)) {
+                                let marker = if index == self.launcher.workspace_row { "▶" } else { " " };
+                                let detail = if row.detail.is_empty() { String::new() } else { format!(" · {}", row.detail) };
+                                let line = format!("{marker} {}{}", row.label, detail);
+                                push_line(&mut out, &framed_left(&truncate(&line, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
+                            }
+                        }
+                        if !matches!(section, WorldSection::Manuscript | WorldSection::Statistics) {
+                            push_line(&mut out, &framed_left("N nuevo · Enter abrir · Esc volver", inner_width, "38;5;244"));
+                        } else {
+                            push_line(&mut out, &framed_left("Enter abrir · Esc volver", inner_width, "38;5;244"));
+                        }
+                    } else {
+                        let summary = workspace.summary();
+                        for (index, section) in WorldSection::ALL.iter().copied().enumerate() {
+                            let marker = if index == self.launcher.workspace_selected { "▶" } else { " " };
+                            let count = summary.count(section);
+                            let suffix = if section == WorldSection::Statistics { format!("{count} palabras") } else { format!("{count}") };
+                            let row = format!("{marker} {:<24} {}", section.label(), suffix);
+                            push_line(&mut out, &framed_left(&truncate(&row, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
+                        }
+                        push_line(&mut out, &framed_left("↑↓ seleccionar · Enter abrir · Esc archivos", inner_width, "38;5;244"));
+                    }
+                }
+                Err(error) => {
+                    push_line(&mut out, &framed_left(&format!("WBW: {error}"), inner_width, "38;5;244"));
+                }
+            }
+        } else if let Some(source) = self.launcher.exporting.as_ref() {
             let source_name = source
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -2641,7 +2811,7 @@ impl TerminalModel {
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  F carpeta  P proyecto  I importar  E exportar  F11 maximizar  Backspace subir  R refrescar\x1b[0m",
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  F carpeta  P proyecto  W WBW  I importar  E exportar  F11 maximizar  Backspace subir  R refrescar\x1b[0m",
                     inner_width,
                     "38;5;244",
                 ),

@@ -2,6 +2,14 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## WBW workspace — 2026-10-17
+
+- Integrado workspace de Worldbuilder Writer por proyecto: manuscrito, escenas, personajes, relaciones, cronología, mundo/atlas, magia, referencias, notas y estadísticas.
+- `W` abre el workspace del proyecto desde el navegador; el manuscrito abre documentos reales y las demás secciones permiten crear registros persistentes.
+- La información WBW se guarda por proyecto en `.zen-project-<proyecto>.json` sin contaminar el TXT.
+- Las correcciones no mandatorias del editor se movieron a `TODO.md`.
+- Reparado el fallo de compilación introducido por el intento de restaurar hard-wrap físico.
+
 ## v0.2.25 — 2026-10-17
 
 - Restaurado el ajuste físico al ancho de página para que cada línea visible tenga numeración propia.
