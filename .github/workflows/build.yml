@@ -25,18 +25,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Apply final consistency pass
+      - name: Apply final compile fix
         shell: pwsh
-        run: python .github/scripts/final_consistency.py
+        run: python .github/scripts/compile_fix.py
 
-      - name: Commit final consistency
+      - name: Commit final compile fix
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/app.rs src/world.rs CHANGELOG.md
+          git add src/app.rs
           if (-not (git diff --cached --quiet)) {
-            git commit -m "fix: complete WBW scene round-trip and reference picker [skip ci]"
+            git commit -m "fix: finalize semantic reference picker borrow [skip ci]"
             git push origin HEAD:main
           }
 
