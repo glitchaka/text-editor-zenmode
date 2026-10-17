@@ -222,26 +222,44 @@ impl ProjectWorkspace {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or("Proyecto importado")
             .to_owned();
-        if let Some(media) = root.get_mut("sections").and_then(|v| v.get_mut("media")).and_then(Value::as_array_mut) {
-            let media_root = documents.join(".zen-media").join(safe_component(&name));
-            fs::create_dir_all(&media_root)?;
-            for item in media.iter_mut() {
-                let Some(source) = item.get("package_path").and_then(Value::as_str) else { continue; };
-                let Ok(mut zipped) = archive.by_name(source) else { continue; };
-                let file_name = Path::new(source)
-                    .file_name()
-                    .and_then(|v| v.to_str())
-                    .map(safe_component)
-                    .unwrap_or_else(|| format!("media-{}", generate_id()));
-                let target = media_root.join(file_name);
-                let mut bytes = Vec::new();
-                zipped.read_to_end(&mut bytes)?;
-                fs::write(&target, bytes)?;
-                if let Some(object) = item.as_object_mut() {
-                    object.insert("path".into(), json!(target.to_string_lossy()));
+
+        let mut extracted = std::collections::HashMap::<String, PathBuf>::new();
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index)?;
+            if entry.is_dir() { continue; }
+            let entry_name = entry.name().replace('\\', "/");
+            let destination = if entry_name.starts_with("manuscript/") {
+                let file_name = Path::new(&entry_name).file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(generate_id);
+                Some(documents.join(file_name))
+            } else if entry_name.starts_with("media/") {
+                let file_name = Path::new(&entry_name).file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(generate_id);
+                Some(documents.join(".zen-media").join(safe_component(&name)).join(file_name))
+            } else {
+                None
+            };
+            let Some(target) = destination else { continue; };
+            if let Some(parent) = target.parent() { fs::create_dir_all(parent)?; }
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes)?;
+            fs::write(&target, bytes)?;
+            extracted.insert(entry_name, target);
+        }
+
+        if let Some(sections) = root.get_mut("sections").and_then(Value::as_object_mut) {
+            for section_name in ["manuscript", "scenes", "media"] {
+                if let Some(rows) = sections.get_mut(section_name).and_then(Value::as_array_mut) {
+                    for row in rows {
+                        let package_path = row.get("package_path").and_then(Value::as_str).map(str::to_owned);
+                        if let Some(path) = package_path.as_ref().and_then(|key| extracted.get(key)) {
+                            if let Some(object) = row.as_object_mut() {
+                                object.insert("path".into(), json!(path.to_string_lossy()));
+                            }
+                        }
+                    }
                 }
             }
         }
+
         let mut workspace = Self {
             name: name.clone(),
             path: project_path(documents, &name),
@@ -255,7 +273,7 @@ impl ProjectWorkspace {
         Ok(workspace)
     }
 
-    pub fn export_package(&self, documents: &Path, destination: &Path) -> Result<PathBuf> {
+    pub fn export_package(&self, _documents: &Path, destination: &Path) -> Result<PathBuf> {
         fs::create_dir_all(destination)?;
         let target = destination.join(format!("{}.wbw", safe_component(&self.name)));
         let file = fs::File::create(&target)?;
@@ -268,42 +286,45 @@ impl ProjectWorkspace {
             "project_file": PACKAGE_PROJECT,
             "created": unix_seconds(),
         });
-        zip.start_file(PACKAGE_MANIFEST, options)?;
-        zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
-        zip.start_file(PACKAGE_PROJECT, options)?;
-        zip.write_all(serde_json::to_string_pretty(&self.root)?.as_bytes())?;
 
-        let mut included = std::collections::HashSet::new();
-        for row in self.array(WorldSection::Manuscript) {
-            let Some(path) = row.get("path").and_then(Value::as_str).map(PathBuf::from) else { continue; };
-            if !path.is_file() { continue; }
-            let name = path.file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(|| generate_id());
-            let package_path = format!("manuscript/{name}");
-            if included.insert(package_path.clone()) {
-                zip.start_file(package_path, options)?;
-                zip.write_all(&fs::read(&path)?)?;
-            }
-            let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("document.txt")));
-            if sidecar.is_file() {
-                let side_name = sidecar.file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(|| format!("{}.zen.json", generate_id()));
-                let package_path = format!("manuscript/{side_name}");
-                if included.insert(package_path.clone()) {
-                    zip.start_file(package_path, options)?;
-                    zip.write_all(&fs::read(sidecar)?)?;
+        let mut packaged = self.root.clone();
+        let mut files = Vec::<(String, PathBuf)>::new();
+        if let Some(sections) = packaged.get_mut("sections").and_then(Value::as_object_mut) {
+            for (section_name, prefix) in [("manuscript", "manuscript"), ("scenes", "manuscript"), ("media", "media")] {
+                if let Some(rows) = sections.get_mut(section_name).and_then(Value::as_array_mut) {
+                    for row in rows {
+                        let Some(path) = row.get("path").and_then(Value::as_str).map(PathBuf::from) else { continue; };
+                        if !path.is_file() { continue; }
+                        let name = path.file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(generate_id);
+                        let package_path = format!("{prefix}/{name}");
+                        if let Some(object) = row.as_object_mut() {
+                            object.insert("package_path".into(), json!(package_path));
+                        }
+                        files.push((package_path, path.clone()));
+                        if prefix == "manuscript" {
+                            let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("document.txt")));
+                            if sidecar.is_file() {
+                                let side_name = sidecar.file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(|| format!("{}.zen.json", generate_id()));
+                                files.push((format!("manuscript/{side_name}"), sidecar));
+                            }
+                        }
+                    }
                 }
             }
         }
-        for row in self.array(WorldSection::Media) {
-            let Some(path) = row.get("path").and_then(Value::as_str).map(PathBuf::from) else { continue; };
-            if !path.is_file() { continue; }
-            let name = path.file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(|| generate_id());
-            let package_path = format!("media/{name}");
+
+        zip.start_file(PACKAGE_MANIFEST, options)?;
+        zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
+        zip.start_file(PACKAGE_PROJECT, options)?;
+        zip.write_all(serde_json::to_string_pretty(&packaged)?.as_bytes())?;
+
+        let mut included = std::collections::HashSet::new();
+        for (package_path, path) in files {
             if included.insert(package_path.clone()) {
                 zip.start_file(package_path, options)?;
                 zip.write_all(&fs::read(path)?)?;
             }
         }
-        let _ = documents;
         zip.finish()?;
         Ok(target)
     }
@@ -555,6 +576,9 @@ impl ProjectWorkspace {
         };
         let key = if record.contains_key("name") { "name" } else { "title" };
         record.insert(key.into(), json!(title.trim()));
+        if section == WorldSection::Scenes {
+            self.sync_scene_document(index)?;
+        }
         self.touch();
         self.save()?;
         Ok(true)
@@ -577,10 +601,10 @@ impl ProjectWorkspace {
                     object.insert("order".into(), json!((order as i64 + 1) * 10));
                 }
             }
-            if section == WorldSection::Scenes {
-                for scene_index in 0..rows.len() {
-                    self.sync_scene_document(scene_index)?;
-                }
+            let scene_count = if section == WorldSection::Scenes { rows.len() } else { 0 };
+            let _ = rows;
+            for scene_index in 0..scene_count {
+                self.sync_scene_document(scene_index)?;
             }
             self.touch();
             self.save()?;

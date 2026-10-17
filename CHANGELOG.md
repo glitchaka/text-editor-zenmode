@@ -2,6 +2,12 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## Portable scene round-trip — 2026-10-17
+
+- Exportación/importación `.wbw` ahora conserva y restaura manuscrito, escenas TXT, sidecars de formato y multimedia con rutas portables.
+- Renombrar/reordenar/editar una escena sincroniza sus metadatos nativos; eliminarla retira TXT y sidecar.
+- El selector F3 de referencias semánticas permanece estable mientras está abierto y restaura el terminal antes de insertar el vínculo.
+
 ## Scene documents and semantic references — 2026-10-17
 
 - Las escenas WBW son documentos TXT nativos reales, se abren en el editor/pestañas y sincronizan título, capítulo, estado y orden con su ficha.

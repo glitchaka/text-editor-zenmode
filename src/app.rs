@@ -1228,6 +1228,9 @@ impl TerminalModel {
             return;
         }
         self.update_pomodoro();
+        if self.reference_picker.is_some() {
+            return;
+        }
         let mut finished = false;
 
         if self
@@ -1396,12 +1399,14 @@ impl TerminalModel {
         if let Some((project, rows, selected)) = self.reference_picker.clone() {
             match key.code {
                 KeyCode::Esc => { self.reference_picker = None; self.reset_parser(); if let Some(editor) = self.editor.as_mut() { let _ = editor.force_terminal_redraw(); } }
-                KeyCode::Up => { self.reference_picker = Some((project, rows, selected.saturating_sub(1))); }
-                KeyCode::Down => { self.reference_picker = Some((project, rows.clone(), (selected + 1).min(rows.len().saturating_sub(1)))); }
+                KeyCode::Up => { self.reference_picker = Some((project, rows, selected.saturating_sub(1))); self.render_reference_picker(); }
+                KeyCode::Down => { self.reference_picker = Some((project, rows.clone(), (selected + 1).min(rows.len().saturating_sub(1)))); self.render_reference_picker(); }
                 KeyCode::Enter => {
                     if let Some((id, label)) = rows.get(selected) {
                         let marker = format!("[[ref:{id}|{label}]]");
                         self.reference_picker = None;
+                        self.reset_parser();
+                        if let Some(editor) = self.editor.as_mut() { let _ = editor.force_terminal_redraw(); }
                         self.insert_symbol(&marker);
                     }
                 }
