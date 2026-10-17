@@ -7,7 +7,7 @@ use std::{
 
 #[test]
 fn spell_lsp_process_advertises_code_actions() {
-    let exe = env!("CARGO_BIN_EXE_helix-sst-zen");
+    let exe = env!("CARGO_BIN_EXE_zen-editor");
     let dictionary =
         std::env::temp_dir().join(format!("helix-sst-spell-smoke-{}.dic", std::process::id()));
 
