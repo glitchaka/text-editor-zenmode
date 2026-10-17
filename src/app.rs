@@ -532,6 +532,7 @@ struct TerminalModel {
     word_count: usize,
     f2_menu_open: bool,
     f2_close_at: Option<Instant>,
+    layout_redraw_at: Option<Instant>,
 }
 
 impl TerminalModel {
@@ -591,6 +592,7 @@ impl TerminalModel {
             word_count: 0,
             f2_menu_open: false,
             f2_close_at: None,
+            layout_redraw_at: None,
         };
 
         if let Some(file) = file_to_open {
@@ -618,6 +620,7 @@ impl TerminalModel {
     fn toggle_editor_zen(&mut self) {
         if self.editor.is_some() {
             self.zen_requested = !self.zen_requested;
+            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(220));
             self.dirty = true;
             self.glyphs.clear();
         }
@@ -821,6 +824,8 @@ impl TerminalModel {
                 if let Err(error) = editor.resize(cols, rows) {
                     self.launcher.message =
                         Some(format!("No se pudo redimensionar Helix: {error}"));
+                } else {
+                    self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(120));
                 }
             } else if self.splash_active {
                 self.render_splash();
@@ -1094,6 +1099,23 @@ impl TerminalModel {
             self.dirty = true;
         }
 
+        if self
+            .layout_redraw_at
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.layout_redraw_at = None;
+            self.reset_parser();
+            if let Some(editor) = self.editor.as_mut()
+                && let Err(error) = editor.force_terminal_redraw()
+            {
+                self.launcher.message = Some(format!(
+                    "No se pudo reajustar Helix al tamaño de la ventana: {error}"
+                ));
+            }
+            self.glyphs.clear();
+            self.dirty = true;
+        }
+
         let current_source = self.current_file.clone();
         if let Some(editor) = self.editor.as_mut() {
             let _ = editor.settle_startup_language();
@@ -1335,14 +1357,44 @@ impl TerminalModel {
             return;
         }
 
+        if self.helix_is_select_mode()
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+        {
+            if let Some(editor) = self.editor.as_ref() {
+                let win32 = editor.win32_input();
+                match key.code {
+                    KeyCode::Char(_) | KeyCode::Enter | KeyCode::Tab => {
+                        let _ = editor
+                            .send_key(KeyEvent::new(KeyCode::F(22), KeyModifiers::NONE), win32);
+                        let _ = editor.send_key(key, win32);
+                        return;
+                    }
+                    KeyCode::Backspace | KeyCode::Delete => {
+                        let _ = editor
+                            .send_key(KeyEvent::new(KeyCode::F(22), KeyModifiers::NONE), win32);
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         let ctrl_v = key.modifiers.contains(KeyModifiers::CONTROL)
             && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'));
         if ctrl_v {
+            let replacing_selection = self.helix_is_select_mode();
             let ensure_insert = !self.helix_is_insert_mode();
             if let Ok(mut clipboard) = arboard::Clipboard::new()
                 && let Ok(text) = clipboard.get_text()
                 && let Some(editor) = self.editor.as_ref()
             {
+                if replacing_selection {
+                    let _ = editor.send_key(
+                        KeyEvent::new(KeyCode::F(22), KeyModifiers::NONE),
+                        editor.win32_input(),
+                    );
+                }
                 let _ = editor.paste(&text, ensure_insert, self.page_wrap_columns());
             }
             return;
@@ -1639,6 +1691,28 @@ impl TerminalModel {
                 text.push_str(cell.contents());
             }
             if text.trim_start().starts_with("INSERTAR") {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn helix_is_select_mode(&self) -> bool {
+        let screen = self.parser.screen();
+        let (rows, cols) = screen.size();
+        let start_row = rows.saturating_sub(3);
+        for row in start_row..rows {
+            let mut text = String::new();
+            for col in 0..cols.min(32) {
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
+                text.push_str(cell.contents());
+            }
+            if text.trim_start().starts_with("SELECCIÓN") {
                 return true;
             }
         }

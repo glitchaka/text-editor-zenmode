@@ -723,6 +723,7 @@ F14 = ["normal_mode", "move_next_word_start"]
 F17 = "undo"
 F18 = "redo"
 F19 = "select_all"
+F22 = ["delete_selection", "insert_mode"]
 "#
     );
     fs::write(path, content)?;

@@ -2,6 +2,12 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## v0.2.21 — 2026-10-17
+- La escritura reemplaza correctamente una selección activa, como en un editor convencional.
+- Retroceso y Suprimir eliminan completamente el texto seleccionado.
+- Pegar reemplaza la selección activa.
+- El contenido se recalcula y repinta después de maximizar, restaurar o redimensionar la ventana.
+
 ## v0.2.20 — 2026-10-17
 - Eliminar restos visuales de los menús F2 mediante un repintado completo de Helix.
 - Añadir creación de carpetas desde el launcher.
