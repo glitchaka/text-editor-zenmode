@@ -1360,23 +1360,22 @@ impl TerminalModel {
         if self.helix_is_select_mode()
             && !key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
+            && let Some(editor) = self.editor.as_ref()
         {
-            if let Some(editor) = self.editor.as_ref() {
-                let win32 = editor.win32_input();
-                match key.code {
-                    KeyCode::Char(_) | KeyCode::Enter | KeyCode::Tab => {
-                        let _ = editor
-                            .send_key(KeyEvent::new(KeyCode::F(22), KeyModifiers::NONE), win32);
-                        let _ = editor.send_key(key, win32);
-                        return;
-                    }
-                    KeyCode::Backspace | KeyCode::Delete => {
-                        let _ = editor
-                            .send_key(KeyEvent::new(KeyCode::F(22), KeyModifiers::NONE), win32);
-                        return;
-                    }
-                    _ => {}
+            let win32 = editor.win32_input();
+            match key.code {
+                KeyCode::Char(_) | KeyCode::Enter | KeyCode::Tab => {
+                    let _ =
+                        editor.send_key(KeyEvent::new(KeyCode::F(22), KeyModifiers::NONE), win32);
+                    let _ = editor.send_key(key, win32);
+                    return;
                 }
+                KeyCode::Backspace | KeyCode::Delete => {
+                    let _ =
+                        editor.send_key(KeyEvent::new(KeyCode::F(22), KeyModifiers::NONE), win32);
+                    return;
+                }
+                _ => {}
             }
         }
 

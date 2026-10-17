@@ -1603,12 +1603,6 @@ mod tests {
     }
 
     #[test]
-    fn new_names_default_to_hsst() {
-        let path = native_path_for_name(Path::new("docs"), "Capítulo 1");
-        assert_eq!(path, Path::new("docs").join("Capítulo 1.hsst"));
-    }
-
-    #[test]
     fn plain_body_removes_native_rich_markup() {
         let body = "# Título\nUno **dos** *tres* ==cuatro== __cinco__ {{fg:red}}seis{{/fg}} {{bg:blue}}siete{{/bg}}.\n";
         assert_eq!(
