@@ -2,6 +2,12 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## v0.2.25 — 2026-10-17
+
+- Restaurado el ajuste físico al ancho de página para que cada línea visible tenga numeración propia.
+- Corregido el regreso al navegador al cerrar el último documento: ya no queda la superficie vacía.
+- El área completa vuelve a ser arrastrable al salir del editor aunque haya quedado un estado de selección transitorio.
+
 ## v0.2.24
 
 - Corregido el estado visual del editor después de Enter/Esc: ya no se reconstruye el terminal en cada pulsación.

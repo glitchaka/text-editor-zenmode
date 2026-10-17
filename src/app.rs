@@ -143,7 +143,7 @@ slint::slint! {
             y: 0px;
             width: root.width;
             height: root.height;
-            enabled: !root.zen-active && !root.terminal-selecting;
+            enabled: !root.zen-active && (!root.editor-active || !root.terminal-selecting);
 
             terminal-pointer-area := TouchArea {
                 pointer-event(event) => {
@@ -1336,9 +1336,16 @@ impl TerminalModel {
             self.word_count = 0;
             self.tabs.clear();
             self.active_tab = 0;
+            self.f2_menu_open = false;
+            self.f2_close_at = None;
+            self.layout_redraw_at = None;
+            self.layout_redraw_passes = 0;
+            self.splash_active = false;
             self.launcher.refresh();
             self.reset_parser();
             self.render_launcher();
+            self.glyphs.clear();
+            self.dirty = true;
         }
     }
 
@@ -1782,9 +1789,8 @@ impl TerminalModel {
     }
 
     fn page_wrap_columns(&self) -> Option<usize> {
-        // Paragraph structure belongs to the document. Display width must never
-        // rewrite prose into hard-wrapped physical lines.
-        None
+        let current = self.current_file.as_deref()?;
+        document::is_supported_text_path(current).then(|| self.page_profile.text_columns())
     }
 
     fn helix_cursor_position(&self) -> Option<(usize, usize)> {
