@@ -1274,8 +1274,9 @@ pub fn set_project_assignment(path: &Path, project: &str, chapter: Option<u32>) 
         return Ok(());
     }
     let mut document = read(path)?;
+    let old_project = document.metadata.project.clone();
     let project = project.trim().to_owned();
-    document.metadata.project = project;
+    document.metadata.project = project.clone();
     document.metadata.chapter = chapter;
     if let Some(chapter) = chapter {
         document.metadata.kind = "chapter".into();
@@ -1286,7 +1287,59 @@ pub fn set_project_assignment(path: &Path, project: &str, chapter: Option<u32>) 
         document.metadata.kind = "document".into();
     }
     write(path, &document)
-        .with_context(|| format!("No se pudo actualizar el proyecto de {}", path.display()))
+        .with_context(|| format!("No se pudo actualizar el proyecto de {}", path.display()))?;
+    if let Some(root) = path.parent() {
+        if !old_project.trim().is_empty() && !old_project.eq_ignore_ascii_case(&project) {
+            sync_project_manifest(root, &old_project)?;
+        }
+        sync_project_manifest(root, &project)?;
+    }
+    Ok(())
+}
+
+fn project_manifest_path(root: &Path, project: &str) -> PathBuf {
+    let safe = project
+        .chars()
+        .map(|ch| {
+            if ch.is_alphanumeric() || matches!(ch, '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    root.join(format!(
+        ".zen-project-{}.json",
+        if safe.is_empty() { "project" } else { &safe }
+    ))
+}
+
+fn sync_project_manifest(root: &Path, project: &str) -> Result<()> {
+    let project = project.trim();
+    if project.is_empty() {
+        return Ok(());
+    }
+    let documents = project_documents(root, project)?;
+    let members = documents
+        .iter()
+        .map(|(path, metadata)| {
+            json!({
+                "path": path.file_name().and_then(|name| name.to_str()).unwrap_or_default(),
+                "id": metadata.id,
+                "title": metadata.title,
+                "type": metadata.kind,
+                "chapter": metadata.chapter,
+                "order": metadata.order
+            })
+        })
+        .collect::<Vec<_>>();
+    let manifest =
+        json!({"format": 1, "type": "zen-project", "name": project, "documents": members});
+    fs::write(
+        project_manifest_path(root, project),
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
+    Ok(())
 }
 
 pub fn set_page_profile(path: &Path, page: PageProfile) -> Result<()> {

@@ -388,6 +388,7 @@ struct Launcher {
     entries: Vec<Entry>,
     selected: usize,
     creating: bool,
+    creating_folder: bool,
     new_name: String,
     exporting: Option<PathBuf>,
     export_selected: usize,
@@ -405,6 +406,7 @@ impl Launcher {
             entries: Vec::new(),
             selected: 0,
             creating: false,
+            creating_folder: false,
             new_name: String::new(),
             exporting: None,
             export_selected: 0,
@@ -425,7 +427,9 @@ impl Launcher {
                 .filter(|entry| {
                     let name = entry.file_name();
                     let name = name.to_string_lossy();
-                    !name.to_ascii_lowercase().ends_with(".zen.json")
+                    let lower = name.to_ascii_lowercase();
+                    !lower.ends_with(".zen.json")
+                        && !(lower.starts_with(".zen-project-") && lower.ends_with(".json"))
                 })
                 .map(|entry| {
                     let path = entry.path();
@@ -1048,15 +1052,26 @@ impl TerminalModel {
         self.update_pomodoro();
         let mut finished = false;
 
-        if self.f2_close_at.is_some_and(|deadline| Instant::now() >= deadline) {
+        if self
+            .f2_close_at
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
             self.f2_close_at = None;
             self.f2_menu_open = false;
             if let Some(editor) = self.editor.as_ref()
                 && let Err(error) = editor.finish_formatting_action()
             {
-                self.launcher.message =
-                    Some(format!("No se pudo cerrar F2 y volver a escritura: {error}"));
+                self.launcher.message = Some(format!(
+                    "No se pudo cerrar F2 y volver a escritura: {error}"
+                ));
             }
+            self.reset_parser();
+            if let Some(editor) = self.editor.as_mut()
+                && let Err(error) = editor.force_terminal_redraw()
+            {
+                self.launcher.message = Some(format!("No se pudo repintar Helix: {error}"));
+            }
+            self.dirty = true;
         }
 
         let current_source = self.current_file.clone();
@@ -1759,6 +1774,56 @@ impl TerminalModel {
             return;
         }
 
+        if self.launcher.creating_folder {
+            match key.code {
+                KeyCode::Esc => {
+                    self.launcher.creating_folder = false;
+                    self.launcher.new_name.clear();
+                    self.launcher.message = None;
+                }
+                KeyCode::Enter => {
+                    let name = self.launcher.new_name.trim().to_owned();
+                    if name.is_empty() {
+                        self.launcher.message = Some("Escribe un nombre de carpeta.".into());
+                    } else if name.contains('/') || name.contains('\\') {
+                        self.launcher.message =
+                            Some("El nombre de la carpeta no puede contener / ni \\.".into());
+                    } else {
+                        let path = self.launcher.cwd.join(&name);
+                        if path.exists() {
+                            self.launcher.message =
+                                Some("Ya existe un archivo o carpeta con ese nombre.".into());
+                        } else {
+                            match fs::create_dir(&path) {
+                                Ok(()) => {
+                                    self.launcher.creating_folder = false;
+                                    self.launcher.new_name.clear();
+                                    self.launcher.message = Some(format!("Carpeta creada: {name}"));
+                                    self.launcher.refresh();
+                                }
+                                Err(error) => {
+                                    self.launcher.message =
+                                        Some(format!("No se pudo crear la carpeta: {error}"))
+                                }
+                            }
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.launcher.new_name.pop();
+                }
+                KeyCode::Char(ch)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !matches!(ch, '\r' | '\n') =>
+                {
+                    self.launcher.new_name.push(ch)
+                }
+                _ => {}
+            }
+            self.render_launcher();
+            return;
+        }
+
         if self.launcher.creating {
             match key.code {
                 KeyCode::Esc => {
@@ -1830,6 +1895,11 @@ impl TerminalModel {
             KeyCode::Char('n') | KeyCode::Char('N') => {
                 self.launcher.selected = 2;
                 self.launcher.creating = true;
+                self.launcher.new_name.clear();
+                self.launcher.message = None;
+            }
+            KeyCode::Char('f') | KeyCode::Char('F') => {
+                self.launcher.creating_folder = true;
                 self.launcher.new_name.clear();
                 self.launcher.message = None;
             }
@@ -2109,7 +2179,7 @@ impl TerminalModel {
                     &mut out,
                     &framed_left(
                         &format!(
-                            "\x1b[38;5;250mProyecto:\x1b[0m {}\x1b[?25h",
+                            "\x1b[38;5;250mProyecto (nuevo o existente):\x1b[0m {}\x1b[?25h",
                             self.launcher.project_name
                         ),
                         inner_width,
@@ -2137,6 +2207,36 @@ impl TerminalModel {
                     &framed_left("Enter: guardar  ·  Esc cancelar", inner_width, "38;5;244"),
                 );
             }
+        } else if self.launcher.creating_folder {
+            push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    &format!("\x1b[1;38;5;222m{ICON_FOLDER}\x1b[0m   NUEVA CARPETA"),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+            push_line(
+                &mut out,
+                &framed_left(
+                    &format!(
+                        "\x1b[38;5;250mNombre:\x1b[0m {}\x1b[?25h",
+                        self.launcher.new_name
+                    ),
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
+            push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
+            push_line(
+                &mut out,
+                &framed_left(
+                    "\x1b[38;5;244mEnter crear  ·  Esc cancelar\x1b[0m",
+                    inner_width,
+                    "38;5;244",
+                ),
+            );
         } else if self.launcher.creating {
             push_line(&mut out, &framed_left("", inner_width, "38;5;244"));
             push_line(
@@ -2254,7 +2354,7 @@ impl TerminalModel {
             push_line(
                 &mut out,
                 &framed_left(
-                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  I importar  E exportar  Z modo  Backspace subir  R refrescar\x1b[0m",
+                    "\x1b[38;5;244m↑↓ seleccionar  Enter abrir  N nuevo  F carpeta  P proyecto  I importar  E exportar  F11 maximizar  Backspace subir  R refrescar\x1b[0m",
                     inner_width,
                     "38;5;244",
                 ),

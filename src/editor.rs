@@ -273,9 +273,19 @@ impl EditorSession {
     }
 
     pub fn refresh_after_formatting(&self) -> Result<()> {
-        // HSST formatting is rendered by the native overlay in app.rs.
-        // Do not reload the buffer or restart the LSP: those operations destroy
-        // the live selection and can leave stale popup/semantic-token paint behind.
+        Ok(())
+    }
+
+    pub fn force_terminal_redraw(&mut self) -> Result<()> {
+        let (rows, cols) = self
+            .protocol
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .screen()
+            .size();
+        let bounce = if cols > 20 { cols - 1 } else { cols + 1 };
+        self.resize(bounce, rows)?;
+        self.resize(cols, rows)?;
         Ok(())
     }
 
