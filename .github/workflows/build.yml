@@ -31,24 +31,9 @@ jobs:
           targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
 
-      - name: Apply last warning fix
-        shell: pwsh
-        run: python .github/scripts/final_sort_warning.py
-
       - name: Format source
         shell: pwsh
-        run: cargo fmt --all
-
-      - name: Commit last warning fix
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/wbw_tools.rs
-          if (-not (git diff --cached --quiet)) {
-            git commit -m "fix: eliminate final WBW Clippy warning [skip ci]"
-            git push origin HEAD:main
-          }
+        run: cargo fmt --all -- --check
 
       - name: Strict Clippy
         shell: pwsh
