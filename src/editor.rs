@@ -285,7 +285,9 @@ impl EditorSession {
             .size();
         let bounce = if cols > 20 { cols - 1 } else { cols + 1 };
         self.resize(bounce, rows)?;
+        thread::sleep(Duration::from_millis(24));
         self.resize(cols, rows)?;
+        thread::sleep(Duration::from_millis(24));
         Ok(())
     }
 

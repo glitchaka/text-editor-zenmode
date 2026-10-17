@@ -16,13 +16,13 @@ use slint::{
 
 #[cfg(windows)]
 use windows_sys::Win32::{
-    Foundation::HWND,
+    Foundation::{HWND, RECT},
     System::Threading::{AttachThreadInput, GetCurrentThreadId},
     UI::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, SetActiveWindow, SetFocus},
         WindowsAndMessaging::{
-            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SW_MAXIMIZE,
-            SW_RESTORE, SetForegroundWindow, ShowWindow,
+            BringWindowToTop, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId,
+            SW_MAXIMIZE, SW_RESTORE, SetForegroundWindow, ShowWindow,
         },
     },
 };
@@ -533,6 +533,9 @@ struct TerminalModel {
     f2_menu_open: bool,
     f2_close_at: Option<Instant>,
     layout_redraw_at: Option<Instant>,
+    tabs: Vec<PathBuf>,
+    active_tab: usize,
+    closed_tabs: Vec<PathBuf>,
 }
 
 impl TerminalModel {
@@ -593,6 +596,9 @@ impl TerminalModel {
             f2_menu_open: false,
             f2_close_at: None,
             layout_redraw_at: None,
+            tabs: Vec::new(),
+            active_tab: 0,
+            closed_tabs: Vec::new(),
         };
 
         if let Some(file) = file_to_open {
@@ -1040,6 +1046,9 @@ impl TerminalModel {
         self.reset_parser();
         self.chapter_switch_until = None;
         self.editor = Some(session);
+        self.tabs.clear();
+        self.tabs.push(file.clone());
+        self.active_tab = 0;
         self.pomodoro_offer = false;
         self.pomodoro_active = false;
         self.pomodoro_break = false;
@@ -1056,6 +1065,115 @@ impl TerminalModel {
         self.glyphs.clear();
         self.dirty = true;
         Ok(())
+    }
+
+    fn track_tab(&mut self, path: PathBuf) {
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| paths_equivalent(tab, &path))
+        {
+            self.active_tab = index;
+        } else {
+            self.tabs.push(path);
+            self.active_tab = self.tabs.len().saturating_sub(1);
+        }
+    }
+
+    fn load_source_state(&mut self, file: &Path) {
+        self.current_file = Some(file.to_path_buf());
+        self.source_modified = fs::metadata(file)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        self.page_profile = document::read_metadata(file)
+            .map(|metadata| metadata.page)
+            .unwrap_or_default();
+        self.word_count = document::read(file)
+            .map(|document| document.body.split_whitespace().count())
+            .unwrap_or_else(|_| {
+                fs::read_to_string(file)
+                    .map(|text| text.split_whitespace().count())
+                    .unwrap_or(0)
+            });
+        self.pending_style_snapshot = None;
+        self.style_undo.clear();
+        self.style_redo.clear();
+    }
+
+    fn open_in_tab(&mut self, file: PathBuf) -> Result<()> {
+        if self.editor.is_none() {
+            return self.open_editor(file);
+        }
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.flush_native();
+            editor.open_source(&file)?;
+        }
+        self.load_source_state(&file);
+        self.track_tab(file);
+        self.reset_parser();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.force_terminal_redraw();
+        }
+        self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(140));
+        self.glyphs.clear();
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn activate_tab(&mut self, index: usize) -> Result<()> {
+        if index >= self.tabs.len() || index == self.active_tab {
+            return Ok(());
+        }
+        let file = self.tabs[index].clone();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.flush_native();
+            editor.open_source(&file)?;
+        }
+        self.active_tab = index;
+        self.load_source_state(&file);
+        self.reset_parser();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.force_terminal_redraw();
+        }
+        self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(140));
+        self.glyphs.clear();
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn close_current_tab(&mut self) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        let index = self.active_tab.min(self.tabs.len() - 1);
+        let closed = self.tabs.remove(index);
+        self.closed_tabs.push(closed);
+        if self.tabs.is_empty() {
+            if let Some(editor) = self.editor.as_ref() {
+                let _ = editor.send_command(":write");
+                let _ = editor.send_command(":quit");
+            }
+            return;
+        }
+        let next = index.min(self.tabs.len() - 1);
+        self.active_tab = usize::MAX;
+        let _ = self.activate_tab(next);
+    }
+
+    fn cycle_tab(&mut self, backwards: bool) {
+        if self.tabs.len() < 2 {
+            return;
+        }
+        let next = if backwards {
+            if self.active_tab == 0 {
+                self.tabs.len() - 1
+            } else {
+                self.active_tab - 1
+            }
+        } else {
+            (self.active_tab + 1) % self.tabs.len()
+        };
+        let _ = self.activate_tab(next);
     }
 
     fn insert_symbol(&mut self, symbol: &str) {
@@ -1096,6 +1214,7 @@ impl TerminalModel {
             {
                 self.launcher.message = Some(format!("No se pudo repintar Helix: {error}"));
             }
+            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(160));
             self.dirty = true;
         }
 
@@ -1195,6 +1314,8 @@ impl TerminalModel {
             self.pomodoro_deadline = None;
             self.command_capture = None;
             self.word_count = 0;
+            self.tabs.clear();
+            self.active_tab = 0;
             self.launcher.refresh();
             self.reset_parser();
             self.render_launcher();
@@ -1223,7 +1344,7 @@ impl TerminalModel {
                 if let Some(editor) = self.editor.as_ref() {
                     let _ = editor.send_key(key, editor.win32_input());
                 }
-                self.f2_close_at = Some(Instant::now() + Duration::from_millis(180));
+                self.f2_close_at = Some(Instant::now() + Duration::from_millis(240));
                 return;
             }
             if key.code == KeyCode::Esc && key.modifiers.is_empty() {
@@ -1246,6 +1367,40 @@ impl TerminalModel {
             }
             return;
         }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Tab {
+            self.cycle_tab(key.modifiers.contains(KeyModifiers::SHIFT));
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Char('t') | KeyCode::Char('T'))
+        {
+            if let Some(path) = self.closed_tabs.pop() {
+                let _ = self.open_in_tab(path);
+            }
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Char('t') | KeyCode::Char('T'))
+        {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Documentos", &["txt", "hsst"])
+                .pick_file()
+            {
+                if let Err(error) = self.open_in_tab(path) {
+                    self.launcher.message = Some(format!("No se pudo abrir pestaña: {error}"));
+                }
+            }
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('w') | KeyCode::Char('W'))
+        {
+            self.close_current_tab();
+            return;
+        }
+
         if key.code == KeyCode::F(11) && key.modifiers.is_empty() {
             self.toggle_editor_zen();
             return;
@@ -1476,6 +1631,7 @@ impl TerminalModel {
         }
 
         self.current_file = Some(previous.clone());
+        self.track_tab(previous.clone());
         self.source_modified = fs::metadata(previous)
             .and_then(|metadata| metadata.modified())
             .ok();
@@ -1560,6 +1716,7 @@ impl TerminalModel {
         }
 
         self.current_file = Some(next.clone());
+        self.track_tab(next.clone());
         self.source_modified = fs::metadata(next)
             .and_then(|metadata| metadata.modified())
             .ok();
@@ -2818,6 +2975,24 @@ fn slint_hwnd(ui: &ZenWindow) -> Option<HWND> {
 }
 
 #[cfg(windows)]
+fn native_client_size(hwnd: HWND) -> Option<(u32, u32)> {
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let ok = unsafe { GetClientRect(hwnd, &mut rect) };
+    if ok == 0 {
+        return None;
+    }
+    Some((
+        (rect.right - rect.left).max(1) as u32,
+        (rect.bottom - rect.top).max(1) as u32,
+    ))
+}
+
+#[cfg(windows)]
 unsafe fn focus_native_window(hwnd: HWND) {
     unsafe {
         let foreground = GetForegroundWindow();
@@ -2984,8 +3159,14 @@ pub fn run(initial: Option<PathBuf>, zen_requested: bool) -> Result<()> {
             };
             let size = ui.window().size();
             let scale = ui.window().scale_factor();
+            #[cfg(windows)]
+            let (actual_width, actual_height) = slint_hwnd(&ui)
+                .and_then(native_client_size)
+                .unwrap_or((size.width, size.height));
+            #[cfg(not(windows))]
+            let (actual_width, actual_height) = (size.width, size.height);
             let mut model = model.borrow_mut();
-            model.resize(size.width, size.height, scale);
+            model.resize(actual_width, actual_height, scale);
             model.tick();
 
             let zen = model.zen_engaged();

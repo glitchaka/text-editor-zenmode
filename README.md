@@ -101,6 +101,10 @@ F11/Zen maximiza la ventana dentro del área de trabajo de Windows en vez de usa
 | `Ctrl+A` | seleccionar todo |
 | `Ctrl+C` / `Ctrl+X` | copiar / cortar selección |
 | `Ctrl+V` | pegar reemplazando la selección si existe |
+| `Ctrl+T` | abrir documento en una nueva pestaña |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | cambiar de pestaña |
+| `Ctrl+W` | cerrar pestaña actual |
+| `Ctrl+Shift+T` | reabrir última pestaña cerrada |
 | `Ctrl+S` | guardar |
 | `F2` | acciones de corrección/formato/página |
 | `F4` | Pomodoro |

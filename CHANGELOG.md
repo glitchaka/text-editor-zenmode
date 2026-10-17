@@ -2,6 +2,12 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## v0.2.22 — 2026-10-17
+- Repintado F2 en dos fases para eliminar residuos visuales de menús y submenús.
+- Reflow fiable al maximizar/restaurar usando el tamaño real del área cliente de Windows.
+- Pestañas reales sobre los buffers de Helix: abrir, cambiar, cerrar y reabrir documentos.
+- Los cambios automáticos de capítulo quedan incorporados al conjunto de pestañas abiertas.
+
 ## v0.2.21 — 2026-10-17
 - La escritura reemplaza correctamente una selección activa, como en un editor convencional.
 - Retroceso y Suprimir eliminan completamente el texto seleccionado.
