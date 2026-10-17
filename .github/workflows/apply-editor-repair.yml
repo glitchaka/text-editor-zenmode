@@ -13,11 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Apply patches
-        run: |
-          python3 .github/fix_ui.py
-          python3 .github/fix_projects.py
-          cargo fmt --all
+      - name: Repair menu redraw
+        run: python3 .github/fix_ui.py
+      - name: Repair folders and projects
+        run: python3 .github/fix_projects.py
+      - name: Format sources
+        run: cargo fmt --all
       - name: Commit source changes
         run: |
           git config user.name "github-actions[bot]"
