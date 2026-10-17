@@ -25,18 +25,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Apply WBW parity completion
+      - name: Apply final WBW inventory closure
         shell: pwsh
-        run: python .github/scripts/apply_wbw_parity.py
+        run: python .github/scripts/final_wbw_parity.py
 
-      - name: Commit WBW parity completion
+      - name: Commit final WBW inventory closure
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/app.rs src/world.rs src/wbw_tools.rs CHANGELOG.md
           if (-not (git diff --cached --quiet)) {
-            git commit -m "feat: complete WBW manuscript boards maps and presets [skip ci]"
+            git commit -m "feat: close WBW inventory parity [skip ci]"
             git push origin HEAD:main
           }
 
