@@ -3041,7 +3041,7 @@ impl TerminalModel {
     }
 
     fn render_reference_picker(&mut self) {
-        let Some((_, rows, selected)) = self.reference_picker.as_ref() else { return; };
+        let Some((_, rows, selected)) = self.reference_picker.clone() else { return; };
         self.reset_parser();
         let (cols, terminal_rows) = self.terminal_size();
         let width = cols as usize;
@@ -3051,7 +3051,7 @@ impl TerminalModel {
         push_line(&mut out, &format!("\x1b[38;5;244m╭{}╮\x1b[0m", "─".repeat(inner)));
         push_line(&mut out, &framed_left("\x1b[1;38;5;222mREFERENCIA SEMÁNTICA\x1b[0m", inner, "38;5;244"));
         for (index, (_, label)) in rows.iter().enumerate().take((terminal_rows as usize).saturating_sub(5).min(16)) {
-            let marker = if index == *selected { "▶" } else { " " };
+            let marker = if index == selected { "▶" } else { " " };
             push_line(&mut out, &framed_left(&truncate(&format!("{marker} {label}"), inner.saturating_sub(2)), inner, "38;5;244"));
         }
         push_line(&mut out, &framed_left("↑↓ seleccionar · Enter insertar · Esc cancelar", inner, "38;5;244"));
