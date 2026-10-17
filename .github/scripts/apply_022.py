@@ -1,0 +1,222 @@
+from pathlib import Path
+
+
+def replace_once(path, old, new):
+    p = Path(path)
+    s = p.read_text(encoding="utf-8")
+    if old not in s:
+        raise SystemExit(f"missing pattern in {path}: {old[:120]!r}")
+    p.write_text(s.replace(old, new, 1), encoding="utf-8")
+
+
+replace_once("Cargo.toml", 'version = "0.2.21"', 'version = "0.2.22"')
+replace_once("Cargo.toml", 'raw-window-handle = "0.6.2"\n', 'raw-window-handle = "0.6.2"\nrfd = "0.15"\n')
+
+replace_once(
+    "src/editor.rs",
+    """        let bounce = if cols > 20 { cols - 1 } else { cols + 1 };\n        self.resize(bounce, rows)?;\n        self.resize(cols, rows)?;\n        Ok(())\n""",
+    """        let bounce = if cols > 20 { cols - 1 } else { cols + 1 };\n        self.resize(bounce, rows)?;\n        thread::sleep(Duration::from_millis(24));\n        self.resize(cols, rows)?;\n        thread::sleep(Duration::from_millis(24));\n        Ok(())\n""",
+)
+
+p = Path("src/app.rs")
+s = p.read_text(encoding="utf-8")
+s = s.replace("    Foundation::HWND,\n", "    Foundation::{HWND, RECT},\n", 1)
+s = s.replace(
+    """            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SW_MAXIMIZE,\n            SW_RESTORE, SetForegroundWindow, ShowWindow,\n""",
+    """            BringWindowToTop, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId,\n            SW_MAXIMIZE, SW_RESTORE, SetForegroundWindow, ShowWindow,\n""",
+    1,
+)
+s = s.replace(
+    "    layout_redraw_at: Option<Instant>,\n}\n",
+    "    layout_redraw_at: Option<Instant>,\n    tabs: Vec<PathBuf>,\n    active_tab: usize,\n    closed_tabs: Vec<PathBuf>,\n}\n",
+    1,
+)
+s = s.replace(
+    "            layout_redraw_at: None,\n        };\n",
+    "            layout_redraw_at: None,\n            tabs: Vec::new(),\n            active_tab: 0,\n            closed_tabs: Vec::new(),\n        };\n",
+    1,
+)
+s = s.replace(
+    """            self.reset_parser();\n            if let Some(editor) = self.editor.as_mut()\n                && let Err(error) = editor.force_terminal_redraw()\n            {\n                self.launcher.message = Some(format!(\"No se pudo repintar Helix: {error}\"));\n            }\n            self.dirty = true;\n""",
+    """            self.reset_parser();\n            if let Some(editor) = self.editor.as_mut()\n                && let Err(error) = editor.force_terminal_redraw()\n            {\n                self.launcher.message = Some(format!(\"No se pudo repintar Helix: {error}\"));\n            }\n            self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(160));\n            self.dirty = true;\n""",
+    1,
+)
+s = s.replace(
+    "                self.f2_close_at = Some(Instant::now() + Duration::from_millis(180));\n",
+    "                self.f2_close_at = Some(Instant::now() + Duration::from_millis(240));\n",
+    1,
+)
+s = s.replace(
+    "        self.editor = Some(session);\n        self.pomodoro_offer = false;\n",
+    "        self.editor = Some(session);\n        self.tabs.clear();\n        self.tabs.push(file.clone());\n        self.active_tab = 0;\n        self.pomodoro_offer = false;\n",
+    1,
+)
+
+marker = "    fn insert_symbol(&mut self, symbol: &str) {"
+helpers = r'''    fn track_tab(&mut self, path: PathBuf) {
+        if let Some(index) = self.tabs.iter().position(|tab| paths_equivalent(tab, &path)) {
+            self.active_tab = index;
+        } else {
+            self.tabs.push(path);
+            self.active_tab = self.tabs.len().saturating_sub(1);
+        }
+    }
+
+    fn load_source_state(&mut self, file: &Path) {
+        self.current_file = Some(file.to_path_buf());
+        self.source_modified = fs::metadata(file)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        self.page_profile = document::read_metadata(file)
+            .map(|metadata| metadata.page)
+            .unwrap_or_default();
+        self.word_count = document::read(file)
+            .map(|document| document.body.split_whitespace().count())
+            .unwrap_or_else(|_| {
+                fs::read_to_string(file)
+                    .map(|text| text.split_whitespace().count())
+                    .unwrap_or(0)
+            });
+        self.pending_style_snapshot = None;
+        self.style_undo.clear();
+        self.style_redo.clear();
+    }
+
+    fn open_in_tab(&mut self, file: PathBuf) -> Result<()> {
+        if self.editor.is_none() {
+            return self.open_editor(file);
+        }
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.flush_native();
+            editor.open_source(&file)?;
+        }
+        self.load_source_state(&file);
+        self.track_tab(file);
+        self.reset_parser();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.force_terminal_redraw();
+        }
+        self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(140));
+        self.glyphs.clear();
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn activate_tab(&mut self, index: usize) -> Result<()> {
+        if index >= self.tabs.len() || index == self.active_tab {
+            return Ok(());
+        }
+        let file = self.tabs[index].clone();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.flush_native();
+            editor.open_source(&file)?;
+        }
+        self.active_tab = index;
+        self.load_source_state(&file);
+        self.reset_parser();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.force_terminal_redraw();
+        }
+        self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(140));
+        self.glyphs.clear();
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn close_current_tab(&mut self) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        let index = self.active_tab.min(self.tabs.len() - 1);
+        let closed = self.tabs.remove(index);
+        self.closed_tabs.push(closed);
+        if self.tabs.is_empty() {
+            if let Some(editor) = self.editor.as_ref() {
+                let _ = editor.send_command(":write");
+                let _ = editor.send_command(":quit");
+            }
+            return;
+        }
+        let next = index.min(self.tabs.len() - 1);
+        self.active_tab = usize::MAX;
+        let _ = self.activate_tab(next);
+    }
+
+    fn cycle_tab(&mut self, backwards: bool) {
+        if self.tabs.len() < 2 {
+            return;
+        }
+        let next = if backwards {
+            if self.active_tab == 0 { self.tabs.len() - 1 } else { self.active_tab - 1 }
+        } else {
+            (self.active_tab + 1) % self.tabs.len()
+        };
+        let _ = self.activate_tab(next);
+    }
+
+'''
+if marker not in s:
+    raise SystemExit("missing insert_symbol marker")
+s = s.replace(marker, helpers + marker, 1)
+
+needle = """        if key.code == KeyCode::F(11) && key.modifiers.is_empty() {\n            self.toggle_editor_zen();\n            return;\n        }\n"""
+controls = """        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Tab {\n            self.cycle_tab(key.modifiers.contains(KeyModifiers::SHIFT));\n            return;\n        }\n        if key.modifiers.contains(KeyModifiers::CONTROL)\n            && key.modifiers.contains(KeyModifiers::SHIFT)\n            && matches!(key.code, KeyCode::Char('t') | KeyCode::Char('T'))\n        {\n            if let Some(path) = self.closed_tabs.pop() {\n                let _ = self.open_in_tab(path);\n            }\n            return;\n        }\n        if key.modifiers.contains(KeyModifiers::CONTROL)\n            && !key.modifiers.contains(KeyModifiers::SHIFT)\n            && matches!(key.code, KeyCode::Char('t') | KeyCode::Char('T'))\n        {\n            if let Some(path) = rfd::FileDialog::new()\n                .add_filter(\"Documentos\", &[\"txt\", \"hsst\"])\n                .pick_file()\n            {\n                if let Err(error) = self.open_in_tab(path) {\n                    self.launcher.message = Some(format!(\"No se pudo abrir pestaña: {error}\"));\n                }\n            }\n            return;\n        }\n        if key.modifiers.contains(KeyModifiers::CONTROL)\n            && matches!(key.code, KeyCode::Char('w') | KeyCode::Char('W'))\n        {\n            self.close_current_tab();\n            return;\n        }\n\n""" + needle
+if needle not in s:
+    raise SystemExit("missing F11 block")
+s = s.replace(needle, controls, 1)
+s = s.replace(
+    "        self.current_file = Some(previous.clone());\n",
+    "        self.current_file = Some(previous.clone());\n        self.track_tab(previous.clone());\n",
+    1,
+)
+s = s.replace(
+    "        self.current_file = Some(next.clone());\n",
+    "        self.current_file = Some(next.clone());\n        self.track_tab(next.clone());\n",
+    1,
+)
+s = s.replace(
+    "            self.word_count = 0;\n            self.launcher.refresh();\n",
+    "            self.word_count = 0;\n            self.tabs.clear();\n            self.active_tab = 0;\n            self.launcher.refresh();\n",
+    1,
+)
+
+anchor = "#[cfg(windows)]\nunsafe fn focus_native_window(hwnd: HWND) {\n"
+helper = """#[cfg(windows)]\nfn native_client_size(hwnd: HWND) -> Option<(u32, u32)> {\n    let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };\n    let ok = unsafe { GetClientRect(hwnd, &mut rect) };\n    if ok == 0 {\n        return None;\n    }\n    Some(((rect.right - rect.left).max(1) as u32, (rect.bottom - rect.top).max(1) as u32))\n}\n\n""" + anchor
+if anchor not in s:
+    raise SystemExit("missing focus anchor")
+s = s.replace(anchor, helper, 1)
+
+old = """            let size = ui.window().size();\n            let scale = ui.window().scale_factor();\n            let mut model = model.borrow_mut();\n            model.resize(size.width, size.height, scale);\n"""
+new = """            let size = ui.window().size();\n            let scale = ui.window().scale_factor();\n            #[cfg(windows)]\n            let (actual_width, actual_height) = slint_hwnd(&ui)\n                .and_then(native_client_size)\n                .unwrap_or((size.width, size.height));\n            #[cfg(not(windows))]\n            let (actual_width, actual_height) = (size.width, size.height);\n            let mut model = model.borrow_mut();\n            model.resize(actual_width, actual_height, scale);\n"""
+if old not in s:
+    raise SystemExit("missing timer block")
+s = s.replace(old, new, 1)
+p.write_text(s, encoding="utf-8")
+
+readme = Path("README.md")
+rs = readme.read_text(encoding="utf-8")
+row = "| `Ctrl+V` | pegar reemplazando la selección si existe |"
+if row in rs and "Ctrl+Tab" not in rs:
+    rs = rs.replace(
+        row,
+        row
+        + "\n| `Ctrl+T` | abrir documento en una nueva pestaña |"
+        + "\n| `Ctrl+Tab` / `Ctrl+Shift+Tab` | cambiar de pestaña |"
+        + "\n| `Ctrl+W` | cerrar pestaña actual |"
+        + "\n| `Ctrl+Shift+T` | reabrir última pestaña cerrada |",
+    )
+readme.write_text(rs, encoding="utf-8")
+
+ch = Path("CHANGELOG.md")
+cs = ch.read_text(encoding="utf-8")
+entry = """## v0.2.22 — 2026-10-17
+- Repintado F2 en dos fases para eliminar residuos visuales de menús y submenús.
+- Reflow fiable al maximizar/restaurar usando el tamaño real del área cliente de Windows.
+- Pestañas reales sobre los buffers de Helix: abrir, cambiar, cerrar y reabrir documentos.
+- Los cambios automáticos de capítulo quedan incorporados al conjunto de pestañas abiertas.
+
+"""
+marker = "## v0.2.21 — 2026-10-17\n"
+if marker in cs and "## v0.2.22" not in cs:
+    cs = cs.replace(marker, entry + marker, 1)
+ch.write_text(cs, encoding="utf-8")
