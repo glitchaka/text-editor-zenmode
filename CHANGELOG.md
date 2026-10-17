@@ -2,6 +2,15 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## WBW parity completion — 2026-10-17
+
+- Manuscrito WBW crea, abre, elimina y reordena capítulos TXT nativos, renumerando metadatos.
+- Tablero de personajes permite mover fichas; relaciones diferencian tipo/intensidad; cronología tiene vista visual.
+- Mapas permiten pan/zoom y creación de marcadores, además de imagen de fondo.
+- Presets de maquetación Editorial, Novela amplia, Bolsillo, Fantasía clásica, Crónica ilustrada y Personalizada.
+- Temas Dark, Gruvbox, Papel y Custom; portada/banner/icono pueden asignarse desde selector de archivos.
+- Estadísticas incluyen palabras de capítulos y escenas.
+
 ## WBW functional completion — 2026-10-17
 
 - Biblioteca WBW real con obras vacías, apertura y eliminación confirmada.

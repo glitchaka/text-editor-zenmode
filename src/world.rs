@@ -356,6 +356,7 @@ impl ProjectWorkspace {
         summary.words = self
             .array(WorldSection::Manuscript)
             .iter()
+            .chain(self.array(WorldSection::Scenes).iter())
             .filter_map(|row| row.get("words").and_then(Value::as_u64))
             .map(|value| value as usize)
             .sum();
@@ -457,6 +458,101 @@ impl ProjectWorkspace {
         Ok(true)
     }
 
+    pub fn create_chapter(&mut self, title: &str) -> Result<PathBuf> {
+        let index = self.array(WorldSection::Manuscript).len();
+        let chapter = index as u32 + 1;
+        let order = (index as i64 + 1) * 10;
+        let path = unique_scene_path(&self.documents, &self.name, title);
+        let document = document::HsstDocument {
+            metadata: document::DocumentMetadata {
+                format: document::FORMAT_VERSION,
+                id: generate_id(),
+                title: title.to_owned(),
+                project: self.name.clone(),
+                kind: "chapter".into(),
+                chapter: Some(chapter),
+                order,
+                language: "es-CL".into(),
+                status: "draft".into(),
+                page: crate::page::PageProfile::default(),
+            },
+            body: String::new(),
+            formatting: json!({"version": 1, "unit": "utf8-byte", "runs": [], "paragraphs": []}),
+        };
+        document::write(&path, &document)?;
+        self.sync_manuscript(&self.documents.clone())?;
+        self.touch();
+        self.save()?;
+        Ok(path)
+    }
+
+    pub fn delete_manuscript(&mut self, index: usize) -> Result<bool> {
+        let Some(path) = self.array(WorldSection::Manuscript).get(index).and_then(|row| row.get("path")).and_then(Value::as_str).map(PathBuf::from) else {
+            return Ok(false);
+        };
+        if path.exists() { fs::remove_file(&path)?; }
+        let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("chapter.txt")));
+        let _ = fs::remove_file(sidecar);
+        self.sync_manuscript(&self.documents.clone())?;
+        self.renumber_chapters()?;
+        self.touch();
+        self.save()?;
+        Ok(true)
+    }
+
+    pub fn move_manuscript(&mut self, index: usize, delta: isize) -> Result<usize> {
+        let rows = self.array(WorldSection::Manuscript);
+        if rows.is_empty() || index >= rows.len() { return Ok(index); }
+        let target = (index as isize + delta).clamp(0, rows.len() as isize - 1) as usize;
+        if target == index { return Ok(index); }
+        let mut paths = rows.iter().filter_map(|row| row.get("path").and_then(Value::as_str).map(PathBuf::from)).collect::<Vec<_>>();
+        let moved = paths.remove(index);
+        paths.insert(target, moved);
+        for (position, path) in paths.iter().enumerate() {
+            if let Ok(mut doc) = document::read(path) {
+                doc.metadata.order = (position as i64 + 1) * 10;
+                doc.metadata.chapter = Some(position as u32 + 1);
+                document::write(path, &doc)?;
+            }
+        }
+        self.sync_manuscript(&self.documents.clone())?;
+        self.touch();
+        self.save()?;
+        Ok(target)
+    }
+
+    fn renumber_chapters(&mut self) -> Result<()> {
+        let paths = self.array(WorldSection::Manuscript).iter().filter_map(|row| row.get("path").and_then(Value::as_str).map(PathBuf::from)).collect::<Vec<_>>();
+        for (position, path) in paths.iter().enumerate() {
+            if let Ok(mut doc) = document::read(path) {
+                doc.metadata.order = (position as i64 + 1) * 10;
+                doc.metadata.chapter = Some(position as u32 + 1);
+                document::write(path, &doc)?;
+            }
+        }
+        self.sync_manuscript(&self.documents.clone())
+    }
+
+    pub fn add_map_marker(&mut self, map_index: usize, label: &str, marker_type: &str, x: i32, y: i32) -> Result<bool> {
+        let Some(map) = self.array_mut(WorldSection::Maps).get_mut(map_index).and_then(Value::as_object_mut) else { return Ok(false); };
+        let markers = map.entry("markers").or_insert_with(|| json!([])).as_array_mut().ok_or_else(|| anyhow::anyhow!("markers inválido"))?;
+        markers.push(json!({"id": generate_id(), "name": label, "type": marker_type, "x": x, "y": y}));
+        self.touch();
+        self.save()?;
+        Ok(true)
+    }
+
+    pub fn move_character(&mut self, index: usize, dx: i32, dy: i32) -> Result<bool> {
+        let Some(character) = self.array_mut(WorldSection::Characters).get_mut(index).and_then(Value::as_object_mut) else { return Ok(false); };
+        let x = character.get("x").and_then(Value::as_i64).unwrap_or(0) as i32 + dx;
+        let y = character.get("y").and_then(Value::as_i64).unwrap_or(0) as i32 + dy;
+        character.insert("x".into(), json!(x));
+        character.insert("y".into(), json!(y));
+        self.touch();
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn add_record(&mut self, section: WorldSection, title: &str) -> Result<()> {
         if !section.is_record_list() {
             return Ok(());
@@ -486,7 +582,7 @@ impl ProjectWorkspace {
                 json!({
                     "id": id, "title": title, "path": path.to_string_lossy(), "chapter": null,
                     "pov": "", "location": "", "timeline": "", "narrative_layer": "",
-                    "status": "draft", "summary": "", "words": 0, "order": order
+                    "status": "draft", "summary": "", "words": 0, "updated": unix_seconds(), "order": order
                 })
             },
             WorldSection::Characters => json!({
@@ -649,6 +745,16 @@ impl ProjectWorkspace {
         for (index, path) in replacements {
             if let Some(object) = self.array_mut(WorldSection::Scenes).get_mut(index).and_then(Value::as_object_mut) {
                 object.insert("path".into(), json!(path.to_string_lossy()));
+            }
+        }
+        let snapshots = self.array(WorldSection::Scenes).iter().enumerate().filter_map(|(index, row)| {
+            let path = row.get("path").and_then(Value::as_str).map(PathBuf::from)?;
+            let words = document::read(&path).map(|doc| doc.body.split_whitespace().count()).unwrap_or(0);
+            Some((index, words))
+        }).collect::<Vec<_>>();
+        for (index, words) in snapshots {
+            if let Some(object) = self.array_mut(WorldSection::Scenes).get_mut(index).and_then(Value::as_object_mut) {
+                object.insert("words".into(), json!(words));
             }
         }
         Ok(())
@@ -843,10 +949,12 @@ fn default_layout() -> Value {
 
 fn default_settings() -> Value {
     json!({
-        "theme": "dark", "autosave": true, "spellcheck": true, "language": "es-CL",
+        "theme": "dark", "theme_background": "#282828", "theme_foreground": "#dfe8ef", "theme_accent": "#e8cc83",
+        "autosave": true, "spellcheck": true, "language": "es-CL",
         "focus_fullscreen": true, "backup_local": true, "backup_drive": false,
         "editor_font": "JetBrains Mono", "editor_font_size": 14,
-        "map_style": "Parchment", "map_grid": true
+        "map_style": "Parchment", "map_grid": true,
+        "review_fillers": ["realmente", "básicamente", "literalmente", "simplemente", "de alguna manera", "en realidad", "de hecho"]
     })
 }
 

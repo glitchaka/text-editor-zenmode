@@ -175,15 +175,7 @@ fn inspect_text(title: &str, text: &str, findings: &mut Vec<(String, String, Str
         }
     }
 
-    let fillers = [
-        "realmente",
-        "básicamente",
-        "literalmente",
-        "simplemente",
-        "de alguna manera",
-        "en realidad",
-        "de hecho",
-    ];
+    let fillers = ["realmente", "básicamente", "literalmente", "simplemente", "de alguna manera", "en realidad", "de hecho"];
     let lower = text.to_lowercase();
     for filler in fillers {
         let count = lower.matches(filler).count();
@@ -242,8 +234,13 @@ pub fn relationship_board(workspace: &ProjectWorkspace, width: usize, zoom: i32,
         let to = field(&fields, "to").unwrap_or_default();
         let visible = field(&fields, "visible").map(|v| v != "false").unwrap_or(true);
         if !visible { continue; }
+        let relation_type = field(&fields, "type").unwrap_or_default().to_lowercase();
+        let strength = field(&fields, "strength").and_then(|v| v.parse::<i32>().ok()).unwrap_or(0).abs();
+        let glyph = if relation_type.contains("enem") || relation_type.contains("conflict") { '!' }
+            else if relation_type.contains("famil") || relation_type.contains("amor") { '=' }
+            else if strength >= 7 { '━' } else if strength >= 4 { '-' } else { '·' };
         let (Some((x1, y1, _)), Some((x2, y2, _))) = (positions.get(&from), positions.get(&to)) else { continue; };
-        draw_line(&mut canvas, *x1, *y1, *x2, *y2, '·');
+        draw_line(&mut canvas, *x1, *y1, *x2, *y2, glyph);
     }
 
     for (_, (x, y, label)) in positions {
@@ -349,6 +346,54 @@ impl Lcg {
     fn range(&mut self, upper: u64) -> u64 { if upper == 0 { 0 } else { self.next() % upper } }
 }
 
+pub fn timeline_preview(workspace: &ProjectWorkspace, width: usize) -> Vec<String> {
+    let width = width.clamp(48, 120);
+    let mut entries = (0..workspace.rows(WorldSection::Timeline).len()).map(|index| {
+        let fields = workspace.record_fields(WorldSection::Timeline, index);
+        let title = field(&fields, "title").unwrap_or_else(|| "Evento".into());
+        let position = field(&fields, "position").unwrap_or_default();
+        let intensity = field(&fields, "intensity").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(10);
+        let order = field(&fields, "order").and_then(|v| v.parse::<i64>().ok()).unwrap_or(index as i64);
+        (order, position, title, intensity)
+    }).collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.0);
+    entries.into_iter().map(|(_, position, title, intensity)| {
+        let bar = "█".repeat(intensity.max(1));
+        truncate_chars(&format!("{:>12} ── {:<28} {}", if position.is_empty() { "—" } else { &position }, title, bar), width)
+    }).collect()
+}
+
+pub fn apply_layout_preset(workspace: &mut ProjectWorkspace, preset: usize) -> Result<()> {
+    let values = match preset {
+        1 => ("Editorial", "152", "229", "11.5", "1.2", "1.2", "⁂"),
+        2 => ("Novela amplia", "170", "240", "12", "1.25", "1.25", "⁂"),
+        3 => ("Bolsillo", "110", "178", "10", "1.15", "1.0", "* * *"),
+        4 => ("Fantasía clásica", "156", "234", "11.5", "1.22", "1.3", "❦"),
+        5 => ("Crónica ilustrada", "190", "250", "11", "1.3", "1.0", "◆"),
+        _ => ("Personalizada", "152", "229", "11.5", "1.2", "1.2", "⁂"),
+    };
+    for (key, value) in [
+        ("preset", values.0), ("paper_width_mm", values.1), ("paper_height_mm", values.2),
+        ("font_size_pt", values.3), ("line_height", values.4), ("indent_em", values.5), ("scene_separator", values.6)
+    ] {
+        let _ = workspace.set_field(WorldSection::Layout, 0, key, value)?;
+    }
+    Ok(())
+}
+
+pub fn apply_theme_preset(workspace: &mut ProjectWorkspace, preset: usize) -> Result<()> {
+    let values = match preset {
+        1 => ("dark", "#282828", "#dfe8ef", "#e8cc83"),
+        2 => ("gruvbox", "#282828", "#ebdbb2", "#fabd2f"),
+        3 => ("paper", "#f2eadf", "#2f2b27", "#7a4f2a"),
+        _ => ("custom", "#282828", "#dfe8ef", "#8db9bb"),
+    };
+    for (key, value) in [("theme", values.0), ("theme_background", values.1), ("theme_foreground", values.2), ("theme_accent", values.3)] {
+        let _ = workspace.set_field(WorldSection::Settings, 0, key, value)?;
+    }
+    Ok(())
+}
+
 pub fn open_external(target: &str) -> Result<()> {
     let target = target.trim();
     if target.is_empty() {
@@ -381,9 +426,4 @@ pub fn media_target(workspace: &ProjectWorkspace, index: usize) -> Option<String
 pub fn reference_target(workspace: &ProjectWorkspace, index: usize) -> Option<String> {
     let fields = workspace.record_fields(WorldSection::References, index);
     field(&fields, "target").filter(|value| !value.trim().is_empty())
-}
-
-pub fn first_project_source(workspace: &ProjectWorkspace) -> Option<PathBuf> {
-    workspace.rows(WorldSection::Manuscript).into_iter().find_map(|row| row.path)
-        .or_else(|| workspace.rows(WorldSection::Scenes).into_iter().find_map(|row| row.path))
 }
