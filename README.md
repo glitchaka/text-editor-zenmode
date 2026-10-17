@@ -150,3 +150,8 @@ La información de terceros se encuentra en `THIRD_PARTY.md` y `licenses/`.
 ### Workspace WBW integrado
 
 Desde el navegador, `W` abre el workspace del proyecto seleccionado. Incluye proyecto, manuscrito, escenas, personajes, relaciones, teorías, cronología, atlas, mapas, magia, referencias, documentación/notas, revisión, maquetación, multimedia, configuración y estadísticas. `N` crea registros, `Enter` abre/edita, `R` renombra, `D` elimina, `Ctrl+↑/↓` reordena, `A` adjunta multimedia, `B` exporta `.wbw` e `I` importa `.wbw`.
+
+
+### WBW — flujo completo integrado
+
+`W` abre la biblioteca de obras WBW y `J` crea una obra vacía. Dentro de una obra se conservan Proyecto, Manuscrito, Escenas, Personajes, Relaciones, Hilos/teorías, Cronología, Atlas, Mapas, Magia, Referencias, Documentación/notas, Revisión, Maquetación, Multimedia, Configuración y Estadísticas. `V` abre las vistas de tablero/red/mapa, `T` ejecuta revisión automática, `O` abre medios y referencias, `P` exporta PDF por sección o dossier completo, `B` genera el paquete `.wbw`, `I` lo valida e importa, `K` crea una copia en cualquier carpeta local/sincronizada (incluido Google Drive Desktop) y `X` elimina una obra completa con confirmación.

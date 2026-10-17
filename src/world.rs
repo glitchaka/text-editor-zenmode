@@ -761,6 +761,53 @@ fn unique_scene_path(documents: &Path, project: &str, title: &str) -> PathBuf {
     path
 }
 
+pub fn list_projects(documents: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    if let Ok(entries) = fs::read_dir(documents) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(file_name) = path.file_name().and_then(|v| v.to_str()) else { continue; };
+            if !file_name.starts_with(".zen-project-") || !file_name.ends_with(".json") { continue; }
+            if let Ok(raw) = fs::read_to_string(&path)
+                && let Ok(root) = serde_json::from_str::<Value>(&raw)
+                && let Some(name) = root.get("name").and_then(Value::as_str)
+                && !name.trim().is_empty()
+            {
+                names.push(name.to_owned());
+            }
+        }
+    }
+    for (name, _) in document::project_counts(documents) {
+        if !names.iter().any(|existing| existing == &name) {
+            names.push(name);
+        }
+    }
+    names.sort_by_key(|name| name.to_lowercase());
+    names.dedup();
+    names
+}
+
+pub fn delete_project(documents: &Path, project: &str) -> Result<usize> {
+    let mut removed = 0usize;
+    let workspace_path = project_path(documents, project);
+    if workspace_path.exists() {
+        fs::remove_file(&workspace_path)?;
+        removed += 1;
+    }
+    if let Ok(entries) = fs::read_dir(documents) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || !document::is_native_path(&path) { continue; }
+            let Some(metadata) = document::read_metadata(&path) else { continue; };
+            if metadata.project.trim() != project.trim() { continue; }
+            let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("document.txt")));
+            if fs::remove_file(&path).is_ok() { removed += 1; }
+            let _ = fs::remove_file(sidecar);
+        }
+    }
+    Ok(removed)
+}
+
 pub fn project_path(documents: &Path, project: &str) -> PathBuf {
     documents.join(format!(".zen-project-{}.json", safe_component(project)))
 }

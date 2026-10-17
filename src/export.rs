@@ -55,6 +55,19 @@ impl ExportScope {
     }
 }
 
+pub fn export_text_pdf(title: &str, body: &str, exports_dir: &Path) -> Result<PathBuf> {
+    fs::create_dir_all(exports_dir)?;
+    let target = unique_target(exports_dir, &sanitize_filename(title), "pdf");
+    let document = ExportDocument {
+        title: title.to_owned(),
+        body: body.to_owned(),
+        page: PageProfile::default(),
+        alignments: body.lines().map(|_| ParagraphAlignment::Left).collect(),
+    };
+    write_pdf(&target, &[document])?;
+    Ok(target)
+}
+
 pub fn export(
     source: &Path,
     library_documents: &Path,

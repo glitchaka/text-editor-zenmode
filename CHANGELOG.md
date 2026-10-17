@@ -2,6 +2,15 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## WBW functional completion — 2026-10-17
+
+- Biblioteca WBW real con obras vacías, apertura y eliminación confirmada.
+- Vistas navegables de tablero de personajes/relaciones y mapas con pan/zoom.
+- Revisión automática de repeticiones, muletillas y frecuencias, guardada como hallazgos editables.
+- Apertura de medios locales/URLs y referencias externas.
+- PDF por sección y dossier completo; copia portable `.wbw` a cualquier carpeta, incluida una carpeta sincronizada con Drive.
+- Validación de paquetes contra rutas inseguras, recursos gigantes y expansión excesiva antes de importar.
+
 ## Portable scene round-trip — 2026-10-17
 
 - Exportación/importación `.wbw` ahora conserva y restaura manuscrito, escenas TXT, sidecars de formato y multimedia con rutas portables.
