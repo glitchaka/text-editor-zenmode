@@ -173,6 +173,7 @@ impl WorldSummary {
 pub struct ProjectWorkspace {
     pub name: String,
     pub path: PathBuf,
+    documents: PathBuf,
     root: Value,
 }
 
@@ -194,9 +195,11 @@ impl ProjectWorkspace {
         let mut workspace = Self {
             name: project.to_owned(),
             path,
+            documents: documents.to_path_buf(),
             root,
         };
         workspace.normalize();
+        workspace.sync_scene_records()?;
         workspace.sync_manuscript(documents)?;
         workspace.save()?;
         Ok(workspace)
@@ -242,9 +245,11 @@ impl ProjectWorkspace {
         let mut workspace = Self {
             name: name.clone(),
             path: project_path(documents, &name),
+            documents: documents.to_path_buf(),
             root,
         };
         workspace.normalize();
+        workspace.sync_scene_records()?;
         workspace.sync_manuscript(documents)?;
         workspace.save()?;
         Ok(workspace)
@@ -336,6 +341,18 @@ impl ProjectWorkspace {
         summary
     }
 
+    pub fn semantic_references(&self) -> Vec<(String, String)> {
+        let mut refs = Vec::new();
+        for section in [WorldSection::Characters, WorldSection::World, WorldSection::Magic, WorldSection::References, WorldSection::Notes] {
+            for item in self.array(section) {
+                let Some(id) = item.get("id").and_then(Value::as_str) else { continue; };
+                let label = item.get("name").or_else(|| item.get("title")).and_then(Value::as_str).unwrap_or("Referencia");
+                refs.push((id.to_owned(), format!("{} · {}", section.label(), label)));
+            }
+        }
+        refs
+    }
+
     pub fn rows(&self, section: WorldSection) -> Vec<WorldRow> {
         match section {
             WorldSection::Project => return object_rows(self.root.get("profile")),
@@ -411,6 +428,9 @@ impl ProjectWorkspace {
         let existing = object.get(key).cloned().unwrap_or(Value::String(String::new()));
         let value = parse_like(&existing, raw);
         object.insert(key.to_owned(), value);
+        if section == WorldSection::Scenes {
+            self.sync_scene_document(index)?;
+        }
         self.touch();
         self.save()?;
         Ok(true)
@@ -421,10 +441,33 @@ impl ProjectWorkspace {
             return Ok(());
         }
         let record = match section {
-            WorldSection::Scenes => json!({
-                "id": generate_id(), "title": title, "chapter": null, "pov": "", "location": "",
-                "timeline": "", "narrative_layer": "", "status": "draft", "summary": "", "words": 0, "order": 0
-            }),
+            WorldSection::Scenes => {
+                let id = generate_id();
+                let order = self.array(WorldSection::Scenes).len() as i64 * 10 + 10;
+                let path = unique_scene_path(&self.documents, &self.name, title);
+                let document = document::HsstDocument {
+                    metadata: document::DocumentMetadata {
+                        format: document::FORMAT_VERSION,
+                        id: id.clone(),
+                        title: title.to_owned(),
+                        project: self.name.clone(),
+                        kind: "scene".into(),
+                        chapter: None,
+                        order,
+                        language: "es-CL".into(),
+                        status: "draft".into(),
+                        page: crate::page::PageProfile::default(),
+                    },
+                    body: String::new(),
+                    formatting: json!({"version": 1, "unit": "utf8-byte", "runs": [], "paragraphs": []}),
+                };
+                document::write(&path, &document)?;
+                json!({
+                    "id": id, "title": title, "path": path.to_string_lossy(), "chapter": null,
+                    "pov": "", "location": "", "timeline": "", "narrative_layer": "",
+                    "status": "draft", "summary": "", "words": 0, "order": order
+                })
+            },
             WorldSection::Characters => json!({
                 "id": generate_id(), "name": title, "image": "", "aliases": [], "category": "", "status": "",
                 "role": "", "occupation": "", "origin": "", "affiliation": "", "summary": "",
@@ -490,7 +533,14 @@ impl ProjectWorkspace {
         if index >= rows.len() {
             return Ok(false);
         }
-        rows.remove(index);
+        let removed = rows.remove(index);
+        if section == WorldSection::Scenes {
+            if let Some(path) = removed.get("path").and_then(Value::as_str).map(PathBuf::from) {
+                let _ = fs::remove_file(&path);
+                let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("scene.txt")));
+                let _ = fs::remove_file(sidecar);
+            }
+        }
         self.touch();
         self.save()?;
         Ok(true)
@@ -524,7 +574,12 @@ impl ProjectWorkspace {
             rows.insert(target, value);
             for (order, row) in rows.iter_mut().enumerate() {
                 if let Some(object) = row.as_object_mut() {
-                    object.insert("order".into(), json!(order as i64));
+                    object.insert("order".into(), json!((order as i64 + 1) * 10));
+                }
+            }
+            if section == WorldSection::Scenes {
+                for scene_index in 0..rows.len() {
+                    self.sync_scene_document(scene_index)?;
                 }
             }
             self.touch();
@@ -556,6 +611,50 @@ impl ProjectWorkspace {
         self.save()
     }
 
+    fn sync_scene_document(&mut self, index: usize) -> Result<()> {
+        let Some(scene) = self.array(WorldSection::Scenes).get(index) else { return Ok(()); };
+        let Some(path) = scene.get("path").and_then(Value::as_str).map(PathBuf::from) else { return Ok(()); };
+        if !path.exists() { return Ok(()); }
+        let mut doc = document::read(&path)?;
+        doc.metadata.project = self.name.clone();
+        doc.metadata.kind = "scene".into();
+        doc.metadata.title = scene.get("title").and_then(Value::as_str).unwrap_or(&doc.metadata.title).to_owned();
+        doc.metadata.status = scene.get("status").and_then(Value::as_str).unwrap_or(&doc.metadata.status).to_owned();
+        doc.metadata.order = scene.get("order").and_then(Value::as_i64).unwrap_or(doc.metadata.order);
+        doc.metadata.chapter = scene.get("chapter").and_then(Value::as_u64).and_then(|value| u32::try_from(value).ok()).filter(|value| *value > 0);
+        document::write(&path, &doc)?;
+        Ok(())
+    }
+
+    fn sync_scene_records(&mut self) -> Result<()> {
+        let mut replacements = Vec::new();
+        for (index, scene) in self.array(WorldSection::Scenes).iter().enumerate() {
+            let has_path = scene.get("path").and_then(Value::as_str).map(Path::new).is_some_and(Path::exists);
+            if has_path { continue; }
+            let title = scene.get("title").and_then(Value::as_str).unwrap_or("Escena").to_owned();
+            let path = unique_scene_path(&self.documents, &self.name, &title);
+            let id = scene.get("id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(generate_id);
+            let order = scene.get("order").and_then(Value::as_i64).unwrap_or((index as i64 + 1) * 10);
+            let chapter = scene.get("chapter").and_then(Value::as_u64).and_then(|value| u32::try_from(value).ok()).filter(|value| *value > 0);
+            let status = scene.get("status").and_then(Value::as_str).unwrap_or("draft").to_owned();
+            let doc = document::HsstDocument {
+                metadata: document::DocumentMetadata {
+                    format: document::FORMAT_VERSION, id, title: title.clone(), project: self.name.clone(), kind: "scene".into(), chapter, order,
+                    language: "es-CL".into(), status, page: crate::page::PageProfile::default(),
+                },
+                body: String::new(), formatting: json!({"version":1,"unit":"utf8-byte","runs":[],"paragraphs":[]}),
+            };
+            document::write(&path, &doc)?;
+            replacements.push((index, path));
+        }
+        for (index, path) in replacements {
+            if let Some(object) = self.array_mut(WorldSection::Scenes).get_mut(index).and_then(Value::as_object_mut) {
+                object.insert("path".into(), json!(path.to_string_lossy()));
+            }
+        }
+        Ok(())
+    }
+
     fn sync_manuscript(&mut self, documents: &Path) -> Result<()> {
         let mut manuscript = Vec::new();
         let read_dir = fs::read_dir(documents)
@@ -566,7 +665,7 @@ impl ProjectWorkspace {
                 continue;
             }
             let Some(metadata) = document::read_metadata(&path) else { continue; };
-            if metadata.project.trim() != self.name {
+            if metadata.project.trim() != self.name || metadata.kind.eq_ignore_ascii_case("scene") {
                 continue;
             }
             let words = document::read(&path)
@@ -651,6 +750,16 @@ impl ProjectWorkspace {
             .as_array_mut()
             .unwrap()
     }
+}
+
+fn unique_scene_path(documents: &Path, project: &str, title: &str) -> PathBuf {
+    let base = format!("{} - {}", safe_component(project), safe_component(title));
+    let mut path = documents.join(format!("{base}.txt"));
+    for index in 2..10_000 {
+        if !path.exists() { break; }
+        path = documents.join(format!("{base} ({index}).txt"));
+    }
+    path
 }
 
 pub fn project_path(documents: &Path, project: &str) -> PathBuf {

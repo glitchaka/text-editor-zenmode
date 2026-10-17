@@ -641,7 +641,7 @@ center = []
 right = ["diagnostics", "selections", "position", "file-encoding", "file-type"]
 
 [editor.statusline.mode]
-normal = "NORMAL · i: escribir · F2: acciones · F4: Pomodoro · F11: pantalla completa"
+normal = "NORMAL · i: escribir · F2: acciones · F3: referencia · F4: Pomodoro · F11: pantalla completa"
 insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · F11: pantalla completa · Esc: comandos"
 select = "SELECCIÓN · Esc: normal"
 

@@ -566,6 +566,7 @@ struct TerminalModel {
     tabs: Vec<PathBuf>,
     active_tab: usize,
     closed_tabs: Vec<PathBuf>,
+    reference_picker: Option<(String, Vec<(String, String)>, usize)>,
 }
 
 impl TerminalModel {
@@ -630,6 +631,7 @@ impl TerminalModel {
             tabs: Vec::new(),
             active_tab: 0,
             closed_tabs: Vec::new(),
+            reference_picker: None,
         };
 
         if let Some(file) = file_to_open {
@@ -1391,6 +1393,23 @@ impl TerminalModel {
     }
 
     fn editor_key(&mut self, key: KeyEvent) {
+        if let Some((project, rows, selected)) = self.reference_picker.clone() {
+            match key.code {
+                KeyCode::Esc => { self.reference_picker = None; self.reset_parser(); if let Some(editor) = self.editor.as_mut() { let _ = editor.force_terminal_redraw(); } }
+                KeyCode::Up => { self.reference_picker = Some((project, rows, selected.saturating_sub(1))); }
+                KeyCode::Down => { self.reference_picker = Some((project, rows.clone(), (selected + 1).min(rows.len().saturating_sub(1)))); }
+                KeyCode::Enter => {
+                    if let Some((id, label)) = rows.get(selected) {
+                        let marker = format!("[[ref:{id}|{label}]]");
+                        self.reference_picker = None;
+                        self.insert_symbol(&marker);
+                    }
+                }
+                _ => {}
+            }
+            self.dirty = true;
+            return;
+        }
         // F2 is a transient Helix code-action menu. Once the user confirms an
         // entry, send Enter to Helix first and close the popup shortly after,
         // independent of file timestamp changes. This also clears SELECT mode
@@ -1457,6 +1476,22 @@ impl TerminalModel {
             return;
         }
 
+        if key.code == KeyCode::F(3) && key.modifiers.is_empty() {
+            if let Some(current) = self.current_file.as_ref().and_then(|path| document::read_metadata(path)) {
+                if !current.project.trim().is_empty() {
+                    if let Ok(workspace) = world::ProjectWorkspace::load_or_create(&self.library.documents, &current.project) {
+                        let refs = workspace.semantic_references();
+                        if refs.is_empty() {
+                            self.launcher.message = Some("El proyecto no tiene referencias semánticas.".into());
+                        } else {
+                            self.reference_picker = Some((current.project, refs, 0));
+                            self.render_reference_picker();
+                        }
+                    }
+                }
+            }
+            return;
+        }
         if key.code == KeyCode::F(11) && key.modifiers.is_empty() {
             self.toggle_editor_zen();
             return;
@@ -2996,6 +3031,26 @@ impl TerminalModel {
             &mut out,
             &format!("\x1b[38;5;244m╰{}╯\x1b[0m", "─".repeat(inner_width)),
         );
+        self.parser.process(out.as_bytes());
+        self.dirty = true;
+    }
+
+    fn render_reference_picker(&mut self) {
+        let Some((_, rows, selected)) = self.reference_picker.as_ref() else { return; };
+        self.reset_parser();
+        let (cols, terminal_rows) = self.terminal_size();
+        let width = cols as usize;
+        let frame_width = width.saturating_sub(10).clamp(44, 84);
+        let inner = frame_width.saturating_sub(2);
+        let mut out = String::from("\x1b[2J\x1b[H\x1b[?25l");
+        push_line(&mut out, &format!("\x1b[38;5;244m╭{}╮\x1b[0m", "─".repeat(inner)));
+        push_line(&mut out, &framed_left("\x1b[1;38;5;222mREFERENCIA SEMÁNTICA\x1b[0m", inner, "38;5;244"));
+        for (index, (_, label)) in rows.iter().enumerate().take((terminal_rows as usize).saturating_sub(5).min(16)) {
+            let marker = if index == *selected { "▶" } else { " " };
+            push_line(&mut out, &framed_left(&truncate(&format!("{marker} {label}"), inner.saturating_sub(2)), inner, "38;5;244"));
+        }
+        push_line(&mut out, &framed_left("↑↓ seleccionar · Enter insertar · Esc cancelar", inner, "38;5;244"));
+        push_last_line(&mut out, &format!("\x1b[38;5;244m╰{}╯\x1b[0m", "─".repeat(inner)));
         self.parser.process(out.as_bytes());
         self.dirty = true;
     }

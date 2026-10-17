@@ -2,6 +2,13 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## Scene documents and semantic references — 2026-10-17
+
+- Las escenas WBW son documentos TXT nativos reales, se abren en el editor/pestañas y sincronizan título, capítulo, estado y orden con su ficha.
+- Las escenas heredadas sin archivo se migran automáticamente a TXT al abrir el proyecto.
+- Manuscrito y escenas quedan separados: el índice de manuscrito no duplica documentos de tipo escena.
+- F3 abre el selector de referencias semánticas del proyecto e inserta un marcador estable enlazado por ID a personajes, Atlas, magia, referencias o documentación.
+
 ## Completion pass — 2026-10-17
 
 - Añadida Documentación/notas como módulo WBW editable.
