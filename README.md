@@ -1,5 +1,7 @@
 # Zen Editor
 
+**Versión actual: 0.2.21.**
+
 **Zen Editor** es un editor de escritura para Windows construido sobre **Helix 25.07.1**. Helix sigue siendo el motor real de edición dentro de una PTY; la interfaz exterior está escrita en Rust con Slint/FemtoVG y añade escritura sin distracciones, formato enriquecido no destructivo, corrector es-CL, proyectos, Pomodoro, importación y exportación.
 
 Zen Editor existe sobre el trabajo del proyecto **Helix** y de sus contribuidores. Gracias al equipo de Helix por construir y mantener el motor de edición que hace posible este proyecto. Zen Editor no es un producto oficial ni afiliado al proyecto Helix.
