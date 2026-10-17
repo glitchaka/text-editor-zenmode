@@ -518,6 +518,8 @@ struct TerminalModel {
     pending_style_snapshot: Option<StyleSnapshot>,
     style_undo: Vec<StyleSnapshot>,
     style_redo: Vec<StyleSnapshot>,
+    f2_menu_open: bool,
+    f2_close_at: Option<Instant>,
 }
 
 impl TerminalModel {
@@ -574,6 +576,8 @@ impl TerminalModel {
             pending_style_snapshot: None,
             style_undo: Vec::new(),
             style_redo: Vec::new(),
+            f2_menu_open: false,
+            f2_close_at: None,
         };
 
         if let Some(file) = file_to_open {
@@ -1015,6 +1019,8 @@ impl TerminalModel {
         self.pending_style_snapshot = None;
         self.style_undo.clear();
         self.style_redo.clear();
+        self.f2_menu_open = false;
+        self.f2_close_at = None;
         if self.pomodoro_requested {
             self.start_pomodoro();
         }
@@ -1042,6 +1048,17 @@ impl TerminalModel {
         self.update_pomodoro();
         let mut finished = false;
 
+        if self.f2_close_at.is_some_and(|deadline| Instant::now() >= deadline) {
+            self.f2_close_at = None;
+            self.f2_menu_open = false;
+            if let Some(editor) = self.editor.as_ref()
+                && let Err(error) = editor.finish_formatting_action()
+            {
+                self.launcher.message =
+                    Some(format!("No se pudo cerrar F2 y volver a escritura: {error}"));
+            }
+        }
+
         let current_source = self.current_file.clone();
         if let Some(editor) = self.editor.as_mut() {
             let _ = editor.settle_startup_language();
@@ -1064,7 +1081,6 @@ impl TerminalModel {
                     self.style_redo.clear();
                 } else if modified.is_some() && modified != self.source_modified {
                     self.source_modified = modified;
-                    let mut f2_sidecar_changed = false;
                     if let Ok(changed_document) = document::read(source) {
                         self.page_profile = changed_document.metadata.page;
                         if let Some(before) = self.pending_style_snapshot.take() {
@@ -1072,7 +1088,6 @@ impl TerminalModel {
                             if before.formatting != after.formatting || before.page != after.page {
                                 self.style_undo.push(before);
                                 self.style_redo.clear();
-                                f2_sidecar_changed = true;
                             }
                         }
                     }
@@ -1081,13 +1096,6 @@ impl TerminalModel {
                     if let Err(error) = editor.refresh_after_formatting() {
                         self.launcher.message =
                             Some(format!("No se pudo refrescar el formato: {error}"));
-                    }
-                    if f2_sidecar_changed {
-                        if let Err(error) = editor.finish_formatting_action() {
-                            self.launcher.message = Some(format!(
-                                "No se pudo cerrar F2 y volver a escritura: {error}"
-                            ));
-                        }
                     }
                 }
             }
@@ -1145,6 +1153,23 @@ impl TerminalModel {
     }
 
     fn editor_key(&mut self, key: KeyEvent) {
+        // F2 is a transient Helix code-action menu. Once the user confirms an
+        // entry, send Enter to Helix first and close the popup shortly after,
+        // independent of file timestamp changes. This also clears SELECT mode
+        // and returns to INSERT so the next printable key is actual text.
+        if self.f2_menu_open {
+            if key.code == KeyCode::Enter && key.modifiers.is_empty() {
+                if let Some(editor) = self.editor.as_ref() {
+                    let _ = editor.send_key(key, editor.win32_input());
+                }
+                self.f2_close_at = Some(Instant::now() + Duration::from_millis(180));
+                return;
+            }
+            if key.code == KeyCode::Esc && key.modifiers.is_empty() {
+                self.f2_menu_open = false;
+                self.f2_close_at = None;
+            }
+        }
         if self.pomodoro_offer {
             match key.code {
                 KeyCode::Enter
@@ -1212,6 +1237,8 @@ impl TerminalModel {
                     self.pending_style_snapshot = snapshot;
                 }
                 let _ = editor.send_key(key, editor.win32_input());
+                self.f2_menu_open = true;
+                self.f2_close_at = None;
             }
             return;
         }

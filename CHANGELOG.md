@@ -2,6 +2,12 @@
 
 Cambios por versión de Zen Editor.
 
+## v0.2.19 — 2026-10-17
+
+- Cerrar de forma determinista el menú F2 al confirmar una acción.
+- Volver a modo de escritura después de aplicar formato o configuración de página.
+- Evitar que el cierre del menú dependa de la resolución de timestamps del archivo.
+
 ## v0.2.18 — 2026-10-17
 
 - Restaurar control visible y atajo F11 para pantalla completa.
