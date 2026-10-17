@@ -102,6 +102,7 @@ slint::slint! {
         callback terminal-pointer(float, float, int);
         callback terminal-scroll(float, float, float);
         property <bool> terminal-selecting: false;
+        property <bool> terminal-select-dragged: false;
         callback toggle-zen();
         callback close-window();
         callback start-pomodoro();
@@ -151,6 +152,7 @@ slint::slint! {
                     if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
                         root.terminal-selecting = root.editor-active
                             && root.terminal-cell-has-text(self.mouse-x / 1px, self.mouse-y / 1px);
+                        root.terminal-select-dragged = false;
                         if (root.terminal-selecting) {
                             root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 0);
                             EventResult.accept
@@ -161,10 +163,15 @@ slint::slint! {
                         }
                     } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up && root.terminal-selecting) {
                         root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 1);
+                        if (!root.terminal-select-dragged) {
+                            root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 3);
+                        }
                         root.terminal-selecting = false;
+                        root.terminal-select-dragged = false;
                         EventResult.accept
                     } else if (event.kind == PointerEventKind.cancel) {
                         root.terminal-selecting = false;
+                        root.terminal-select-dragged = false;
                         EventResult.reject
                     } else if (root.terminal-selecting) {
                         EventResult.accept
@@ -174,6 +181,7 @@ slint::slint! {
                 }
                 moved => {
                     if (root.editor-active && root.terminal-selecting && self.pressed) {
+                        root.terminal-select-dragged = true;
                         root.terminal-pointer(self.mouse-x / 1px, self.mouse-y / 1px, 2);
                     }
                 }
@@ -1392,7 +1400,7 @@ impl TerminalModel {
                 if let Some(editor) = self.editor.as_ref() {
                     let _ = editor.send_key(key, editor.win32_input());
                 }
-                self.f2_close_at = Some(Instant::now() + Duration::from_millis(240));
+                self.f2_close_at = Some(Instant::now() + Duration::from_millis(120));
                 return;
             }
             if key.code == KeyCode::Esc && key.modifiers.is_empty() {
@@ -2700,6 +2708,20 @@ impl TerminalModel {
                         let rows = workspace.rows(section);
                         if rows.is_empty() {
                             push_line(&mut out, &framed_left("(sin registros)", inner_width, "38;5;244"));
+                        } else if section == WorldSection::Scenes {
+                            for (index, row) in rows.iter().enumerate().take((rows.len()).min(8)) {
+                                let marker = if index == self.launcher.workspace_row { "▶" } else { " " };
+                                let fields = workspace.record_fields(section, index);
+                                let get = |key: &str| fields.iter().find(|field| field.label == key).map(|field| field.detail.as_str()).unwrap_or("");
+                                let chapter = get("chapter");
+                                let pov = get("pov");
+                                let location = get("location");
+                                let status = get("status");
+                                let head = format!("{marker} ┌ {}  [cap. {} · {}]", row.label, if chapter.is_empty() { "—" } else { chapter }, status);
+                                let meta = format!("  └ POV: {} · Lugar: {}", if pov.is_empty() { "—" } else { pov }, if location.is_empty() { "—" } else { location });
+                                push_line(&mut out, &framed_left(&truncate(&head, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
+                                push_line(&mut out, &framed_left(&truncate(&meta, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
+                            }
                         } else {
                             for (index, row) in rows.iter().enumerate().take((rows.len()).min(14)) {
                                 let marker = if index == self.launcher.workspace_row { "▶" } else { " " };
@@ -3014,6 +3036,13 @@ impl TerminalModel {
         };
         let column = col as usize + 1;
         let line = row as usize + 1;
+        if kind == 3 {
+            let win32 = editor.win32_input();
+            let _ = editor.send_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), win32);
+            let _ = editor.send_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE), win32);
+            self.dirty = true;
+            return;
+        }
         let report = match kind {
             0 => format!("\x1b[<0;{column};{line}M"),
             1 => format!("\x1b[<0;{column};{line}m"),

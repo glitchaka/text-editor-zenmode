@@ -149,4 +149,4 @@ La información de terceros se encuentra en `THIRD_PARTY.md` y `licenses/`.
 
 ### Workspace WBW integrado
 
-Desde el navegador, `W` abre el workspace del proyecto seleccionado. Incluye proyecto, manuscrito, escenas, personajes, relaciones, teorías, cronología, atlas, mapas, magia, referencias, revisión, maquetación, multimedia, configuración y estadísticas. `N` crea registros, `Enter` abre/edita, `R` renombra, `D` elimina, `Ctrl+↑/↓` reordena, `A` adjunta multimedia, `B` exporta `.wbw` e `I` importa `.wbw`.
+Desde el navegador, `W` abre el workspace del proyecto seleccionado. Incluye proyecto, manuscrito, escenas, personajes, relaciones, teorías, cronología, atlas, mapas, magia, referencias, documentación/notas, revisión, maquetación, multimedia, configuración y estadísticas. `N` crea registros, `Enter` abre/edita, `R` renombra, `D` elimina, `Ctrl+↑/↓` reordena, `A` adjunta multimedia, `B` exporta `.wbw` e `I` importa `.wbw`.

@@ -28,6 +28,7 @@ pub enum WorldSection {
     Maps,
     Magic,
     References,
+    Notes,
     Review,
     Layout,
     Media,
@@ -36,7 +37,7 @@ pub enum WorldSection {
 }
 
 impl WorldSection {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Project,
         Self::Manuscript,
         Self::Scenes,
@@ -48,6 +49,7 @@ impl WorldSection {
         Self::Maps,
         Self::Magic,
         Self::References,
+        Self::Notes,
         Self::Review,
         Self::Layout,
         Self::Media,
@@ -68,6 +70,7 @@ impl WorldSection {
             Self::Maps => "Mapas",
             Self::Magic => "Sistemas de magia",
             Self::References => "Textos / referencias",
+            Self::Notes => "Documentación / notas",
             Self::Review => "Revisión",
             Self::Layout => "Maquetación",
             Self::Media => "Multimedia",
@@ -89,6 +92,7 @@ impl WorldSection {
             Self::Maps => "maps",
             Self::Magic => "magic",
             Self::References => "references",
+            Self::Notes => "notes",
             Self::Review => "review",
             Self::Layout => "layout",
             Self::Media => "media",
@@ -109,6 +113,7 @@ impl WorldSection {
                 | Self::Maps
                 | Self::Magic
                 | Self::References
+                | Self::Notes
                 | Self::Review
                 | Self::Media
         )
@@ -134,6 +139,7 @@ pub struct WorldSummary {
     pub maps: usize,
     pub magic: usize,
     pub references: usize,
+    pub notes: usize,
     pub review: usize,
     pub media: usize,
     pub words: usize,
@@ -153,6 +159,7 @@ impl WorldSummary {
             WorldSection::Maps => self.maps,
             WorldSection::Magic => self.magic,
             WorldSection::References => self.references,
+            WorldSection::Notes => self.notes,
             WorldSection::Review => self.review,
             WorldSection::Layout => 1,
             WorldSection::Media => self.media,
@@ -317,6 +324,7 @@ impl ProjectWorkspace {
         summary.maps = self.array(WorldSection::Maps).len();
         summary.magic = self.array(WorldSection::Magic).len();
         summary.references = self.array(WorldSection::References).len();
+        summary.notes = self.array(WorldSection::Notes).len();
         summary.review = self.array(WorldSection::Review).len();
         summary.media = self.array(WorldSection::Media).len();
         summary.words = self
@@ -347,6 +355,7 @@ impl ProjectWorkspace {
                     stat_row("Mapas", summary.maps),
                     stat_row("Sistemas de magia", summary.magic),
                     stat_row("Referencias", summary.references),
+                    stat_row("Documentos / notas", summary.notes),
                     stat_row("Notas de revisión", summary.review),
                     stat_row("Medios", summary.media),
                 ];
@@ -453,6 +462,10 @@ impl ProjectWorkspace {
             WorldSection::References => json!({
                 "id": generate_id(), "title": title, "type": "reference", "target": "", "source_name": "",
                 "imported_at": unix_seconds(), "summary": "", "tags": [], "mentions": []
+            }),
+            WorldSection::Notes => json!({
+                "id": generate_id(), "title": title, "body": "", "category": "documentation", "tags": [],
+                "references": [], "attachments": [], "updated": unix_seconds()
             }),
             WorldSection::Review => json!({
                 "id": generate_id(), "title": title, "type": "note", "status": "open", "chapter": null,
@@ -659,7 +672,7 @@ fn empty_project(name: &str) -> Value {
         "review_config": {"repetitions": true, "filler": [], "language": "es-CL"},
         "sections": {
             "manuscript": [], "scenes": [], "characters": [], "relationships": [], "theories": [],
-            "timeline": [], "world": [], "maps": [], "magic": [], "references": [], "review": [], "media": []
+            "timeline": [], "world": [], "maps": [], "magic": [], "references": [], "notes": [], "review": [], "media": []
         }
     })
 }
@@ -767,7 +780,7 @@ mod tests {
 
     #[test]
     fn section_inventory_is_complete() {
-        assert_eq!(WorldSection::ALL.len(), 16);
+        assert_eq!(WorldSection::ALL.len(), 17);
         assert_eq!(WorldSection::Characters.label(), "Personajes");
         assert!(WorldSection::Maps.is_record_list());
         assert!(!WorldSection::Layout.is_record_list());

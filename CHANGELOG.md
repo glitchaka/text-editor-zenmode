@@ -2,6 +2,14 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## Completion pass — 2026-10-17
+
+- Añadida Documentación/notas como módulo WBW editable.
+- Tablero de escenas muestra tarjetas con capítulo, POV, ubicación y estado; mantiene creación, ficha, reordenación y edición.
+- Un clic de ratón posiciona el cursor y vuelve a escritura; arrastrar conserva selección, evitando el estado residual que provocaba inserciones/repeticiones inesperadas.
+- El cierre de F2 conserva el parser VT y vuelve a escritura después de aplicar el formato.
+- Se mantienen soft-wrap no destructivo, esquinas DWM nativas, arrastre de superficie completa y reflow sin reiniciar el parser.
+
 ## WBW complete workspace — 2026-10-17
 
 - Completado el workspace WBW: Proyecto, Manuscrito, Tablero de escenas, Personajes, Relaciones, Hilos/teorías, Cronología, Atlas, Mapas, Magia, Referencias, Revisión, Maquetación, Multimedia, Configuración y Estadísticas.
