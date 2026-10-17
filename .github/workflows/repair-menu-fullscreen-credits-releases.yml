@@ -1,0 +1,327 @@
+name: Repair menu fullscreen credits and releases
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Repair source repository and release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"No se encontró ancla: {label}")
+              return text.replace(old, new, 1)
+
+          app_path = Path("src/app.rs")
+          app = app_path.read_text(encoding="utf-8")
+          app = replace_once(app,
+              "            x: root.width - 224px;\n            y: root.height - 10px;\n            width: 224px;",
+              "            x: root.width - 260px;\n            y: root.height - 10px;\n            width: 260px;",
+              "bottom reveal")
+          app = replace_once(app,
+              "            width: 196px;\n            height: 34px;",
+              "            width: 232px;\n            height: 34px;",
+              "island width")
+
+          old_close = '''            Rectangle {
+                x: 157px; y: 1px; width: 38px; height: 32px;
+                border-radius: 10px;
+                background: close-touch.pressed
+                    ? rgb(62, 23, 36)
+                    : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
+                Path {
+                    x: 10px; y: 8px; width: 18px; height: 18px;
+                    commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
+                    stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
+                    stroke-width: 2px; stroke-line-cap: round;
+                }
+                close-touch := TouchArea { mouse-cursor: pointer; clicked => { root.close-window(); } }
+            }
+'''
+          new_close = '''            Rectangle {
+                x: 157px; y: 3px; width: 32px; height: 28px;
+                border-radius: 9px;
+                background: fullscreen-touch.pressed
+                    ? #29384b
+                    : fullscreen-touch.has-hover ? #172334 : transparent;
+                Text {
+                    width: 100%; height: 100%; text: "⛶"; color: #dfe8ef;
+                    font-family: "Segoe UI Variable"; font-size: 15px;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                fullscreen-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.toggle-zen(); terminal-focus.focus(); }
+                }
+            }
+
+            Rectangle {
+                x: 193px; y: 1px; width: 38px; height: 32px;
+                border-radius: 10px;
+                background: close-touch.pressed
+                    ? rgb(62, 23, 36)
+                    : close-touch.has-hover ? rgb(48, 18, 28) : transparent;
+                Path {
+                    x: 10px; y: 8px; width: 18px; height: 18px;
+                    commands: "M 9 1 L 9 8 M 3.3 3.7 A 7 7 0 1 0 14.7 3.7";
+                    stroke: close-touch.has-hover ? #ff5d78 : #ff9fbd;
+                    stroke-width: 2px; stroke-line-cap: round;
+                }
+                close-touch := TouchArea { mouse-cursor: pointer; clicked => { root.close-window(); } }
+            }
+'''
+          app = replace_once(app, old_close, new_close, "fullscreen button")
+
+          f4_anchor = '''        if key.code == KeyCode::F(4) && key.modifiers.is_empty() {
+            self.start_pomodoro();
+            return;
+        }
+'''
+          f11_then_f4 = '''        if key.code == KeyCode::F(11) && key.modifiers.is_empty() {
+            self.toggle_editor_zen();
+            return;
+        }
+        if key.code == KeyCode::F(4) && key.modifiers.is_empty() {
+            self.start_pomodoro();
+            return;
+        }
+'''
+          app = replace_once(app, f4_anchor, f11_then_f4, "F11 editor")
+
+          z_anchor = '''            KeyCode::Char('z') | KeyCode::Char('Z') => {
+                self.zen_requested = !self.zen_requested;
+                self.launcher.message = Some(if self.zen_requested {
+                    "Zenmode real seleccionado.".into()
+                } else {
+                    "Modo normal seleccionado.".into()
+                });
+            }
+'''
+          f11_launcher = '''            KeyCode::F(11) => {
+                self.zen_requested = !self.zen_requested;
+                self.launcher.message = Some(if self.zen_requested {
+                    "Pantalla completa seleccionada.".into()
+                } else {
+                    "Modo ventana seleccionado.".into()
+                });
+            }
+''' + z_anchor
+          app = replace_once(app, z_anchor, f11_launcher, "F11 launcher")
+          app_path.write_text(app, encoding="utf-8")
+
+          spell_path = Path("src/spell.rs")
+          spell = spell_path.read_text(encoding="utf-8")
+          spell = replace_once(spell,
+              '''            let mut push_format = |title: &str, action: &str, value: &str| {
+                actions.push(json!({
+''',
+              '''            let mut format_actions = Vec::new();
+            let mut push_format = |title: &str, action: &str, value: &str| {
+                format_actions.push(json!({
+''',
+              "format action priority")
+          spell = replace_once(spell,
+              '''            push_format("Alineación · Justificada", "alignment", "justify");
+        }
+        actions
+''',
+              '''            push_format("Alineación · Justificada", "alignment", "justify");
+            // Con texto seleccionado, el menú F2 debe abrir mostrando primero
+            // formato y alineación; corrección y página quedan después.
+            format_actions.extend(actions);
+            actions = format_actions;
+        }
+        actions
+''',
+              "format action merge")
+          spell_path.write_text(spell, encoding="utf-8")
+
+          editor_path = Path("src/editor.rs")
+          editor = editor_path.read_text(encoding="utf-8")
+          editor = editor.replace(
+              'normal = "NORMAL · i: escribir · F2: acciones · F4: Pomodoro"',
+              'normal = "NORMAL · i: escribir · F2: acciones · F4: Pomodoro · F11: pantalla completa"')
+          editor = editor.replace(
+              'insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · Esc: comandos"',
+              'insert = "INSERTAR · Alt+d: — · F2: acciones · F4: Pomodoro · F11: pantalla completa · Esc: comandos"')
+          editor_path.write_text(editor, encoding="utf-8")
+
+          cargo_path = Path("Cargo.toml")
+          cargo = cargo_path.read_text(encoding="utf-8")
+          cargo = replace_once(cargo, 'version = "0.2.17"', 'version = "0.2.18"', "Cargo version")
+          cargo_path.write_text(cargo, encoding="utf-8")
+
+          lock_path = Path("Cargo.lock")
+          lock = lock_path.read_text(encoding="utf-8")
+          pattern = r'(\[\[package\]\]\nname = "zen-editor"\nversion = ")([0-9]+\.[0-9]+\.[0-9]+)(")'
+          lock, count = re.subn(pattern, r'\g<1>0.2.18\g<3>', lock, count=1)
+          if count != 1:
+              raise SystemExit("No se pudo actualizar zen-editor en Cargo.lock")
+          lock_path.write_text(lock, encoding="utf-8")
+
+          readme_path = Path("README.md")
+          readme = readme_path.read_text(encoding="utf-8")
+          intro = '**Zen Editor** es un editor de escritura para Windows construido sobre **Helix 25.07.1**. Helix sigue siendo el motor real de edición dentro de una PTY; la interfaz exterior está escrita en Rust con Slint/FemtoVG y añade escritura sin distracciones, formato enriquecido no destructivo, corrector es-CL, proyectos, Pomodoro, importación y exportación.\n'
+          credits_intro = intro + '\nZen Editor existe sobre el trabajo del proyecto **Helix** y de sus contribuidores. Gracias al equipo de Helix por construir y mantener el motor de edición que hace posible este proyecto. Zen Editor no es un producto oficial ni afiliado al proyecto Helix.\n\n## Créditos y licencia\n\n- **Helix Editor** — motor de edición integrado, proyecto original: https://github.com/helix-editor/helix\n- **Licencia de Helix:** Mozilla Public License 2.0.\n- La licencia completa está en [`LICENSE`](LICENSE) y la información de terceros en [`THIRD_PARTY.md`](THIRD_PARTY.md) y [`CREDITS.md`](CREDITS.md).\n'
+          readme = replace_once(readme, intro, credits_intro, "README credits")
+          readme = readme.replace('La isla inferior se mantiene compacta: **Pomodoro · Ω símbolos · cerrar**.', 'La isla inferior se mantiene compacta: **Pomodoro · Ω símbolos · pantalla completa · cerrar**.')
+          readme = readme.replace('| `F4` | Pomodoro |', '| `F4` | Pomodoro |\n| `F11` | entrar/salir de pantalla completa |')
+          readme_path.write_text(readme, encoding="utf-8")
+
+          Path("THIRD_PARTY.md").write_text('''# Componentes de terceros\n\n## Helix Editor\n\nZen Editor integra **Helix 25.07.1** como motor real de edición.\n\nProyecto original: https://github.com/helix-editor/helix\n\nHelix se distribuye bajo **Mozilla Public License 2.0 (MPL-2.0)**. El texto completo de la licencia se conserva en `LICENSE` y `licenses/HELIX-MPL-2.0.txt`.\n\n**Agradecimiento:** gracias al equipo y a todos los contribuidores de Helix por desarrollar y mantener el editor sobre el que se construye Zen Editor. Zen Editor es un proyecto independiente y no oficial.\n\n## Diccionario ortográfico español de Chile\n\nEl diccionario Hunspell es-CL se obtiene desde `wooorm/dictionaries` en la revisión fijada en `build.rs`. Su licencia se integra con los recursos generados del programa.\n''', encoding="utf-8")
+
+          Path("CREDITS.md").write_text('''# Créditos\n\n## Helix\n\nZen Editor usa **Helix Editor 25.07.1** como motor de edición.\n\nGracias al equipo de Helix y a sus contribuidores por su trabajo en un editor rápido, modal y extensible que sirve como base de Zen Editor.\n\n- Proyecto: https://github.com/helix-editor/helix\n- Licencia: Mozilla Public License 2.0 (MPL-2.0)\n- Zen Editor es un proyecto independiente y no está afiliado oficialmente con Helix.\n''', encoding="utf-8")
+
+          Path("LICENSE").write_text(Path("licenses/HELIX-MPL-2.0.txt").read_text(encoding="utf-8"), encoding="utf-8")
+
+          changelog_path = Path("CHANGELOG.md")
+          changelog = changelog_path.read_text(encoding="utf-8")
+          changelog = changelog.replace(
+              'Historial reconstruido desde el historial Git del proyecto. Cada versión corresponde al estado final del código antes del siguiente cambio de versión.',
+              'Cambios por versión de Zen Editor.')
+          if '## v0.2.18' not in changelog:
+              marker = 'Cambios por versión de Zen Editor.\n\n'
+              entry = '''## v0.2.18 — 2026-10-17\n\n- Restaurar control visible y atajo F11 para pantalla completa.\n- Corregir el orden del menú F2 para mostrar primero formato y alineación cuando hay selección.\n- Añadir licencia visible, créditos y agradecimiento al proyecto Helix.\n- Limpiar las notas de las releases para mostrar solo información útil de cada versión.\n\n'''
+              changelog = replace_once(changelog, marker, marker + entry, "CHANGELOG 0.2.18")
+          changelog_path.write_text(changelog, encoding="utf-8")
+          PY
+
+          git add src/app.rs src/spell.rs src/editor.rs Cargo.toml Cargo.lock README.md THIRD_PARTY.md CREDITS.md LICENSE CHANGELOG.md
+          git rm .github/workflows/repair-menu-fullscreen-credits-releases.yml
+          git commit -m "fix: restore F2 menu fullscreen and Helix attribution [skip ci]"
+          git push origin HEAD:main
+
+          FINAL_HEAD="$(git rev-parse HEAD)"
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re, subprocess
+
+          def sh(*args):
+              return subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL).strip()
+
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          parts = re.split(r'(?m)^## v([0-9]+\.[0-9]+\.[0-9]+)(?: — [^\n]+)?\n', changelog)
+          notes = {}
+          order = []
+          for i in range(1, len(parts), 2):
+              version = parts[i]
+              section = parts[i+1]
+              bullets = [line.strip() for line in section.splitlines() if line.strip().startswith('- ')]
+              original = bullets[:]
+              noise = (
+                  'workflow', '[skip ci]', 'rustfmt', 'clippy', 'script temporal',
+                  'parche temporal', 'ci temporal', 'one-shot', 'temporary',
+              )
+              cleaned = []
+              for bullet in bullets:
+                  body = bullet[2:].strip()
+                  low = body.lower()
+                  if low.startswith(('chore:', 'test:', 'style:')):
+                      continue
+                  if any(token in low for token in noise):
+                      continue
+                  if low.startswith(('preparar ', 'ejecutar ', 'retirar ')):
+                      continue
+                  cleaned.append(bullet)
+              if not cleaned:
+                  cleaned = original[:4] or ['- Actualización de Zen Editor.']
+              notes[version] = cleaned
+              order.append(version)
+
+          commits = sh('git','rev-list','--reverse','HEAD').splitlines()
+          transitions = []
+          last = None
+          for sha in commits:
+              try:
+                  cargo = subprocess.check_output(['git','show',f'{sha}:Cargo.toml'], text=True, stderr=subprocess.DEVNULL)
+              except subprocess.CalledProcessError:
+                  continue
+              m = re.search(r'(?m)^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', cargo)
+              if not m:
+                  continue
+              v = m.group(1)
+              if v != last:
+                  transitions.append((v, sha))
+                  last = v
+
+          root = sh('git','rev-list','--max-parents=0','HEAD').splitlines()[0]
+          if not any(v == '0.0.1' for v,_ in transitions):
+              transitions.insert(0, ('0.0.1', root))
+
+          first = {}
+          for v, sha in transitions:
+              first.setdefault(v, sha)
+
+          chronological = list(reversed(order))
+          rows = []
+          for idx, version in enumerate(chronological):
+              start = first.get(version, root if version == '0.0.1' else None)
+              if not start:
+                  continue
+              next_start = None
+              for nv in chronological[idx+1:]:
+                  if nv in first:
+                      next_start = first[nv]
+                      break
+              if next_start:
+                  try:
+                      target = sh('git','rev-parse',f'{next_start}^')
+                  except subprocess.CalledProcessError:
+                      target = start
+              else:
+                  target = sh('git','rev-parse','HEAD')
+              if version == chronological[-1]:
+                  target = sh('git','rev-parse','HEAD')
+              body = f'## Zen Editor v{version}\n\n### Cambios\n' + '\n'.join(notes[version]) + '\n'
+              path = Path(f'/tmp/release-{version}.md')
+              path.write_text(body, encoding='utf-8')
+              rows.append(f'{version}|{target}|{path}')
+          Path('/tmp/releases.tsv').write_text('\n'.join(rows)+'\n', encoding='utf-8')
+          PY
+
+          retry_gh() {
+            local attempt=1
+            while true; do
+              if "$@"; then return 0; fi
+              if [ "$attempt" -ge 5 ]; then return 1; fi
+              sleep $((attempt * 5))
+              attempt=$((attempt + 1))
+            done
+          }
+
+          while IFS='|' read -r VERSION TARGET NOTES; do
+            [ -n "$VERSION" ] || continue
+            TAG="v${VERSION}"
+            if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+              retry_gh gh release edit "$TAG" --repo "$REPO" --title "Zen Editor ${TAG}" --notes-file "$NOTES"
+            else
+              retry_gh gh release create "$TAG" --repo "$REPO" --target "$TARGET" --title "Zen Editor ${TAG}" --notes-file "$NOTES"
+            fi
+            sleep 2
+          done < /tmp/releases.tsv
