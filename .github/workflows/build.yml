@@ -25,22 +25,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Apply staged 0.2.22 patch
-        if: hashFiles('.github/scripts/apply_022.py') != ''
-        shell: pwsh
-        run: |
-          python .github/scripts/apply_022.py
-          cargo fmt --all
-          cargo generate-lockfile
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout HEAD^ -- .github/workflows/build.yml
-          git rm .github/scripts/apply_022.py
-          if (Test-Path .github/workflows/implement-022.yml) { git rm .github/workflows/implement-022.yml }
-          git add Cargo.toml Cargo.lock src/app.rs src/editor.rs README.md CHANGELOG.md .github/workflows/build.yml
-          git commit -m "feat: tabs and reliable redraw in Zen Editor 0.2.22 [skip ci]"
-          git push origin HEAD:main
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
