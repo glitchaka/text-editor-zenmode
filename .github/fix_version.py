@@ -15,9 +15,7 @@ p.write_text(s.replace(old, 'name = "zen-editor"\nversion = "0.2.20"', 1), encod
 
 p = Path('CHANGELOG.md')
 s = p.read_text(encoding='utf-8')
-head = '# Historial de versiones — Zen Editor\n\nCambios por versión de Zen Editor.\n\n'
 entry = '''## v0.2.20 — 2026-10-17
-
 - Eliminar restos visuales de los menús F2 mediante un repintado completo de Helix.
 - Añadir creación de carpetas desde el launcher.
 - Añadir agrupación de documentos por proyecto mediante un manifiesto de proyecto.
@@ -27,7 +25,8 @@ entry = '''## v0.2.20 — 2026-10-17
 
 '''
 if '## v0.2.20' not in s:
-    if head not in s:
-        raise SystemExit('CHANGELOG header missing')
-    s = s.replace(head, head + entry, 1)
+    marker = '## v0.2.19'
+    if marker not in s:
+        raise SystemExit('CHANGELOG version marker missing')
+    s = s.replace(marker, entry + marker, 1)
 p.write_text(s, encoding='utf-8')
