@@ -1636,6 +1636,7 @@ impl TerminalModel {
         }
 
         let current_source = self.current_file.clone();
+        let overlay_active = self.overlay_active();
         if let Some(editor) = self.editor.as_mut() {
             let _ = editor.settle_startup_language();
             let body_changed = match editor.sync_native() {
@@ -1683,7 +1684,7 @@ impl TerminalModel {
                 match result {
                     Ok(bytes) => {
                         let bytes = editor.normalize_output(&bytes);
-                        if !self.overlay_active() {
+                        if !overlay_active {
                             self.parser.process(&bytes);
                             self.dirty = true;
                         }
