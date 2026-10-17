@@ -567,23 +567,6 @@ impl ProjectWorkspace {
         Ok(true)
     }
 
-    pub fn rename_record(&mut self, section: WorldSection, index: usize, title: &str) -> Result<bool> {
-        if !section.is_record_list() || title.trim().is_empty() {
-            return Ok(false);
-        }
-        let Some(record) = self.array_mut(section).get_mut(index).and_then(Value::as_object_mut) else {
-            return Ok(false);
-        };
-        let key = if record.contains_key("name") { "name" } else { "title" };
-        record.insert(key.into(), json!(title.trim()));
-        if section == WorldSection::Scenes {
-            self.sync_scene_document(index)?;
-        }
-        self.touch();
-        self.save()?;
-        Ok(true)
-    }
-
     pub fn move_record(&mut self, section: WorldSection, index: usize, delta: isize) -> Result<usize> {
         if !section.is_record_list() {
             return Ok(index);
@@ -610,14 +593,6 @@ impl ProjectWorkspace {
             self.save()?;
         }
         Ok(target)
-    }
-
-    pub fn set_profile_field(&mut self, key: &str, value: &str) -> Result<()> {
-        if let Some(profile) = self.root.get_mut("profile").and_then(Value::as_object_mut) {
-            profile.insert(key.to_owned(), json!(value));
-        }
-        self.touch();
-        self.save()
     }
 
     pub fn add_media(&mut self, title: &str, path: &Path) -> Result<()> {
