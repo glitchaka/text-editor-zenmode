@@ -226,20 +226,43 @@ impl ProjectWorkspace {
         let mut extracted = std::collections::HashMap::<String, PathBuf>::new();
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
-            if entry.is_dir() { continue; }
+            if entry.is_dir() {
+                continue;
+            }
             let entry_name = entry.name().replace('\\', "/");
             let destination = if entry_name.starts_with("manuscript/") {
-                let file_name = Path::new(&entry_name).file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(generate_id);
+                let file_name = Path::new(&entry_name)
+                    .file_name()
+                    .and_then(|v| v.to_str())
+                    .map(safe_component)
+                    .unwrap_or_else(generate_id);
                 Some(documents.join(file_name))
             } else if entry_name.starts_with("media/") || entry_name.starts_with("resources/") {
-                let file_name = Path::new(&entry_name).file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(generate_id);
-                let bucket = if entry_name.starts_with("resources/") { ".zen-resources" } else { ".zen-media" };
-                Some(documents.join(bucket).join(safe_component(&name)).join(file_name))
+                let file_name = Path::new(&entry_name)
+                    .file_name()
+                    .and_then(|v| v.to_str())
+                    .map(safe_component)
+                    .unwrap_or_else(generate_id);
+                let bucket = if entry_name.starts_with("resources/") {
+                    ".zen-resources"
+                } else {
+                    ".zen-media"
+                };
+                Some(
+                    documents
+                        .join(bucket)
+                        .join(safe_component(&name))
+                        .join(file_name),
+                )
             } else {
                 None
             };
-            let Some(target) = destination else { continue; };
-            if let Some(parent) = target.parent() { fs::create_dir_all(parent)?; }
+            let Some(target) = destination else {
+                continue;
+            };
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
             let mut bytes = Vec::new();
             entry.read_to_end(&mut bytes)?;
             fs::write(&target, bytes)?;
@@ -251,11 +274,14 @@ impl ProjectWorkspace {
             for section_name in ["manuscript", "scenes", "media"] {
                 if let Some(rows) = sections.get_mut(section_name).and_then(Value::as_array_mut) {
                     for row in rows {
-                        let package_path = row.get("package_path").and_then(Value::as_str).map(str::to_owned);
-                        if let Some(path) = package_path.as_ref().and_then(|key| extracted.get(key)) {
-                            if let Some(object) = row.as_object_mut() {
-                                object.insert("path".into(), json!(path.to_string_lossy()));
-                            }
+                        let package_path = row
+                            .get("package_path")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned);
+                        if let Some(path) = package_path.as_ref().and_then(|key| extracted.get(key))
+                            && let Some(object) = row.as_object_mut()
+                        {
+                            object.insert("path".into(), json!(path.to_string_lossy()));
                         }
                     }
                 }
@@ -292,21 +318,43 @@ impl ProjectWorkspace {
         let mut packaged = self.root.clone();
         let mut files = Vec::<(String, PathBuf)>::new();
         if let Some(sections) = packaged.get_mut("sections").and_then(Value::as_object_mut) {
-            for (section_name, prefix) in [("manuscript", "manuscript"), ("scenes", "manuscript"), ("media", "media")] {
+            for (section_name, prefix) in [
+                ("manuscript", "manuscript"),
+                ("scenes", "manuscript"),
+                ("media", "media"),
+            ] {
                 if let Some(rows) = sections.get_mut(section_name).and_then(Value::as_array_mut) {
                     for row in rows {
-                        let Some(path) = row.get("path").and_then(Value::as_str).map(PathBuf::from) else { continue; };
-                        if !path.is_file() { continue; }
-                        let name = path.file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(generate_id);
+                        let Some(path) = row.get("path").and_then(Value::as_str).map(PathBuf::from)
+                        else {
+                            continue;
+                        };
+                        if !path.is_file() {
+                            continue;
+                        }
+                        let name = path
+                            .file_name()
+                            .and_then(|v| v.to_str())
+                            .map(safe_component)
+                            .unwrap_or_else(generate_id);
                         let package_path = format!("{prefix}/{name}");
                         if let Some(object) = row.as_object_mut() {
                             object.insert("package_path".into(), json!(package_path));
                         }
                         files.push((package_path, path.clone()));
                         if prefix == "manuscript" {
-                            let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("document.txt")));
+                            let sidecar = path.with_file_name(format!(
+                                "{}.zen.json",
+                                path.file_name()
+                                    .and_then(|v| v.to_str())
+                                    .unwrap_or("document.txt")
+                            ));
                             if sidecar.is_file() {
-                                let side_name = sidecar.file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(|| format!("{}.zen.json", generate_id()));
+                                let side_name = sidecar
+                                    .file_name()
+                                    .and_then(|v| v.to_str())
+                                    .map(safe_component)
+                                    .unwrap_or_else(|| format!("{}.zen.json", generate_id()));
                                 files.push((format!("manuscript/{side_name}"), sidecar));
                             }
                         }
@@ -344,36 +392,48 @@ impl ProjectWorkspace {
     }
 
     pub fn summary(&self) -> WorldSummary {
-        let mut summary = WorldSummary::default();
-        summary.chapters = self.array(WorldSection::Manuscript).len();
-        summary.scenes = self.array(WorldSection::Scenes).len();
-        summary.characters = self.array(WorldSection::Characters).len();
-        summary.relationships = self.array(WorldSection::Relationships).len();
-        summary.theories = self.array(WorldSection::Theories).len();
-        summary.timeline = self.array(WorldSection::Timeline).len();
-        summary.world = self.array(WorldSection::World).len();
-        summary.maps = self.array(WorldSection::Maps).len();
-        summary.magic = self.array(WorldSection::Magic).len();
-        summary.references = self.array(WorldSection::References).len();
-        summary.notes = self.array(WorldSection::Notes).len();
-        summary.review = self.array(WorldSection::Review).len();
-        summary.media = self.array(WorldSection::Media).len();
-        summary.words = self
-            .array(WorldSection::Manuscript)
-            .iter()
-            .chain(self.array(WorldSection::Scenes).iter())
-            .filter_map(|row| row.get("words").and_then(Value::as_u64))
-            .map(|value| value as usize)
-            .sum();
-        summary
+        WorldSummary {
+            chapters: self.array(WorldSection::Manuscript).len(),
+            scenes: self.array(WorldSection::Scenes).len(),
+            characters: self.array(WorldSection::Characters).len(),
+            relationships: self.array(WorldSection::Relationships).len(),
+            theories: self.array(WorldSection::Theories).len(),
+            timeline: self.array(WorldSection::Timeline).len(),
+            world: self.array(WorldSection::World).len(),
+            maps: self.array(WorldSection::Maps).len(),
+            magic: self.array(WorldSection::Magic).len(),
+            references: self.array(WorldSection::References).len(),
+            notes: self.array(WorldSection::Notes).len(),
+            review: self.array(WorldSection::Review).len(),
+            media: self.array(WorldSection::Media).len(),
+            words: self
+                .array(WorldSection::Manuscript)
+                .iter()
+                .chain(self.array(WorldSection::Scenes).iter())
+                .filter_map(|row| row.get("words").and_then(Value::as_u64))
+                .map(|value| value as usize)
+                .sum(),
+        }
     }
 
     pub fn semantic_references(&self) -> Vec<(String, String)> {
         let mut refs = Vec::new();
-        for section in [WorldSection::Characters, WorldSection::World, WorldSection::Magic, WorldSection::References, WorldSection::Notes] {
+        for section in [
+            WorldSection::Characters,
+            WorldSection::World,
+            WorldSection::Magic,
+            WorldSection::References,
+            WorldSection::Notes,
+        ] {
             for item in self.array(section) {
-                let Some(id) = item.get("id").and_then(Value::as_str) else { continue; };
-                let label = item.get("name").or_else(|| item.get("title")).and_then(Value::as_str).unwrap_or("Referencia");
+                let Some(id) = item.get("id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let label = item
+                    .get("name")
+                    .or_else(|| item.get("title"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("Referencia");
                 refs.push((id.to_owned(), format!("{} · {}", section.label(), label)));
             }
         }
@@ -423,14 +483,22 @@ impl ProjectWorkspace {
                     .unwrap_or("")
                     .to_owned();
                 let path = row.get("path").and_then(Value::as_str).map(PathBuf::from);
-                WorldRow { label, detail, path }
+                WorldRow {
+                    label,
+                    detail,
+                    path,
+                }
             })
             .collect()
     }
 
     pub fn record_fields(&self, section: WorldSection, index: usize) -> Vec<WorldRow> {
         if section.is_record_list() {
-            return self.array(section).get(index).map(|value| object_rows(Some(value))).unwrap_or_default();
+            return self
+                .array(section)
+                .get(index)
+                .map(|value| object_rows(Some(value)))
+                .unwrap_or_default();
         }
         match section {
             WorldSection::Project => object_rows(self.root.get("profile")),
@@ -440,7 +508,13 @@ impl ProjectWorkspace {
         }
     }
 
-    pub fn set_field(&mut self, section: WorldSection, index: usize, key: &str, raw: &str) -> Result<bool> {
+    pub fn set_field(
+        &mut self,
+        section: WorldSection,
+        index: usize,
+        key: &str,
+        raw: &str,
+    ) -> Result<bool> {
         let target = if section.is_record_list() {
             self.array_mut(section).get_mut(index)
         } else {
@@ -451,8 +525,13 @@ impl ProjectWorkspace {
                 _ => None,
             }
         };
-        let Some(object) = target.and_then(Value::as_object_mut) else { return Ok(false); };
-        let existing = object.get(key).cloned().unwrap_or(Value::String(String::new()));
+        let Some(object) = target.and_then(Value::as_object_mut) else {
+            return Ok(false);
+        };
+        let existing = object
+            .get(key)
+            .cloned()
+            .unwrap_or(Value::String(String::new()));
         let value = parse_like(&existing, raw);
         object.insert(key.to_owned(), value);
         if section == WorldSection::Scenes {
@@ -480,20 +559,40 @@ impl ProjectWorkspace {
     }
 
     pub fn setting_list(&self, key: &str) -> Vec<String> {
-        self.root.get("settings")
+        self.root
+            .get("settings")
             .and_then(|value| value.get(key))
             .and_then(Value::as_array)
-            .map(|values| values.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
     pub fn character_id(&self, index: usize) -> Option<String> {
-        self.array(WorldSection::Characters).get(index)?.get("id")?.as_str().map(str::to_owned)
+        self.array(WorldSection::Characters)
+            .get(index)?
+            .get("id")?
+            .as_str()
+            .map(str::to_owned)
     }
 
     pub fn toggle_character_visibility(&mut self, index: usize) -> Result<bool> {
-        let Some(character) = self.array_mut(WorldSection::Characters).get_mut(index).and_then(Value::as_object_mut) else { return Ok(false); };
-        let visible = character.get("visible").and_then(Value::as_bool).unwrap_or(true);
+        let Some(character) = self
+            .array_mut(WorldSection::Characters)
+            .get_mut(index)
+            .and_then(Value::as_object_mut)
+        else {
+            return Ok(false);
+        };
+        let visible = character
+            .get("visible")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
         character.insert("visible".into(), json!(!visible));
         self.touch();
         self.save()?;
@@ -529,11 +628,24 @@ impl ProjectWorkspace {
     }
 
     pub fn delete_manuscript(&mut self, index: usize) -> Result<bool> {
-        let Some(path) = self.array(WorldSection::Manuscript).get(index).and_then(|row| row.get("path")).and_then(Value::as_str).map(PathBuf::from) else {
+        let Some(path) = self
+            .array(WorldSection::Manuscript)
+            .get(index)
+            .and_then(|row| row.get("path"))
+            .and_then(Value::as_str)
+            .map(PathBuf::from)
+        else {
             return Ok(false);
         };
-        if path.exists() { fs::remove_file(&path)?; }
-        let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("chapter.txt")));
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        let sidecar = path.with_file_name(format!(
+            "{}.zen.json",
+            path.file_name()
+                .and_then(|v| v.to_str())
+                .unwrap_or("chapter.txt")
+        ));
         let _ = fs::remove_file(sidecar);
         self.sync_manuscript(&self.documents.clone())?;
         self.renumber_chapters()?;
@@ -544,10 +656,17 @@ impl ProjectWorkspace {
 
     pub fn move_manuscript(&mut self, index: usize, delta: isize) -> Result<usize> {
         let rows = self.array(WorldSection::Manuscript);
-        if rows.is_empty() || index >= rows.len() { return Ok(index); }
+        if rows.is_empty() || index >= rows.len() {
+            return Ok(index);
+        }
         let target = (index as isize + delta).clamp(0, rows.len() as isize - 1) as usize;
-        if target == index { return Ok(index); }
-        let mut paths = rows.iter().filter_map(|row| row.get("path").and_then(Value::as_str).map(PathBuf::from)).collect::<Vec<_>>();
+        if target == index {
+            return Ok(index);
+        }
+        let mut paths = rows
+            .iter()
+            .filter_map(|row| row.get("path").and_then(Value::as_str).map(PathBuf::from))
+            .collect::<Vec<_>>();
         let moved = paths.remove(index);
         paths.insert(target, moved);
         for (position, path) in paths.iter().enumerate() {
@@ -564,7 +683,11 @@ impl ProjectWorkspace {
     }
 
     fn renumber_chapters(&mut self) -> Result<()> {
-        let paths = self.array(WorldSection::Manuscript).iter().filter_map(|row| row.get("path").and_then(Value::as_str).map(PathBuf::from)).collect::<Vec<_>>();
+        let paths = self
+            .array(WorldSection::Manuscript)
+            .iter()
+            .filter_map(|row| row.get("path").and_then(Value::as_str).map(PathBuf::from))
+            .collect::<Vec<_>>();
         for (position, path) in paths.iter().enumerate() {
             if let Ok(mut doc) = document::read(path) {
                 doc.metadata.order = (position as i64 + 1) * 10;
@@ -575,17 +698,41 @@ impl ProjectWorkspace {
         self.sync_manuscript(&self.documents.clone())
     }
 
-    pub fn add_map_marker(&mut self, map_index: usize, label: &str, marker_type: &str, x: i32, y: i32) -> Result<bool> {
-        let Some(map) = self.array_mut(WorldSection::Maps).get_mut(map_index).and_then(Value::as_object_mut) else { return Ok(false); };
-        let markers = map.entry("markers").or_insert_with(|| json!([])).as_array_mut().ok_or_else(|| anyhow::anyhow!("markers inválido"))?;
-        markers.push(json!({"id": generate_id(), "name": label, "type": marker_type, "x": x, "y": y}));
+    pub fn add_map_marker(
+        &mut self,
+        map_index: usize,
+        label: &str,
+        marker_type: &str,
+        x: i32,
+        y: i32,
+    ) -> Result<bool> {
+        let Some(map) = self
+            .array_mut(WorldSection::Maps)
+            .get_mut(map_index)
+            .and_then(Value::as_object_mut)
+        else {
+            return Ok(false);
+        };
+        let markers = map
+            .entry("markers")
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or_else(|| anyhow::anyhow!("markers inválido"))?;
+        markers
+            .push(json!({"id": generate_id(), "name": label, "type": marker_type, "x": x, "y": y}));
         self.touch();
         self.save()?;
         Ok(true)
     }
 
     pub fn move_character(&mut self, index: usize, dx: i32, dy: i32) -> Result<bool> {
-        let Some(character) = self.array_mut(WorldSection::Characters).get_mut(index).and_then(Value::as_object_mut) else { return Ok(false); };
+        let Some(character) = self
+            .array_mut(WorldSection::Characters)
+            .get_mut(index)
+            .and_then(Value::as_object_mut)
+        else {
+            return Ok(false);
+        };
         let x = character.get("x").and_then(Value::as_i64).unwrap_or(0) as i32 + dx;
         let y = character.get("y").and_then(Value::as_i64).unwrap_or(0) as i32 + dy;
         character.insert("x".into(), json!(x));
@@ -626,7 +773,7 @@ impl ProjectWorkspace {
                     "pov": "", "location": "", "timeline": "", "narrative_layer": "",
                     "status": "draft", "summary": "", "words": 0, "updated": unix_seconds(), "order": order
                 })
-            },
+            }
             WorldSection::Characters => json!({
                 "id": generate_id(), "name": title, "image": "", "aliases": [], "category": "", "status": "",
                 "role": "", "occupation": "", "origin": "", "affiliation": "", "summary": "",
@@ -693,19 +840,32 @@ impl ProjectWorkspace {
             return Ok(false);
         }
         let removed = rows.remove(index);
-        if section == WorldSection::Scenes {
-            if let Some(path) = removed.get("path").and_then(Value::as_str).map(PathBuf::from) {
-                let _ = fs::remove_file(&path);
-                let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("scene.txt")));
-                let _ = fs::remove_file(sidecar);
-            }
+        if section == WorldSection::Scenes
+            && let Some(path) = removed
+                .get("path")
+                .and_then(Value::as_str)
+                .map(PathBuf::from)
+        {
+            let _ = fs::remove_file(&path);
+            let sidecar = path.with_file_name(format!(
+                "{}.zen.json",
+                path.file_name()
+                    .and_then(|v| v.to_str())
+                    .unwrap_or("scene.txt")
+            ));
+            let _ = fs::remove_file(sidecar);
         }
         self.touch();
         self.save()?;
         Ok(true)
     }
 
-    pub fn move_record(&mut self, section: WorldSection, index: usize, delta: isize) -> Result<usize> {
+    pub fn move_record(
+        &mut self,
+        section: WorldSection,
+        index: usize,
+        delta: isize,
+    ) -> Result<usize> {
         if !section.is_record_list() {
             return Ok(index);
         }
@@ -722,7 +882,11 @@ impl ProjectWorkspace {
                     object.insert("order".into(), json!((order as i64 + 1) * 10));
                 }
             }
-            let scene_count = if section == WorldSection::Scenes { rows.len() } else { 0 };
+            let scene_count = if section == WorldSection::Scenes {
+                rows.len()
+            } else {
+                0
+            };
             let _ = rows;
             for scene_index in 0..scene_count {
                 self.sync_scene_document(scene_index)?;
@@ -734,7 +898,11 @@ impl ProjectWorkspace {
     }
 
     pub fn add_media(&mut self, title: &str, path: &Path) -> Result<()> {
-        let kind = path.extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
+        let kind = path
+            .extension()
+            .and_then(|v| v.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
         let media_type = match kind.as_str() {
             "mp3" | "wav" | "flac" | "ogg" | "m4a" => "audio",
             "mp4" | "webm" | "mov" | "avi" | "mkv" | "vob" => "video",
@@ -749,16 +917,37 @@ impl ProjectWorkspace {
     }
 
     fn sync_scene_document(&mut self, index: usize) -> Result<()> {
-        let Some(scene) = self.array(WorldSection::Scenes).get(index) else { return Ok(()); };
-        let Some(path) = scene.get("path").and_then(Value::as_str).map(PathBuf::from) else { return Ok(()); };
-        if !path.exists() { return Ok(()); }
+        let Some(scene) = self.array(WorldSection::Scenes).get(index) else {
+            return Ok(());
+        };
+        let Some(path) = scene.get("path").and_then(Value::as_str).map(PathBuf::from) else {
+            return Ok(());
+        };
+        if !path.exists() {
+            return Ok(());
+        }
         let mut doc = document::read(&path)?;
         doc.metadata.project = self.name.clone();
         doc.metadata.kind = "scene".into();
-        doc.metadata.title = scene.get("title").and_then(Value::as_str).unwrap_or(&doc.metadata.title).to_owned();
-        doc.metadata.status = scene.get("status").and_then(Value::as_str).unwrap_or(&doc.metadata.status).to_owned();
-        doc.metadata.order = scene.get("order").and_then(Value::as_i64).unwrap_or(doc.metadata.order);
-        doc.metadata.chapter = scene.get("chapter").and_then(Value::as_u64).and_then(|value| u32::try_from(value).ok()).filter(|value| *value > 0);
+        doc.metadata.title = scene
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or(&doc.metadata.title)
+            .to_owned();
+        doc.metadata.status = scene
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or(&doc.metadata.status)
+            .to_owned();
+        doc.metadata.order = scene
+            .get("order")
+            .and_then(Value::as_i64)
+            .unwrap_or(doc.metadata.order);
+        doc.metadata.chapter = scene
+            .get("chapter")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0);
         document::write(&path, &doc)?;
         Ok(())
     }
@@ -766,38 +955,91 @@ impl ProjectWorkspace {
     fn sync_scene_records(&mut self) -> Result<()> {
         let mut replacements = Vec::new();
         for (index, scene) in self.array(WorldSection::Scenes).iter().enumerate() {
-            let has_path = scene.get("path").and_then(Value::as_str).map(Path::new).is_some_and(Path::exists);
-            if has_path { continue; }
-            let title = scene.get("title").and_then(Value::as_str).unwrap_or("Escena").to_owned();
+            let has_path = scene
+                .get("path")
+                .and_then(Value::as_str)
+                .map(Path::new)
+                .is_some_and(Path::exists);
+            if has_path {
+                continue;
+            }
+            let title = scene
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("Escena")
+                .to_owned();
             let path = unique_scene_path(&self.documents, &self.name, &title);
-            let id = scene.get("id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(generate_id);
-            let order = scene.get("order").and_then(Value::as_i64).unwrap_or((index as i64 + 1) * 10);
-            let chapter = scene.get("chapter").and_then(Value::as_u64).and_then(|value| u32::try_from(value).ok()).filter(|value| *value > 0);
-            let status = scene.get("status").and_then(Value::as_str).unwrap_or("draft").to_owned();
+            let id = scene
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(generate_id);
+            let order = scene
+                .get("order")
+                .and_then(Value::as_i64)
+                .unwrap_or((index as i64 + 1) * 10);
+            let chapter = scene
+                .get("chapter")
+                .and_then(Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|value| *value > 0);
+            let status = scene
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("draft")
+                .to_owned();
             let doc = document::HsstDocument {
                 metadata: document::DocumentMetadata {
-                    format: document::FORMAT_VERSION, id, title: title.clone(), project: self.name.clone(), kind: "scene".into(), chapter, order,
-                    language: "es-CL".into(), status, page: crate::page::PageProfile::default(),
+                    format: document::FORMAT_VERSION,
+                    id,
+                    title: title.clone(),
+                    project: self.name.clone(),
+                    kind: "scene".into(),
+                    chapter,
+                    order,
+                    language: "es-CL".into(),
+                    status,
+                    page: crate::page::PageProfile::default(),
                 },
-                body: String::new(), formatting: json!({"version":1,"unit":"utf8-byte","runs":[],"paragraphs":[]}),
+                body: String::new(),
+                formatting: json!({"version":1,"unit":"utf8-byte","runs":[],"paragraphs":[]}),
             };
             document::write(&path, &doc)?;
             replacements.push((index, path));
         }
         for (index, path) in replacements {
-            if let Some(object) = self.array_mut(WorldSection::Scenes).get_mut(index).and_then(Value::as_object_mut) {
+            if let Some(object) = self
+                .array_mut(WorldSection::Scenes)
+                .get_mut(index)
+                .and_then(Value::as_object_mut)
+            {
                 object.insert("path".into(), json!(path.to_string_lossy()));
             }
         }
-        let snapshots = self.array(WorldSection::Scenes).iter().enumerate().filter_map(|(index, row)| {
-            let path = row.get("path").and_then(Value::as_str).map(PathBuf::from)?;
-            let words = document::read(&path).map(|doc| doc.body.split_whitespace().count()).unwrap_or(0);
-            let updated = fs::metadata(&path).and_then(|meta| meta.modified()).ok()
-                .and_then(|time| time.duration_since(UNIX_EPOCH).ok()).map(|duration| duration.as_secs()).unwrap_or_else(unix_seconds);
-            Some((index, words, updated))
-        }).collect::<Vec<_>>();
+        let snapshots = self
+            .array(WorldSection::Scenes)
+            .iter()
+            .enumerate()
+            .filter_map(|(index, row)| {
+                let path = row.get("path").and_then(Value::as_str).map(PathBuf::from)?;
+                let words = document::read(&path)
+                    .map(|doc| doc.body.split_whitespace().count())
+                    .unwrap_or(0);
+                let updated = fs::metadata(&path)
+                    .and_then(|meta| meta.modified())
+                    .ok()
+                    .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                    .map(|duration| duration.as_secs())
+                    .unwrap_or_else(unix_seconds);
+                Some((index, words, updated))
+            })
+            .collect::<Vec<_>>();
         for (index, words, updated) in snapshots {
-            if let Some(object) = self.array_mut(WorldSection::Scenes).get_mut(index).and_then(Value::as_object_mut) {
+            if let Some(object) = self
+                .array_mut(WorldSection::Scenes)
+                .get_mut(index)
+                .and_then(Value::as_object_mut)
+            {
                 object.insert("words".into(), json!(words));
                 object.insert("updated".into(), json!(updated));
             }
@@ -814,13 +1056,19 @@ impl ProjectWorkspace {
             if !path.is_file() || !document::is_native_path(&path) {
                 continue;
             }
-            let Some(metadata) = document::read_metadata(&path) else { continue; };
+            let Some(metadata) = document::read_metadata(&path) else {
+                continue;
+            };
             if metadata.project.trim() != self.name || metadata.kind.eq_ignore_ascii_case("scene") {
                 continue;
             }
             let words = document::read(&path)
                 .map(|doc| doc.body.split_whitespace().count())
-                .unwrap_or_else(|_| fs::read_to_string(&path).map(|text| text.split_whitespace().count()).unwrap_or(0));
+                .unwrap_or_else(|_| {
+                    fs::read_to_string(&path)
+                        .map(|text| text.split_whitespace().count())
+                        .unwrap_or(0)
+                });
             manuscript.push(json!({
                 "id": metadata.id,
                 "title": metadata.title,
@@ -858,14 +1106,22 @@ impl ProjectWorkspace {
         }));
         object.entry("layout").or_insert(default_layout());
         object.entry("settings").or_insert(default_settings());
-        object.entry("review_config").or_insert(json!({"repetitions": true, "filler": [], "language": "es-CL"}));
+        object
+            .entry("review_config")
+            .or_insert(json!({"repetitions": true, "filler": [], "language": "es-CL"}));
         object.entry("sections").or_insert_with(|| json!({}));
         let sections = object
             .get_mut("sections")
             .and_then(Value::as_object_mut)
             .expect("sections object");
         for section in WorldSection::ALL {
-            if matches!(section, WorldSection::Project | WorldSection::Layout | WorldSection::Settings | WorldSection::Statistics) {
+            if matches!(
+                section,
+                WorldSection::Project
+                    | WorldSection::Layout
+                    | WorldSection::Settings
+                    | WorldSection::Statistics
+            ) {
                 continue;
             }
             sections.entry(section.key()).or_insert_with(|| json!([]));
@@ -906,7 +1162,9 @@ fn unique_scene_path(documents: &Path, project: &str, title: &str) -> PathBuf {
     let base = format!("{} - {}", safe_component(project), safe_component(title));
     let mut path = documents.join(format!("{base}.txt"));
     for index in 2..10_000 {
-        if !path.exists() { break; }
+        if !path.exists() {
+            break;
+        }
         path = documents.join(format!("{base} ({index}).txt"));
     }
     path
@@ -917,8 +1175,12 @@ pub fn list_projects(documents: &Path) -> Vec<String> {
     if let Ok(entries) = fs::read_dir(documents) {
         for entry in entries.flatten() {
             let path = entry.path();
-            let Some(file_name) = path.file_name().and_then(|v| v.to_str()) else { continue; };
-            if !file_name.starts_with(".zen-project-") || !file_name.ends_with(".json") { continue; }
+            let Some(file_name) = path.file_name().and_then(|v| v.to_str()) else {
+                continue;
+            };
+            if !file_name.starts_with(".zen-project-") || !file_name.ends_with(".json") {
+                continue;
+            }
             if let Ok(raw) = fs::read_to_string(&path)
                 && let Ok(root) = serde_json::from_str::<Value>(&raw)
                 && let Some(name) = root.get("name").and_then(Value::as_str)
@@ -948,11 +1210,24 @@ pub fn delete_project(documents: &Path, project: &str) -> Result<usize> {
     if let Ok(entries) = fs::read_dir(documents) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file() || !document::is_native_path(&path) { continue; }
-            let Some(metadata) = document::read_metadata(&path) else { continue; };
-            if metadata.project.trim() != project.trim() { continue; }
-            let sidecar = path.with_file_name(format!("{}.zen.json", path.file_name().and_then(|v| v.to_str()).unwrap_or("document.txt")));
-            if fs::remove_file(&path).is_ok() { removed += 1; }
+            if !path.is_file() || !document::is_native_path(&path) {
+                continue;
+            }
+            let Some(metadata) = document::read_metadata(&path) else {
+                continue;
+            };
+            if metadata.project.trim() != project.trim() {
+                continue;
+            }
+            let sidecar = path.with_file_name(format!(
+                "{}.zen.json",
+                path.file_name()
+                    .and_then(|v| v.to_str())
+                    .unwrap_or("document.txt")
+            ));
+            if fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
             let _ = fs::remove_file(sidecar);
         }
     }
@@ -1021,11 +1296,34 @@ fn object_rows(value: Option<&Value>) -> Vec<WorldRow> {
 
 fn parse_like(existing: &Value, raw: &str) -> Value {
     match existing {
-        Value::Bool(_) => Value::Bool(matches!(raw.trim().to_ascii_lowercase().as_str(), "1" | "true" | "sí" | "si" | "yes" | "on")),
-        Value::Number(number) if number.is_i64() => raw.trim().parse::<i64>().map(Value::from).unwrap_or_else(|_| existing.clone()),
-        Value::Number(number) if number.is_u64() => raw.trim().parse::<u64>().map(Value::from).unwrap_or_else(|_| existing.clone()),
-        Value::Number(_) => raw.trim().parse::<f64>().ok().and_then(serde_json::Number::from_f64).map(Value::Number).unwrap_or_else(|| existing.clone()),
-        Value::Array(_) => Value::Array(raw.split(',').map(str::trim).filter(|v| !v.is_empty()).map(|v| Value::String(v.to_owned())).collect()),
+        Value::Bool(_) => Value::Bool(matches!(
+            raw.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "sí" | "si" | "yes" | "on"
+        )),
+        Value::Number(number) if number.is_i64() => raw
+            .trim()
+            .parse::<i64>()
+            .map(Value::from)
+            .unwrap_or_else(|_| existing.clone()),
+        Value::Number(number) if number.is_u64() => raw
+            .trim()
+            .parse::<u64>()
+            .map(Value::from)
+            .unwrap_or_else(|_| existing.clone()),
+        Value::Number(_) => raw
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number)
+            .unwrap_or_else(|| existing.clone()),
+        Value::Array(_) => Value::Array(
+            raw.split(',')
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(|v| Value::String(v.to_owned()))
+                .collect(),
+        ),
         Value::Null if raw.trim().is_empty() => Value::Null,
         Value::Null => Value::String(raw.to_owned()),
         Value::Object(_) => existing.clone(),
@@ -1039,7 +1337,11 @@ fn scalar_text(value: &Value) -> String {
         Value::Bool(v) => v.to_string(),
         Value::Number(v) => v.to_string(),
         Value::String(v) => v.clone(),
-        Value::Array(values) => values.iter().map(scalar_text).collect::<Vec<_>>().join(", "),
+        Value::Array(values) => values
+            .iter()
+            .map(scalar_text)
+            .collect::<Vec<_>>()
+            .join(", "),
         Value::Object(_) => "…".into(),
     }
 }
@@ -1052,22 +1354,34 @@ fn stat_row(label: &str, value: usize) -> WorldRow {
     }
 }
 
-fn portableize_resources(value: &mut Value, files: &mut Vec<(String, PathBuf)>, counter: &mut usize) {
+fn portableize_resources(
+    value: &mut Value,
+    files: &mut Vec<(String, PathBuf)>,
+    counter: &mut usize,
+) {
     match value {
         Value::Object(object) => {
             for (key, child) in object.iter_mut() {
-                if key == "path" || key == "package_path" { continue; }
+                if key == "path" || key == "package_path" {
+                    continue;
+                }
                 portableize_resources(child, files, counter);
             }
         }
         Value::Array(values) => {
-            for child in values { portableize_resources(child, files, counter); }
+            for child in values {
+                portableize_resources(child, files, counter);
+            }
         }
         Value::String(text) => {
             let path = PathBuf::from(text.as_str());
             if path.is_file() {
                 *counter += 1;
-                let name = path.file_name().and_then(|value| value.to_str()).map(safe_component).unwrap_or_else(|| format!("resource-{}", counter));
+                let name = path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .map(safe_component)
+                    .unwrap_or_else(|| format!("resource-{}", counter));
                 let package_path = format!("resources/{:04}-{name}", counter);
                 files.push((package_path.clone(), path));
                 *text = format!("wbw-resource://{package_path}");
@@ -1077,10 +1391,21 @@ fn portableize_resources(value: &mut Value, files: &mut Vec<(String, PathBuf)>, 
     }
 }
 
-fn restore_portable_resources(value: &mut Value, extracted: &std::collections::HashMap<String, PathBuf>) {
+fn restore_portable_resources(
+    value: &mut Value,
+    extracted: &std::collections::HashMap<String, PathBuf>,
+) {
     match value {
-        Value::Object(object) => for child in object.values_mut() { restore_portable_resources(child, extracted); },
-        Value::Array(values) => for child in values { restore_portable_resources(child, extracted); },
+        Value::Object(object) => {
+            for child in object.values_mut() {
+                restore_portable_resources(child, extracted);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                restore_portable_resources(child, extracted);
+            }
+        }
         Value::String(text) => {
             if let Some(package_path) = text.strip_prefix("wbw-resource://")
                 && let Some(path) = extracted.get(package_path)
@@ -1104,7 +1429,11 @@ fn safe_component(value: &str) -> String {
         })
         .collect::<String>();
     let cleaned = cleaned.trim_matches(['_', '.']);
-    if cleaned.is_empty() { "project".into() } else { cleaned.into() }
+    if cleaned.is_empty() {
+        "project".into()
+    } else {
+        cleaned.into()
+    }
 }
 
 fn unix_seconds() -> u64 {
