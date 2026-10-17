@@ -25,18 +25,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Apply final WBW completion
+      - name: Apply final completion pass
         shell: pwsh
-        run: python .github/scripts/finish_wbw.py
+        run: python .github/scripts/finish_all.py
 
-      - name: Commit completed WBW workspace
+      - name: Commit final completion
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/app.rs src/world.rs README.md CHANGELOG.md
           if (-not (git diff --cached --quiet)) {
-            git commit -m "feat: complete WBW workspace [skip ci]"
+            git commit -m "feat: finish WBW and editor pending work [skip ci]"
             git push origin HEAD:main
           }
 
