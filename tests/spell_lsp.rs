@@ -9,7 +9,7 @@ use std::{
 fn spell_lsp_process_advertises_code_actions() {
     let exe = env!("CARGO_BIN_EXE_zen-editor");
     let dictionary =
-        std::env::temp_dir().join(format!("helix-sst-spell-smoke-{}.dic", std::process::id()));
+        std::env::temp_dir().join(format!("zen-editor-spell-smoke-{}.dic", std::process::id()));
 
     let mut child = Command::new(exe)
         .arg("--helix-sst-spell")
@@ -66,7 +66,7 @@ fn spell_lsp_process_advertises_code_actions() {
         "initialize no anunció codeActionProvider: {stdout}"
     );
     assert!(
-        stdout.contains("\"name\":\"helix-sst-spell\""),
+        stdout.contains("\"name\":\"zen-editor-spell\""),
         "initialize no anunció el servidor esperado: {stdout}"
     );
     assert!(
