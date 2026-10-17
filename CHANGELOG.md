@@ -2,6 +2,16 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+## WBW inventory closure — 2026-10-17
+
+- Importación de capítulos TXT/Markdown/DOCX desde Manuscrito conservando el formato estructurado convertido por Zen.
+- Tablero de escenas con viewport real y modo compacto; palabras/fecha de actualización sincronizadas.
+- Tablero de personajes permite ocultar fichas y enfocar la red en un personaje y sus relaciones.
+- Tipos de marcador Capital/Ciudad/Ruina/Puerto/Fortaleza/Lugar y previsualización de maquetación.
+- Lista de muletillas configurable desde Settings utilizada por la revisión automática.
+- Portabilidad `.wbw` ampliada a portada, banner, icono, imágenes, fondos y adjuntos locales bajo `resources/`.
+- Importación directa de textos de referencia y listas largas con viewport siguiendo la selección.
+
 ## WBW parity completion — 2026-10-17
 
 - Manuscrito WBW crea, abre, elimina y reordena capítulos TXT nativos, renumerando metadatos.

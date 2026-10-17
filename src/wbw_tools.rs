@@ -138,7 +138,8 @@ pub fn review_project(workspace: &mut ProjectWorkspace) -> Result<usize> {
             } else {
                 fs::read_to_string(&path).unwrap_or_default()
             };
-            inspect_text(&row.label, &text, &mut findings);
+            let configured = workspace.setting_list("review_fillers");
+            inspect_text(&row.label, &text, &configured, &mut findings);
         }
     }
 
@@ -158,7 +159,7 @@ pub fn review_project(workspace: &mut ProjectWorkspace) -> Result<usize> {
     Ok(findings.len())
 }
 
-fn inspect_text(title: &str, text: &str, findings: &mut Vec<(String, String, String)>) {
+fn inspect_text(title: &str, text: &str, configured_fillers: &[String], findings: &mut Vec<(String, String, String)>) {
     let words = text
         .split_whitespace()
         .map(normalize_word)
@@ -175,10 +176,11 @@ fn inspect_text(title: &str, text: &str, findings: &mut Vec<(String, String, Str
         }
     }
 
-    let fillers = ["realmente", "básicamente", "literalmente", "simplemente", "de alguna manera", "en realidad", "de hecho"];
+    let defaults = ["realmente", "básicamente", "literalmente", "simplemente", "de alguna manera", "en realidad", "de hecho"];
+    let fillers = if configured_fillers.is_empty() { defaults.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>() } else { configured_fillers.to_vec() };
     let lower = text.to_lowercase();
     for filler in fillers {
-        let count = lower.matches(filler).count();
+        let count = lower.matches(&filler).count();
         if count >= 3 {
             findings.push((
                 format!("{title}: muletilla «{filler}»"),
@@ -210,16 +212,31 @@ fn normalize_word(word: &str) -> String {
         .to_lowercase()
 }
 
-pub fn relationship_board(workspace: &ProjectWorkspace, width: usize, zoom: i32, offset_x: i32, offset_y: i32) -> Vec<String> {
+pub fn relationship_board(workspace: &ProjectWorkspace, width: usize, zoom: i32, offset_x: i32, offset_y: i32, focus_index: Option<usize>) -> Vec<String> {
     let width = width.clamp(48, 120);
     let height = 20usize;
     let mut canvas = vec![vec![' '; width]; height];
     let characters = workspace.rows(WorldSection::Characters);
     let mut positions = HashMap::<String, (usize, usize, String)>::new();
 
+    let focus_id = focus_index.and_then(|index| workspace.character_id(index));
+    let mut allowed = std::collections::HashSet::<String>::new();
+    if let Some(focus) = focus_id.as_ref() {
+        allowed.insert(focus.clone());
+        for index in 0..workspace.rows(WorldSection::Relationships).len() {
+            let fields = workspace.record_fields(WorldSection::Relationships, index);
+            let from = field(&fields, "from").unwrap_or_default();
+            let to = field(&fields, "to").unwrap_or_default();
+            if &from == focus { allowed.insert(to); }
+            if &to == focus { allowed.insert(from); }
+        }
+    }
+
     for (index, row) in characters.iter().enumerate() {
         let fields = workspace.record_fields(WorldSection::Characters, index);
         let id = field(&fields, "id").unwrap_or_else(|| format!("character-{index}"));
+        let visible = field(&fields, "visible").map(|value| value != "false").unwrap_or(true);
+        if !visible || (!allowed.is_empty() && !allowed.contains(&id)) { continue; }
         let raw_x = field(&fields, "x").and_then(|v| v.parse::<i32>().ok()).unwrap_or((index as i32 % 4) * 25);
         let raw_y = field(&fields, "y").and_then(|v| v.parse::<i32>().ok()).unwrap_or((index as i32 / 4) * 8);
         let scale = zoom.max(1);
@@ -233,7 +250,7 @@ pub fn relationship_board(workspace: &ProjectWorkspace, width: usize, zoom: i32,
         let from = field(&fields, "from").unwrap_or_default();
         let to = field(&fields, "to").unwrap_or_default();
         let visible = field(&fields, "visible").map(|v| v != "false").unwrap_or(true);
-        if !visible { continue; }
+        if !visible || (!allowed.is_empty() && (!allowed.contains(&from) || !allowed.contains(&to))) { continue; }
         let relation_type = field(&fields, "type").unwrap_or_default().to_lowercase();
         let strength = field(&fields, "strength").and_then(|v| v.parse::<i32>().ok()).unwrap_or(0).abs();
         let glyph = if relation_type.contains("enem") || relation_type.contains("conflict") { '!' }
@@ -344,6 +361,32 @@ impl Lcg {
         self.0
     }
     fn range(&mut self, upper: u64) -> u64 { if upper == 0 { 0 } else { self.next() % upper } }
+}
+
+pub fn layout_preview(workspace: &ProjectWorkspace, width: usize) -> Vec<String> {
+    let fields = workspace.record_fields(WorldSection::Layout, 0);
+    let preset = field(&fields, "preset").unwrap_or_else(|| "Editorial".into());
+    let page_w = field(&fields, "paper_width_mm").unwrap_or_else(|| "152".into());
+    let page_h = field(&fields, "paper_height_mm").unwrap_or_else(|| "229".into());
+    let font = field(&fields, "font_family").unwrap_or_else(|| "EB Garamond".into());
+    let size = field(&fields, "font_size_pt").unwrap_or_else(|| "11.5".into());
+    let separator = field(&fields, "scene_separator").unwrap_or_else(|| "⁂".into());
+    let width = width.clamp(48, 100);
+    let paper = (width.saturating_sub(16)).clamp(34, 70);
+    let inner = paper.saturating_sub(4);
+    let mut lines = Vec::new();
+    lines.push(format!("{preset} · {page_w}×{page_h} mm · {font} {size} pt"));
+    lines.push(format!("┌{}┐", "─".repeat(paper)));
+    lines.push(format!("│  {:^inner$}  │", "CAPÍTULO XII", inner=inner));
+    lines.push(format!("│{}│", " ".repeat(paper)));
+    lines.push(format!("│  {:<inner$}  │", "La lluvia golpeaba los postigos mientras", inner=inner));
+    lines.push(format!("│  {:<inner$}  │", "la ciudad apagaba una a una sus luces.", inner=inner));
+    lines.push(format!("│{}│", " ".repeat(paper)));
+    lines.push(format!("│  {:^inner$}  │", separator, inner=inner));
+    lines.push(format!("│{}│", " ".repeat(paper)));
+    lines.push(format!("│  {:<inner$}  │", "Nadie oyó abrirse la puerta.", inner=inner));
+    lines.push(format!("└{}┘", "─".repeat(paper)));
+    lines
 }
 
 pub fn timeline_preview(workspace: &ProjectWorkspace, width: usize) -> Vec<String> {

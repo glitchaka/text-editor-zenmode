@@ -231,9 +231,10 @@ impl ProjectWorkspace {
             let destination = if entry_name.starts_with("manuscript/") {
                 let file_name = Path::new(&entry_name).file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(generate_id);
                 Some(documents.join(file_name))
-            } else if entry_name.starts_with("media/") {
+            } else if entry_name.starts_with("media/") || entry_name.starts_with("resources/") {
                 let file_name = Path::new(&entry_name).file_name().and_then(|v| v.to_str()).map(safe_component).unwrap_or_else(generate_id);
-                Some(documents.join(".zen-media").join(safe_component(&name)).join(file_name))
+                let bucket = if entry_name.starts_with("resources/") { ".zen-resources" } else { ".zen-media" };
+                Some(documents.join(bucket).join(safe_component(&name)).join(file_name))
             } else {
                 None
             };
@@ -245,6 +246,7 @@ impl ProjectWorkspace {
             extracted.insert(entry_name, target);
         }
 
+        restore_portable_resources(&mut root, &extracted);
         if let Some(sections) = root.get_mut("sections").and_then(Value::as_object_mut) {
             for section_name in ["manuscript", "scenes", "media"] {
                 if let Some(rows) = sections.get_mut(section_name).and_then(Value::as_array_mut) {
@@ -312,6 +314,9 @@ impl ProjectWorkspace {
                 }
             }
         }
+
+        let mut resource_counter = 0usize;
+        portableize_resources(&mut packaged, &mut files, &mut resource_counter);
 
         zip.start_file(PACKAGE_MANIFEST, options)?;
         zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
@@ -458,6 +463,43 @@ impl ProjectWorkspace {
         Ok(true)
     }
 
+    pub fn import_chapter(&mut self, source: &Path) -> Result<PathBuf> {
+        let path = document::import_to_native(source, &self.documents)?;
+        let index = self.array(WorldSection::Manuscript).len();
+        let mut doc = document::read(&path)?;
+        doc.metadata.project = self.name.clone();
+        doc.metadata.kind = "chapter".into();
+        doc.metadata.chapter = Some(index as u32 + 1);
+        doc.metadata.order = (index as i64 + 1) * 10;
+        doc.metadata.status = "draft".into();
+        document::write(&path, &doc)?;
+        self.sync_manuscript(&self.documents.clone())?;
+        self.touch();
+        self.save()?;
+        Ok(path)
+    }
+
+    pub fn setting_list(&self, key: &str) -> Vec<String> {
+        self.root.get("settings")
+            .and_then(|value| value.get(key))
+            .and_then(Value::as_array)
+            .map(|values| values.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn character_id(&self, index: usize) -> Option<String> {
+        self.array(WorldSection::Characters).get(index)?.get("id")?.as_str().map(str::to_owned)
+    }
+
+    pub fn toggle_character_visibility(&mut self, index: usize) -> Result<bool> {
+        let Some(character) = self.array_mut(WorldSection::Characters).get_mut(index).and_then(Value::as_object_mut) else { return Ok(false); };
+        let visible = character.get("visible").and_then(Value::as_bool).unwrap_or(true);
+        character.insert("visible".into(), json!(!visible));
+        self.touch();
+        self.save()?;
+        Ok(!visible)
+    }
+
     pub fn create_chapter(&mut self, title: &str) -> Result<PathBuf> {
         let index = self.array(WorldSection::Manuscript).len();
         let chapter = index as u32 + 1;
@@ -588,7 +630,7 @@ impl ProjectWorkspace {
             WorldSection::Characters => json!({
                 "id": generate_id(), "name": title, "image": "", "aliases": [], "category": "", "status": "",
                 "role": "", "occupation": "", "origin": "", "affiliation": "", "summary": "",
-                "background": "", "physical": "", "traits": [], "evidence": [], "chapters": [], "color": "", "x": 0, "y": 0
+                "background": "", "physical": "", "traits": [], "evidence": [], "chapters": [], "color": "", "visible": true, "x": 0, "y": 0
             }),
             WorldSection::Relationships => json!({
                 "id": generate_id(), "title": title, "from": "", "to": "", "type": "",
@@ -750,11 +792,14 @@ impl ProjectWorkspace {
         let snapshots = self.array(WorldSection::Scenes).iter().enumerate().filter_map(|(index, row)| {
             let path = row.get("path").and_then(Value::as_str).map(PathBuf::from)?;
             let words = document::read(&path).map(|doc| doc.body.split_whitespace().count()).unwrap_or(0);
-            Some((index, words))
+            let updated = fs::metadata(&path).and_then(|meta| meta.modified()).ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok()).map(|duration| duration.as_secs()).unwrap_or_else(unix_seconds);
+            Some((index, words, updated))
         }).collect::<Vec<_>>();
-        for (index, words) in snapshots {
+        for (index, words, updated) in snapshots {
             if let Some(object) = self.array_mut(WorldSection::Scenes).get_mut(index).and_then(Value::as_object_mut) {
                 object.insert("words".into(), json!(words));
+                object.insert("updated".into(), json!(updated));
             }
         }
         Ok(())
@@ -1004,6 +1049,46 @@ fn stat_row(label: &str, value: usize) -> WorldRow {
         label: label.into(),
         detail: value.to_string(),
         path: None,
+    }
+}
+
+fn portableize_resources(value: &mut Value, files: &mut Vec<(String, PathBuf)>, counter: &mut usize) {
+    match value {
+        Value::Object(object) => {
+            for (key, child) in object.iter_mut() {
+                if key == "path" || key == "package_path" { continue; }
+                portableize_resources(child, files, counter);
+            }
+        }
+        Value::Array(values) => {
+            for child in values { portableize_resources(child, files, counter); }
+        }
+        Value::String(text) => {
+            let path = PathBuf::from(text.as_str());
+            if path.is_file() {
+                *counter += 1;
+                let name = path.file_name().and_then(|value| value.to_str()).map(safe_component).unwrap_or_else(|| format!("resource-{}", counter));
+                let package_path = format!("resources/{:04}-{name}", counter);
+                files.push((package_path.clone(), path));
+                *text = format!("wbw-resource://{package_path}");
+            }
+        }
+        _ => {}
+    }
+}
+
+fn restore_portable_resources(value: &mut Value, extracted: &std::collections::HashMap<String, PathBuf>) {
+    match value {
+        Value::Object(object) => for child in object.values_mut() { restore_portable_resources(child, extracted); },
+        Value::Array(values) => for child in values { restore_portable_resources(child, extracted); },
+        Value::String(text) => {
+            if let Some(package_path) = text.strip_prefix("wbw-resource://")
+                && let Some(path) = extracted.get(package_path)
+            {
+                *text = path.to_string_lossy().into_owned();
+            }
+        }
+        _ => {}
     }
 }
 

@@ -431,6 +431,9 @@ struct Launcher {
     workspace_project_picker: bool,
     workspace_project_picker_row: usize,
     workspace_delete_confirm: bool,
+    workspace_visual_focus: bool,
+    workspace_scene_compact: bool,
+    workspace_marker_type: usize,
     message: Option<String>,
 }
 
@@ -467,6 +470,9 @@ impl Launcher {
             workspace_project_picker: false,
             workspace_project_picker_row: 0,
             workspace_delete_confirm: false,
+            workspace_visual_focus: false,
+            workspace_scene_compact: false,
+            workspace_marker_type: 5,
             message: None,
         };
         this.refresh();
@@ -2136,10 +2142,26 @@ impl TerminalModel {
                     KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && section == WorldSection::Characters => {
                         if let Ok(mut workspace) = world::ProjectWorkspace::load_or_create(&self.library.documents, &project) { let _ = workspace.move_character(self.launcher.workspace_row, 0, 1); }
                     }
+                    KeyCode::Char('h') | KeyCode::Char('H') if section == WorldSection::Characters => {
+                        if let Ok(mut workspace) = world::ProjectWorkspace::load_or_create(&self.library.documents, &project) {
+                            match workspace.toggle_character_visibility(self.launcher.workspace_row) {
+                                Ok(visible) => self.launcher.message = Some(if visible { "Ficha visible.".into() } else { "Ficha oculta.".into() }),
+                                Err(error) => self.launcher.message = Some(format!("No se pudo cambiar visibilidad: {error}")),
+                            }
+                        }
+                    }
+                    KeyCode::Char('f') | KeyCode::Char('F') if section == WorldSection::Characters => {
+                        self.launcher.workspace_visual_focus = !self.launcher.workspace_visual_focus;
+                    }
+                    KeyCode::Char('[') if section == WorldSection::Maps => self.launcher.workspace_marker_type = self.launcher.workspace_marker_type.saturating_sub(1),
+                    KeyCode::Char(']') if section == WorldSection::Maps => self.launcher.workspace_marker_type = (self.launcher.workspace_marker_type + 1).min(5),
                     KeyCode::Char('m') | KeyCode::Char('M') if section == WorldSection::Maps => {
                         if let Ok(mut workspace) = world::ProjectWorkspace::load_or_create(&self.library.documents, &project) {
+                            let types = ["Capital", "Ciudad", "Ruina", "Puerto", "Fortaleza", "Lugar"];
+                            let marker_type = types[self.launcher.workspace_marker_type.min(types.len() - 1)];
                             let count = workspace.record_fields(WorldSection::Maps, self.launcher.workspace_row).len();
-                            let _ = workspace.add_map_marker(self.launcher.workspace_row, &format!("Lugar {}", count + 1), "Lugar", self.launcher.workspace_visual_x, self.launcher.workspace_visual_y);
+                            let _ = workspace.add_map_marker(self.launcher.workspace_row, &format!("{marker_type} {}", count + 1), marker_type, self.launcher.workspace_visual_x, self.launcher.workspace_visual_y);
+                            self.launcher.message = Some(format!("Marcador {marker_type} añadido."));
                         }
                     }
                     KeyCode::Left => self.launcher.workspace_visual_x -= 2,
@@ -2362,7 +2384,7 @@ impl TerminalModel {
                 KeyCode::Char('x') | KeyCode::Char('X') if !self.launcher.workspace_detail => {
                     self.launcher.workspace_delete_confirm = true;
                 }
-                KeyCode::Char('v') | KeyCode::Char('V') if self.launcher.workspace_detail && matches!(section, WorldSection::Characters | WorldSection::Relationships | WorldSection::Maps | WorldSection::Timeline) => {
+                KeyCode::Char('v') | KeyCode::Char('V') if self.launcher.workspace_detail && matches!(section, WorldSection::Characters | WorldSection::Relationships | WorldSection::Maps | WorldSection::Timeline | WorldSection::Layout) => {
                     self.launcher.workspace_visual = true;
                     self.launcher.workspace_visual_zoom = 1;
                     self.launcher.workspace_visual_x = 0;
@@ -2398,6 +2420,35 @@ impl TerminalModel {
                             let key_name = rows.get(self.launcher.workspace_row).map(|row| row.label.as_str()).filter(|name| matches!(*name, "cover" | "banner" | "icon")).unwrap_or("cover").to_owned();
                             let _ = workspace.set_field(section, 0, &key_name, &path.to_string_lossy());
                             self.launcher.message = Some(format!("{} asignado.", key_name));
+                        }
+                    }
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') if self.launcher.workspace_detail && section == WorldSection::Scenes => {
+                    self.launcher.workspace_scene_compact = !self.launcher.workspace_scene_compact;
+                }
+                KeyCode::Char('i') | KeyCode::Char('I') if self.launcher.workspace_detail && section == WorldSection::Manuscript => {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("Manuscrito", &["txt", "text", "md", "markdown", "docx"]).pick_file() {
+                        match world::ProjectWorkspace::load_or_create(&self.library.documents, &project)
+                            .and_then(|mut workspace| workspace.import_chapter(&path))
+                        {
+                            Ok(target) => self.launcher.message = Some(format!("Capítulo importado: {}", target.display())),
+                            Err(error) => self.launcher.message = Some(format!("No se pudo importar capítulo: {error}")),
+                        }
+                    }
+                }
+                KeyCode::Char('i') | KeyCode::Char('I') if self.launcher.workspace_detail && section == WorldSection::References => {
+                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                        let title = path.file_stem().and_then(|value| value.to_str()).unwrap_or("Referencia").to_owned();
+                        if let Ok(mut workspace) = world::ProjectWorkspace::load_or_create(&self.library.documents, &project) {
+                            let index = workspace.rows(WorldSection::References).len();
+                            if let Err(error) = workspace.add_record(WorldSection::References, &title)
+                                .and_then(|_| workspace.set_field(WorldSection::References, index, "target", &path.to_string_lossy()).map(|_| ()))
+                                .and_then(|_| workspace.set_field(WorldSection::References, index, "source_name", path.file_name().and_then(|value| value.to_str()).unwrap_or("Referencia")).map(|_| ()))
+                            {
+                                self.launcher.message = Some(format!("No se pudo importar referencia: {error}"));
+                            } else {
+                                self.launcher.message = Some(format!("Referencia importada: {title}"));
+                            }
                         }
                     }
                 }
@@ -2972,14 +3023,17 @@ impl TerminalModel {
                             wbw_tools::map_preview(&workspace, self.launcher.workspace_row, inner_width.saturating_sub(2), self.launcher.workspace_visual_zoom, self.launcher.workspace_visual_x, self.launcher.workspace_visual_y)
                         } else if section == WorldSection::Timeline {
                             wbw_tools::timeline_preview(&workspace, inner_width.saturating_sub(2))
+                        } else if section == WorldSection::Layout {
+                            wbw_tools::layout_preview(&workspace, inner_width.saturating_sub(2))
                         } else {
-                            wbw_tools::relationship_board(&workspace, inner_width.saturating_sub(2), self.launcher.workspace_visual_zoom, self.launcher.workspace_visual_x, self.launcher.workspace_visual_y)
+                            wbw_tools::relationship_board(&workspace, inner_width.saturating_sub(2), self.launcher.workspace_visual_zoom, self.launcher.workspace_visual_x, self.launcher.workspace_visual_y, if self.launcher.workspace_visual_focus { Some(self.launcher.workspace_row) } else { None })
                         };
                         for line in lines.into_iter().take(22) {
                             push_line(&mut out, &framed_left(&truncate(&line, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
                         }
-                        let visual_help = if section == WorldSection::Characters { "Flechas pan · Shift+flechas mover ficha · +/- zoom · V/Esc volver" }
-                            else if section == WorldSection::Maps { "Flechas pan · +/- zoom · M marcador · V/Esc volver" }
+                        let visual_help = if section == WorldSection::Characters { "Flechas pan · Shift+flechas mover · H ocultar · F red enfocada · +/- zoom · V/Esc" }
+                            else if section == WorldSection::Maps { "Flechas pan · +/- zoom · [/] tipo marcador · M añadir · V/Esc" }
+                            else if section == WorldSection::Layout { "V/Esc volver" }
                             else { "Flechas pan · +/- zoom · V/Esc volver" };
                         push_line(&mut out, &framed_left(visual_help, inner_width, "38;5;244"));
                     } else if let Some(field) = self.launcher.workspace_edit_field.as_ref() {
@@ -3010,7 +3064,9 @@ impl TerminalModel {
                         if rows.is_empty() {
                             push_line(&mut out, &framed_left("(sin registros)", inner_width, "38;5;244"));
                         } else if section == WorldSection::Scenes {
-                            for (index, row) in rows.iter().enumerate().take((rows.len()).min(8)) {
+                            let visible = if self.launcher.workspace_scene_compact { 12 } else { 7 };
+                            let start = self.launcher.workspace_row.saturating_sub(visible.saturating_sub(1));
+                            for (index, row) in rows.iter().enumerate().skip(start).take(visible) {
                                 let marker = if index == self.launcher.workspace_row { "▶" } else { " " };
                                 let fields = workspace.record_fields(section, index);
                                 let get = |key: &str| fields.iter().find(|field| field.label == key).map(|field| field.detail.as_str()).unwrap_or("");
@@ -3018,13 +3074,19 @@ impl TerminalModel {
                                 let pov = get("pov");
                                 let location = get("location");
                                 let status = get("status");
-                                let head = format!("{marker} ┌ {}  [cap. {} · {}]", row.label, if chapter.is_empty() { "—" } else { chapter }, status);
-                                let meta = format!("  └ POV: {} · Lugar: {}", if pov.is_empty() { "—" } else { pov }, if location.is_empty() { "—" } else { location });
-                                push_line(&mut out, &framed_left(&truncate(&head, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
-                                push_line(&mut out, &framed_left(&truncate(&meta, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
+                                if self.launcher.workspace_scene_compact {
+                                    let line = format!("{marker} {} · cap. {} · {} · POV {} · {}", row.label, if chapter.is_empty() { "—" } else { chapter }, status, if pov.is_empty() { "—" } else { pov }, if location.is_empty() { "—" } else { location });
+                                    push_line(&mut out, &framed_left(&truncate(&line, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
+                                } else {
+                                    let head = format!("{marker} ┌ {}  [cap. {} · {}]", row.label, if chapter.is_empty() { "—" } else { chapter }, status);
+                                    let meta = format!("  └ POV: {} · Lugar: {}", if pov.is_empty() { "—" } else { pov }, if location.is_empty() { "—" } else { location });
+                                    push_line(&mut out, &framed_left(&truncate(&head, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
+                                    push_line(&mut out, &framed_left(&truncate(&meta, inner_width.saturating_sub(2)), inner_width, "38;5;244"));
+                                }
                             }
                         } else {
-                            for (index, row) in rows.iter().enumerate().take((rows.len()).min(14)) {
+                            let start = self.launcher.workspace_row.saturating_sub(12);
+                            for (index, row) in rows.iter().enumerate().skip(start).take(14) {
                                 let marker = if index == self.launcher.workspace_row { "▶" } else { " " };
                                 let detail = if row.detail.is_empty() { String::new() } else { format!(" · {}", row.detail) };
                                 let line = format!("{marker} {}{}", row.label, detail);
@@ -3036,11 +3098,13 @@ impl TerminalModel {
                             let visual = if matches!(section, WorldSection::Characters | WorldSection::Relationships | WorldSection::Maps | WorldSection::Timeline) { " · V vista" } else { "" };
                             let review = if section == WorldSection::Review { " · T revisar" } else { "" };
                             let open = if matches!(section, WorldSection::Media | WorldSection::References) { " · O abrir" } else { "" };
-                            push_line(&mut out, &framed_left(&format!("N nuevo · Enter ficha · R renombrar · D eliminar · Ctrl+↑↓ mover{extra}{visual}{review}{open} · P PDF · Esc volver"), inner_width, "38;5;244"));
+                            let compact = if section == WorldSection::Scenes { " · C compacto" } else { "" };
+                            let import = if section == WorldSection::References { " · I importar" } else { "" };
+                            push_line(&mut out, &framed_left(&format!("N nuevo · Enter ficha · R renombrar · D eliminar · Ctrl+↑↓ mover{extra}{visual}{review}{open}{compact}{import} · P PDF · Esc volver"), inner_width, "38;5;244"));
                         } else if section == WorldSection::Manuscript {
-                            push_line(&mut out, &framed_left("N capítulo · Enter abrir · D eliminar · Ctrl+↑↓ reordenar · P PDF · Esc volver", inner_width, "38;5;244"));
+                            push_line(&mut out, &framed_left("N capítulo · I importar TXT/MD/DOCX · Enter abrir · D eliminar · Ctrl+↑↓ reordenar · P PDF · Esc", inner_width, "38;5;244"));
                         } else if section == WorldSection::Layout {
-                            push_line(&mut out, &framed_left("1 Editorial · 2 Amplia · 3 Bolsillo · 4 Fantasía · 5 Crónica · 6 Personalizada · Enter editar", inner_width, "38;5;244"));
+                            push_line(&mut out, &framed_left("1 Editorial · 2 Amplia · 3 Bolsillo · 4 Fantasía · 5 Crónica · 6 Personalizada · V previsualizar · Enter editar", inner_width, "38;5;244"));
                         } else if section == WorldSection::Settings {
                             push_line(&mut out, &framed_left("1 Dark · 2 Gruvbox · 3 Papel · 4 Custom · Enter editar", inner_width, "38;5;244"));
                         } else if section == WorldSection::Project {
