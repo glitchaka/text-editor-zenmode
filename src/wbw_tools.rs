@@ -223,7 +223,7 @@ fn inspect_text(
         .into_iter()
         .filter(|(_, count)| *count >= 8)
         .collect::<Vec<_>>();
-    frequent.sort_by(|a, b| b.1.cmp(&a.1));
+    frequent.sort_by_key(|a| std::cmp::Reverse(a.1));
     for (word, count) in frequent.into_iter().take(8) {
         findings.push((
             format!("{title}: frecuencia «{word}»"),
