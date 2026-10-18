@@ -25,26 +25,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-          components: rustfmt, clippy
+      - name: Apply visual line Clippy fix
+        shell: pwsh
+        run: python .github/scripts/fix_visual_line_clippy.py
 
       - name: Format source
         shell: pwsh
         run: cargo fmt --all
 
-      - name: Commit formatted visual line numbering fix
+      - name: Commit visual line numbering fix
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/app.rs
           if (-not (git diff --cached --quiet)) {
-            git commit -m "fix: format visual line numbering implementation [skip ci]"
+            git commit -m "fix: finalize visual line numbering [skip ci]"
             git push origin HEAD:main
           }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Verify formatting
+        shell: pwsh
+        run: cargo fmt --all -- --check
 
       - name: Strict Clippy
         shell: pwsh
