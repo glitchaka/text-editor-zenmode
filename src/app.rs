@@ -1210,10 +1210,34 @@ impl TerminalModel {
         let closed = self.tabs.remove(index);
         self.closed_tabs.push(closed);
         if self.tabs.is_empty() {
-            if let Some(editor) = self.editor.as_ref() {
+            if let Some(editor) = self.editor.as_mut() {
                 let _ = editor.send_command(":write");
-                let _ = editor.send_command(":quit");
+                std::thread::sleep(Duration::from_millis(35));
+                let _ = editor.flush_native();
+                let _ = editor.send_command(":quit-all!");
             }
+            self.zen_requested = false;
+            self.editor = None;
+            self.current_file = None;
+            self.source_modified = None;
+            self.page_profile = crate::page::PageProfile::default();
+            self.chapter_switch_until = None;
+            self.pomodoro_offer = false;
+            self.pomodoro_active = false;
+            self.pomodoro_break = false;
+            self.pomodoro_deadline = None;
+            self.command_capture = None;
+            self.word_count = 0;
+            self.active_tab = 0;
+            self.f2_menu_open = false;
+            self.f2_close_at = None;
+            self.layout_redraw_at = None;
+            self.layout_redraw_passes = 0;
+            self.launcher.refresh();
+            self.reset_parser();
+            self.render_launcher();
+            self.glyphs.clear();
+            self.dirty = true;
             return;
         }
         let next = index.min(self.tabs.len() - 1);
@@ -1644,15 +1668,34 @@ impl TerminalModel {
             && !key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y'));
         let ctrl_shift_z = ctrl_z && key.modifiers.contains(KeyModifiers::SHIFT);
-        if ctrl_shift_z {
+        if ctrl_shift_z || ctrl_y {
             if self.redo_style_change() {
                 return;
             }
-        } else if ctrl_z {
+            if let Some(editor) = self.editor.as_ref() {
+                let _ = editor.send_key(
+                    KeyEvent::new(KeyCode::F(18), KeyModifiers::NONE),
+                    editor.win32_input(),
+                );
+                self.layout_redraw_passes = 1;
+                self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(55));
+                self.dirty = true;
+            }
+            return;
+        }
+        if ctrl_z {
             if self.undo_style_change() {
                 return;
             }
-        } else if ctrl_y && self.redo_style_change() {
+            if let Some(editor) = self.editor.as_ref() {
+                let _ = editor.send_key(
+                    KeyEvent::new(KeyCode::F(17), KeyModifiers::NONE),
+                    editor.win32_input(),
+                );
+                self.layout_redraw_passes = 1;
+                self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(55));
+                self.dirty = true;
+            }
             return;
         }
 
@@ -5181,16 +5224,29 @@ fn visual_line_numbers(
     if lines.is_empty() {
         lines.push("");
     }
+
     let (rows, cols) = screen.size();
     let mut gutter = 5u16;
     for row in 0..rows {
-        if let Some(line) = screen_line_number(screen, row, lines.len())
-            && let Some((start, _)) = match_source_row(screen, row, lines[line])
-        {
-            gutter = start.max(4);
-            break;
+        if screen_line_number(screen, row, lines.len()).is_some() {
+            let mut last_digit = None;
+            for col in 0..cols.min(12) {
+                if let Some(cell) = screen.cell(row, col) {
+                    let content = cell.contents();
+                    if content.chars().any(|ch| ch.is_ascii_digit()) {
+                        last_digit = Some(col);
+                    } else if last_digit.is_some() && !content.trim().is_empty() {
+                        break;
+                    }
+                }
+            }
+            if let Some(last) = last_digit {
+                gutter = (last + 2).max(4);
+                break;
+            }
         }
     }
+
     let text_width = cols.saturating_sub(gutter).max(1) as usize;
     let mut base = vec![1usize; lines.len()];
     let mut next = 1usize;
@@ -5198,41 +5254,49 @@ fn visual_line_numbers(
         base[index] = next;
         next += prose_wrap_rows(line, text_width);
     }
+
     let mut out = Vec::new();
-    let mut active = None::<usize>;
-    let mut consumed = 0usize;
-    let mut segment = 0usize;
+    let mut next_visible = None::<usize>;
     for row in 0..rows {
-        if let Some(line) = screen_line_number(screen, row, lines.len()) {
-            active = Some(line);
-            consumed = 0;
-            segment = 0;
-            if lines[line].is_empty() {
-                out.push((row, base[line]));
-                segment = 1;
+        if let Some(line_index) = screen_line_number(screen, row, lines.len()) {
+            let number = base[line_index];
+            out.push((row, number));
+            next_visible = Some(number + 1);
+            continue;
+        }
+
+        let Some(number) = next_visible else {
+            continue;
+        };
+
+        let mut has_text = false;
+        let mut is_editor_filler = false;
+        for col in gutter..cols {
+            let Some(cell) = screen.cell(row, col) else {
+                continue;
+            };
+            if cell.is_wide_continuation() {
                 continue;
             }
+            let content = cell.contents();
+            if !content.trim().is_empty() {
+                if content.trim() == "~" {
+                    is_editor_filler = true;
+                }
+                has_text = true;
+                break;
+            }
         }
-        let Some(line_index) = active else {
-            continue;
-        };
-        let line = lines[line_index];
-        if consumed >= line.len() || !line.is_char_boundary(consumed) {
-            continue;
-        }
-        let remaining = &line[consumed..];
-        let Some((_, matched)) = match_source_row(screen, row, remaining) else {
-            continue;
-        };
-        if matched.is_empty() {
+        if is_editor_filler {
+            next_visible = None;
             continue;
         }
-        out.push((row, base[line_index] + segment));
-        segment += 1;
-        if let Some((_, _, end)) = matched.last() {
-            consumed += *end;
+        if has_text {
+            out.push((row, number));
+            next_visible = Some(number + 1);
         }
     }
+
     (gutter, out)
 }
 
