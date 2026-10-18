@@ -5184,11 +5184,11 @@ fn visual_line_numbers(
     let (rows, cols) = screen.size();
     let mut gutter = 5u16;
     for row in 0..rows {
-        if let Some(line) = screen_line_number(screen, row, lines.len()) {
-            if let Some((start, _)) = match_source_row(screen, row, lines[line]) {
-                gutter = start.max(4);
-                break;
-            }
+        if let Some(line) = screen_line_number(screen, row, lines.len())
+            && let Some((start, _)) = match_source_row(screen, row, lines[line])
+        {
+            gutter = start.max(4);
+            break;
         }
     }
     let text_width = cols.saturating_sub(gutter).max(1) as usize;
