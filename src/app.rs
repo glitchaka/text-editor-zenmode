@@ -4457,7 +4457,11 @@ impl TerminalModel {
                     fill_rect(pixels, (width, height), (x, y, w, h), BG);
                     let label = number.to_string();
                     let start_col = number_right.saturating_sub(label.chars().count() as u16);
-                    let fg = if cursor_on && cursor.0 == row { CURSOR } else { Rgb(0x66, 0x66, 0x66) };
+                    let fg = if cursor_on && cursor.0 == row {
+                        CURSOR
+                    } else {
+                        Rgb(0x66, 0x66, 0x66)
+                    };
                     let baseline = y + (cell_height * 0.80).round() as i32;
                     for (offset, ch) in label.chars().enumerate() {
                         let key = (ch, font_key);
@@ -4466,7 +4470,8 @@ impl TerminalModel {
                             self.glyphs.insert(key, Glyph { metrics, alpha });
                         }
                         if let Some(glyph) = self.glyphs.get(&key) {
-                            let gx = (left_pad + (start_col as usize + offset) as f32 * cell_width).round() as i32;
+                            let gx = (left_pad + (start_col as usize + offset) as f32 * cell_width)
+                                .round() as i32;
                             draw_glyph(pixels, (width, height), gx, baseline, glyph, fg, false);
                         }
                     }
@@ -5133,34 +5138,49 @@ fn palette_color(color: crate::format::PaletteColor) -> Rgb {
 }
 
 fn prose_wrap_rows(line: &str, width: usize) -> usize {
-    if line.is_empty() { return 1; }
+    if line.is_empty() {
+        return 1;
+    }
     let width = width.max(1);
     let mut rows = 1usize;
     let mut used = 0usize;
     for word in line.split_whitespace() {
         let mut len = word.chars().count();
         if used == 0 {
-            while len > width { rows += 1; len -= width; }
+            while len > width {
+                rows += 1;
+                len -= width;
+            }
             used = len;
         } else if used + 1 + len <= width {
             used += 1 + len;
         } else {
             rows += 1;
-            while len > width { rows += 1; len -= width; }
+            while len > width {
+                rows += 1;
+                len -= width;
+            }
             used = len;
         }
     }
     rows
 }
 
-fn visual_line_numbers(screen: &vt100::Screen, document: &document::HsstDocument) -> (u16, Vec<(u16, usize)>) {
+fn visual_line_numbers(
+    screen: &vt100::Screen,
+    document: &document::HsstDocument,
+) -> (u16, Vec<(u16, usize)>) {
     let mut lines = Vec::new();
     for raw in document.body.split_inclusive('\n') {
         let no_lf = raw.strip_suffix('\n').unwrap_or(raw);
         lines.push(no_lf.strip_suffix('\r').unwrap_or(no_lf));
     }
-    if document.body.ends_with('\n') { lines.push(""); }
-    if lines.is_empty() { lines.push(""); }
+    if document.body.ends_with('\n') {
+        lines.push("");
+    }
+    if lines.is_empty() {
+        lines.push("");
+    }
     let (rows, cols) = screen.size();
     let mut gutter = 5u16;
     for row in 0..rows {
@@ -5193,15 +5213,25 @@ fn visual_line_numbers(screen: &vt100::Screen, document: &document::HsstDocument
                 continue;
             }
         }
-        let Some(line_index) = active else { continue; };
+        let Some(line_index) = active else {
+            continue;
+        };
         let line = lines[line_index];
-        if consumed >= line.len() || !line.is_char_boundary(consumed) { continue; }
+        if consumed >= line.len() || !line.is_char_boundary(consumed) {
+            continue;
+        }
         let remaining = &line[consumed..];
-        let Some((_, matched)) = match_source_row(screen, row, remaining) else { continue; };
-        if matched.is_empty() { continue; }
+        let Some((_, matched)) = match_source_row(screen, row, remaining) else {
+            continue;
+        };
+        if matched.is_empty() {
+            continue;
+        }
         out.push((row, base[line_index] + segment));
         segment += 1;
-        if let Some((_, _, end)) = matched.last() { consumed += *end; }
+        if let Some((_, _, end)) = matched.last() {
+            consumed += *end;
+        }
     }
     (gutter, out)
 }
