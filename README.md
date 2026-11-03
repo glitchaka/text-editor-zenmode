@@ -110,6 +110,7 @@ F11/Zen maximiza la ventana dentro del área de trabajo de Windows en vez de usa
 | `F2` | acciones de corrección/formato/página |
 | `F4` | Pomodoro |
 | `F6` | navegador transitorio del manuscrito/proyecto; `Esc` vuelve al editor |
+| `S` en Manuscrito/Escenas | cambiar estado `Borrador → Revisión → Final` |
 | `F11` | maximizar/restaurar Zenmode |
 
 ## Abrir directamente
