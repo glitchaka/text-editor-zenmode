@@ -478,6 +478,7 @@ impl ProjectWorkspace {
                 let detail = row
                     .get("status")
                     .and_then(Value::as_str)
+                    .map(writing_status_label)
                     .or_else(|| row.get("summary").and_then(Value::as_str))
                     .or_else(|| row.get("type").and_then(Value::as_str))
                     .unwrap_or("")
@@ -556,6 +557,47 @@ impl ProjectWorkspace {
         self.touch();
         self.save()?;
         Ok(path)
+    }
+
+    pub fn cycle_writing_status(
+        &mut self,
+        section: WorldSection,
+        index: usize,
+    ) -> Result<Option<String>> {
+        let next = match section {
+            WorldSection::Manuscript => {
+                let Some(path) = self
+                    .array(WorldSection::Manuscript)
+                    .get(index)
+                    .and_then(|row| row.get("path"))
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from)
+                else {
+                    return Ok(None);
+                };
+                let mut doc = document::read(&path)?;
+                let next = next_writing_status(&doc.metadata.status).to_owned();
+                doc.metadata.status = next.clone();
+                document::write(&path, &doc)?;
+                self.sync_manuscript(&self.documents.clone())?;
+                next
+            }
+            WorldSection::Scenes => {
+                let current = self
+                    .array(WorldSection::Scenes)
+                    .get(index)
+                    .and_then(|row| row.get("status"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("draft");
+                let next = next_writing_status(current).to_owned();
+                self.set_field(WorldSection::Scenes, index, "status", &next)?;
+                return Ok(Some(next));
+            }
+            _ => return Ok(None),
+        };
+        self.touch();
+        self.save()?;
+        Ok(Some(next))
     }
 
     pub fn setting_list(&self, key: &str) -> Vec<String> {
@@ -1155,6 +1197,24 @@ impl ProjectWorkspace {
             .or_insert_with(|| json!([]))
             .as_array_mut()
             .unwrap()
+    }
+}
+
+fn next_writing_status(status: &str) -> &'static str {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "draft" | "borrador" => "revision",
+        "revision" | "review" | "revisión" => "final",
+        "final" => "draft",
+        _ => "draft",
+    }
+}
+
+pub fn writing_status_label(status: &str) -> &str {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "draft" | "borrador" => "Borrador",
+        "revision" | "review" | "revisión" => "Revisión",
+        "final" => "Final",
+        _ => status,
     }
 }
 
