@@ -2915,6 +2915,31 @@ impl TerminalModel {
                 {
                     self.launcher.workspace_scene_compact = !self.launcher.workspace_scene_compact;
                 }
+                KeyCode::Char('s') | KeyCode::Char('S')
+                    if self.launcher.workspace_detail
+                        && matches!(section, WorldSection::Manuscript | WorldSection::Scenes) =>
+                {
+                    if let Ok(mut workspace) =
+                        world::ProjectWorkspace::load_or_create(&self.library.documents, &project)
+                    {
+                        match workspace.cycle_writing_status(
+                            section,
+                            self.launcher.workspace_row,
+                        ) {
+                            Ok(Some(status)) => {
+                                self.launcher.message = Some(format!(
+                                    "Estado: {}",
+                                    world::writing_status_label(&status)
+                                ));
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                self.launcher.message =
+                                    Some(format!("No se pudo cambiar el estado: {error}"));
+                            }
+                        }
+                    }
+                }
                 KeyCode::Char('i') | KeyCode::Char('I')
                     if self.launcher.workspace_detail && section == WorldSection::Manuscript =>
                 {
@@ -3835,7 +3860,7 @@ impl TerminalModel {
                                 let chapter = get("chapter");
                                 let pov = get("pov");
                                 let location = get("location");
-                                let status = get("status");
+                                let status = world::writing_status_label(get("status"));
                                 if self.launcher.workspace_scene_compact {
                                     let line = format!(
                                         "{marker} {} · cap. {} · {} · POV {} · {}",
@@ -3937,6 +3962,11 @@ impl TerminalModel {
                             } else {
                                 ""
                             };
+                            let writing_status = if section == WorldSection::Scenes {
+                                " · S estado"
+                            } else {
+                                ""
+                            };
                             let compact = if section == WorldSection::Scenes {
                                 " · C compacto"
                             } else {
@@ -3951,7 +3981,7 @@ impl TerminalModel {
                                 &mut out,
                                 &framed_left(
                                     &format!(
-                                        "N nuevo · Enter ficha · R renombrar · D eliminar · Ctrl+↑↓ mover{extra}{visual}{review}{open}{compact}{import} · P PDF · Esc volver"
+                                        "N nuevo · Enter ficha · R renombrar · D eliminar · Ctrl+↑↓ mover{extra}{visual}{review}{open}{writing_status}{compact}{import} · P PDF · Esc volver"
                                     ),
                                     inner_width,
                                     "38;5;244",
@@ -3961,7 +3991,7 @@ impl TerminalModel {
                             push_line(
                                 &mut out,
                                 &framed_left(
-                                    "N capítulo · I importar TXT/MD/DOCX · Enter abrir · D eliminar · Ctrl+↑↓ reordenar · P PDF · Esc",
+                                    "N capítulo · I importar TXT/MD/DOCX · S estado · Enter abrir · D eliminar · Ctrl+↑↓ reordenar · P PDF · Esc",
                                     inner_width,
                                     "38;5;244",
                                 ),
