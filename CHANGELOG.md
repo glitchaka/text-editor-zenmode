@@ -2,6 +2,8 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+- WBW: estados canónicos `Borrador → Revisión → Final` para capítulos y escenas, accesibles con `S`.
+
 - Pestañas: `Ctrl+Shift+PageUp/PageDown` reordena la pestaña activa sin cambiar de documento.
 
 ## WBW inventory closure — 2026-10-17
