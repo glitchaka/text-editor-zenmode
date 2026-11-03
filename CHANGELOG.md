@@ -2,6 +2,8 @@
 
 Cambios funcionales por versión. Se omiten commits internos de mantenimiento, pruebas temporales y workflows de parcheo.
 
+- Pestañas: `Ctrl+Shift+PageUp/PageDown` reordena la pestaña activa sin cambiar de documento.
+
 ## WBW inventory closure — 2026-10-17
 
 - Importación de capítulos TXT/Markdown/DOCX desde Manuscrito conservando el formato estructurado convertido por Zen.
