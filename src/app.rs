@@ -682,6 +682,59 @@ impl TerminalModel {
         self.zen_requested && self.editor.is_some()
     }
 
+    fn workspace_overlay_active(&self) -> bool {
+        self.editor.is_some()
+            && (self.launcher.workspace_project.is_some()
+                || self.launcher.workspace_project_picker
+                || self.launcher.workspace_create_project)
+    }
+
+    fn open_workspace_overlay(&mut self) {
+        if self.editor.is_none() {
+            return;
+        }
+        let selected_project = self
+            .current_file
+            .as_ref()
+            .and_then(|path| document::read_metadata(path))
+            .map(|metadata| metadata.project.trim().to_owned())
+            .filter(|project| !project.is_empty());
+
+        self.launcher.workspace_selected = 0;
+        self.launcher.workspace_detail = false;
+        self.launcher.workspace_row = 0;
+        self.launcher.workspace_record_open = false;
+        self.launcher.workspace_visual = false;
+        self.launcher.workspace_new = false;
+        self.launcher.workspace_input.clear();
+        self.launcher.message = None;
+
+        if let Some(project) = selected_project {
+            self.launcher.workspace_project = Some(project);
+            self.launcher.workspace_project_picker = false;
+        } else {
+            self.launcher.workspace_project = None;
+            self.launcher.workspace_project_picker = true;
+            self.launcher.workspace_project_picker_row = 0;
+        }
+
+        self.reset_parser();
+        self.render_launcher();
+        self.glyphs.clear();
+        self.dirty = true;
+    }
+
+    fn restore_editor_after_workspace(&mut self) {
+        self.reset_parser();
+        if let Some(editor) = self.editor.as_mut() {
+            let _ = editor.force_terminal_redraw();
+        }
+        self.layout_redraw_passes = self.layout_redraw_passes.max(2);
+        self.layout_redraw_at = Some(Instant::now() + Duration::from_millis(70));
+        self.glyphs.clear();
+        self.dirty = true;
+    }
+
     fn toggle_editor_zen(&mut self) {
         if self.editor.is_some() {
             self.zen_requested = !self.zen_requested;
@@ -1296,7 +1349,7 @@ impl TerminalModel {
             return;
         }
         self.update_pomodoro();
-        if self.reference_picker.is_some() {
+        if self.workspace_overlay_active() || self.reference_picker.is_some() {
             return;
         }
         let mut finished = false;
@@ -1463,6 +1516,22 @@ impl TerminalModel {
     }
 
     fn editor_key(&mut self, key: KeyEvent) {
+        if self.workspace_overlay_active() {
+            let overlay_was_active = self.workspace_overlay_active();
+            self.launcher_key(key);
+            if overlay_was_active && !self.workspace_overlay_active() {
+                self.restore_editor_after_workspace();
+            } else if self.workspace_overlay_active() {
+                self.render_launcher();
+            }
+            return;
+        }
+
+        if key.code == KeyCode::F(6) && key.modifiers.is_empty() {
+            self.open_workspace_overlay();
+            return;
+        }
+
         if let Some((project, rows, selected)) = self.reference_picker.clone() {
             match key.code {
                 KeyCode::Esc => {
@@ -2973,7 +3042,12 @@ impl TerminalModel {
                                 self.launcher.workspace_project = None;
                                 self.launcher.workspace_detail = false;
                                 self.launcher.workspace_row = 0;
-                                if let Err(error) = self.open_editor(path) {
+                                let result = if self.editor.is_some() {
+                                    self.open_in_tab(path)
+                                } else {
+                                    self.open_editor(path)
+                                };
+                                if let Err(error) = result {
                                     self.launcher.message = Some(error.to_string());
                                 }
                                 return;
