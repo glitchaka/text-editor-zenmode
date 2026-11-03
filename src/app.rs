@@ -1261,6 +1261,24 @@ impl TerminalModel {
         let _ = self.activate_tab(next);
     }
 
+    fn move_current_tab(&mut self, backwards: bool) {
+        if self.tabs.len() < 2 || self.active_tab >= self.tabs.len() {
+            return;
+        }
+        let target = if backwards {
+            self.active_tab.saturating_sub(1)
+        } else {
+            (self.active_tab + 1).min(self.tabs.len() - 1)
+        };
+        if target == self.active_tab {
+            return;
+        }
+        self.tabs.swap(self.active_tab, target);
+        self.active_tab = target;
+        self.glyphs.clear();
+        self.dirty = true;
+    }
+
     fn insert_symbol(&mut self, symbol: &str) {
         if self.pomodoro_break || symbol.is_empty() {
             return;
@@ -1512,6 +1530,13 @@ impl TerminalModel {
                 }
                 _ => {}
             }
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::PageUp | KeyCode::PageDown)
+        {
+            self.move_current_tab(key.code == KeyCode::PageUp);
             return;
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Tab {
