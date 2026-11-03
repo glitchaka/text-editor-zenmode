@@ -103,6 +103,7 @@ F11/Zen maximiza la ventana dentro del área de trabajo de Windows en vez de usa
 | `Ctrl+V` | pegar reemplazando la selección si existe |
 | `Ctrl+T` | abrir documento en una nueva pestaña |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | cambiar de pestaña |
+| `Ctrl+Shift+PageUp / PageDown` | mover la pestaña actual a izquierda / derecha |
 | `Ctrl+W` | cerrar pestaña actual |
 | `Ctrl+Shift+T` | reabrir última pestaña cerrada |
 | `Ctrl+S` | guardar |
